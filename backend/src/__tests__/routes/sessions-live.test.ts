@@ -183,7 +183,7 @@ describe("live session routes", () => {
       [{ runtime: "gcp", hostId: "host-1" }, "unknown_runtime"],
       [{ runtime: "cloud", harness: "codex", seed: { kind: "repo", gitRemote: "https://github.com/acme/app", branch: "main" } }, "harness_not_supported"],
       [{ runtime: "cloud", seed: { kind: "repo", gitRemote: "http://github.com/acme/app", branch: "main" } }, "invalid_seed"],
-      [{ runtime: "cloud", seed: { kind: "snapshot", storageKey: `${WS}/snap.tgz` } }, "snapshot_not_supported"],
+      [{ runtime: "cloud", seed: { kind: "snapshot", storageKey: `${WS}/snap.tgz` } }, "invalid_seed"],
     ];
     for (const [body, error] of cases) {
       const res = await routes.CREATE(post("/x", body, { id: WS }));

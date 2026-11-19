@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import type { CloudSessionDeps } from "../../cloud-sessions/launch";
 import { RESTART_LIMIT, wakeCloudSession } from "../../cloud-sessions/wake";
+import type { SnapshotStore } from "../../cloud-sessions/snapshot-seed";
 import type { SandboxDeploymentConfig } from "../../metaharness/sandbox/config";
 import type { SandboxProvider, SandboxRef, SandboxSpec } from "../../metaharness/sandbox/providers";
 import { verifyAgentRunToken } from "../../metaharness/runs/run-token";
@@ -410,6 +411,65 @@ describe("wakeCloudSession", () => {
 
     expect(outcome).toEqual({ status: "failed" });
     expect(errorCodes()).toEqual(["sandbox_volume_missing"]);
+    expect(fly.calls).toEqual([]);
+    expect(session()).toMatchObject({ status: "sleeping" });
+  });
+});
+
+const SNAPSHOT_KEY = `${WS}/${SESSION}/seed.tar.gz`;
+
+describe("wakeCloudSession from a folder snapshot", () => {
+  /** A store that signs a new link on each call, so each launch's link can be told apart. */
+  function linkStore(objects = [SNAPSHOT_KEY]) {
+    const signed: string[] = [];
+    const store: SnapshotStore = {
+      exists: async (key) => objects.includes(key),
+      downloadUrl: async (key) => {
+        const url = `https://project.supabase.co/storage/v1/object/sign/session-seeds/${key}?token=${signed.length + 1}`;
+        signed.push(url);
+        return url;
+      },
+    };
+    return { store, signed };
+  }
+
+  beforeEach(() => {
+    db.tables.sessions = [sleepingSession({ git_remote: null, folder_name: "marigold", seed: { kind: "snapshot", storageKey: SNAPSHOT_KEY } })];
+  });
+
+  it("rebuilds the download link on every wake, so a later wake gets a link that has not expired", async () => {
+    const links = linkStore();
+    const first = fakeProvider({ status: "stopped" });
+    expect(await wakeCloudSession(INPUT, depsFor(first.provider, { snapshots: links.store }))).toEqual({ status: "woken", runId: NEW_RUN });
+    expect(first.created[0]!.env.DRAFT_SEED).toBe(JSON.stringify({ kind: "snapshot", url: links.signed[0] }));
+
+    // The first wake's run has to finish before the session can sleep and wake again.
+    runById(NEW_RUN)!.status = "succeeded";
+    db.tables.sessions![0]!.status = "sleeping";
+    const second = fakeProvider({ status: "stopped" });
+    const LATER_RUN = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+    expect(await wakeCloudSession(INPUT, depsFor(second.provider, { snapshots: links.store, newId: () => LATER_RUN }))).toEqual({ status: "woken", runId: LATER_RUN });
+    expect(second.created[0]!.env.DRAFT_SEED).toBe(JSON.stringify({ kind: "snapshot", url: links.signed[1] }));
+    expect(links.signed).toHaveLength(2);
+    expect(links.signed[0]).not.toBe(links.signed[1]);
+  });
+
+  it("runs the new run with no GitHub credential", async () => {
+    await wakeCloudSession(INPUT, depsFor(fakeProvider({ status: "stopped" }).provider, { snapshots: linkStore().store }));
+    const names = (runById(NEW_RUN)!.permissions as Array<{ tool: string }>).map((p) => p.tool);
+    expect(names).not.toContain("github.credential");
+  });
+
+  it("fails the wake, and sleeps the session again, when the download link cannot be made", async () => {
+    const fly = fakeProvider({ status: "stopped" });
+    const failing: SnapshotStore = {
+      exists: async () => true,
+      downloadUrl: async () => { throw new Error("sign failed"); },
+    };
+    const outcome = await wakeCloudSession(INPUT, depsFor(fly.provider, { snapshots: failing }));
+
+    expect(outcome).toEqual({ status: "failed" });
+    expect(errorCodes()).toEqual(["snapshot_link_failed"]);
     expect(fly.calls).toEqual([]);
     expect(session()).toMatchObject({ status: "sleeping" });
   });

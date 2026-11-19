@@ -1,3 +1,5 @@
+import type { SeedSpec } from "../sandbox/host/config";
+
 /** Hosts a cloud session may reach besides its model provider, the API and the storage host. */
 export const CLOUD_EGRESS_HOSTS = [
   "github.com",
@@ -19,7 +21,8 @@ export interface CloudSandboxEnvInput {
   /** The agent's token. It can call Draft tools but not the host endpoints, so the agent may keep it. */
   mcpToken: string;
   claudeToken: string;
-  seed: { kind: "repo"; gitRemote: string; branch: string };
+  /** What the host fetches. A snapshot carries a short-lived download link, so this value is secret too. */
+  seed: SeedSpec;
   network: "restricted" | "open";
   /** The deployment's callback URL. Only its origin is the API base. */
   callbackUrl: string;

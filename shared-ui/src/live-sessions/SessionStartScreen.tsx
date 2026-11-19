@@ -14,7 +14,8 @@ import { branchProblem, cloudRepoFromRemote, cloudStartFailure, repoProblem, typ
 
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
-export type StartResult = { ok: true } | { ok: false; error: string };
+/** `detail` is a sentence for the person, when the code alone does not say enough (a folder over the size cap). */
+export type StartResult = { ok: true } | { ok: false; error: string; detail?: string };
 
 interface StartFields {
   text: string;
@@ -31,17 +32,29 @@ export interface LocalStartRequest extends StartFields {
   folderPath: string;
 }
 
-/** A session in Draft cloud. Only Claude Code runs there, on one GitHub repository. */
+/** A session in Draft cloud that starts from a GitHub repository. Only Claude Code runs there. */
 export interface CloudStartRequest extends StartFields {
   runtime: "cloud";
   harness: "claude";
+  source: "repo";
   /** The https address of the GitHub repository. */
   gitRemote: string;
   branch: string;
   network: "restricted" | "open";
 }
 
-export type StartRequest = LocalStartRequest | CloudStartRequest;
+/** A session in Draft cloud that starts from a copy of a folder. Only the `.env` files in `includeEnvFiles` are copied. */
+export interface CloudSnapshotStartRequest extends StartFields {
+  runtime: "cloud";
+  harness: "claude";
+  source: "snapshot";
+  folderPath: string;
+  /** Paths relative to the folder, as the checklist listed them. */
+  includeEnvFiles: string[];
+  network: "restricted" | "open";
+}
+
+export type StartRequest = LocalStartRequest | CloudStartRequest | CloudSnapshotStartRequest;
 
 /** Why a harness cannot be started on this computer yet, or may not work well. */
 export type HarnessProblem = "missing" | "signed_out" | "untested_version";
@@ -65,12 +78,66 @@ const RUNTIMES = [
 
 type Runtime = (typeof RUNTIMES)[number]["value"];
 
+const SOURCES = [
+  { value: "repo", label: "GitHub repository" },
+  { value: "snapshot", label: "This folder (snapshot)" },
+] as const;
+
+type Source = (typeof SOURCES)[number]["value"];
+
 /** A start that failed, and the part of the screen it belongs to. */
 type Failure = { field: CloudStartField; message: string };
 
 /**
+ * A row of radio buttons. Arrow keys move the choice and the focus. Used for where a session runs and where its files come from.
+ */
+function Segmented<T extends string>({
+  labelId,
+  options,
+  value,
+  onChoose,
+}: {
+  labelId: string;
+  options: ReadonlyArray<{ value: T; label: string }>;
+  value: T;
+  onChoose: (next: T) => void;
+}) {
+  const buttons = useRef<Array<HTMLButtonElement | null>>([]);
+
+  function onKey(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!event.key.startsWith("Arrow")) return;
+    event.preventDefault();
+    const step = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+    const index = (options.findIndex((option) => option.value === value) + step + options.length) % options.length;
+    onChoose(options[index]!.value);
+    buttons.current[index]?.focus();
+  }
+
+  return (
+    <div className="ui-segmented" role="radiogroup" aria-labelledby={labelId}>
+      {options.map((option, index) => (
+        <button
+          key={option.value}
+          ref={(node) => { buttons.current[index] = node; }}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          tabIndex={value === option.value ? 0 : -1}
+          className={`ui-segmented__option${value === option.value ? " ui-segmented__option--selected" : ""}`}
+          onClick={() => onChoose(option.value)}
+          onKeyDown={onKey}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Empty state of the Sessions area: pick where it runs and a folder or repository, type a first message, start.
- * `cloud` turns on Draft cloud. Its `folderRemote` reads a folder's git remote to fill in the repository.
+ * `cloud` turns on Draft cloud. Its `folderRemote` reads a folder's git remote to fill in the repository, and its
+ * `envFiles` lists the `.env` files a folder snapshot could include.
  */
 export function SessionStartScreen({
   recentFolders,
@@ -90,8 +157,12 @@ export function SessionStartScreen({
   agentDefaults?: AgentDefaultsLoader;
   /** Help to make a harness ready, shown in place of the problem line while it blocks Start. Null for a harness with none. */
   renderSetup?: (harness: HarnessId) => ReactNode;
-  /** Offers Draft cloud. Keep `folderRemote` stable: it runs again whenever its identity changes. */
-  cloud?: { folderRemote: (folderPath: string) => Promise<string | null> };
+  /** Offers Draft cloud. Keep both functions stable: each runs again whenever its identity changes. */
+  cloud?: {
+    folderRemote: (folderPath: string) => Promise<string | null>;
+    /** The `.env*` files in a folder, relative to it. Rejects when the folder cannot be read. */
+    envFiles: (folderPath: string) => Promise<string[]>;
+  };
   recentFolders: string[];
   onBrowse: () => Promise<string | null>;
   onStart: (request: StartRequest) => Promise<StartResult>;
@@ -102,20 +173,24 @@ export function SessionStartScreen({
   const [model, setModel] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<Runtime>("local");
+  const [source, setSource] = useState<Source>("repo");
   const [repo, setRepo] = useState("");
   const [branch, setBranch] = useState("main");
   const [openNetwork, setOpenNetwork] = useState(false);
+  const [envFiles, setEnvFiles] = useState<string[] | null>(null);
+  const [envError, setEnvError] = useState<string | null>(null);
+  const [includeEnv, setIncludeEnv] = useState<string[]>([]);
   const repoEdited = useRef(false);
   const [starting, setStarting] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const { open, setOpen, rootRef, triggerRef } = usePopover();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const runtimeButtons = useRef<Array<HTMLButtonElement | null>>([]);
-  const ids = { where: useId(), repo: useId(), branch: useId(), repoError: useId(), branchError: useId(), network: useId() };
+  const ids = { where: useId(), source: useId(), repo: useId(), branch: useId(), repoError: useId(), branchError: useId(), network: useId() };
   useAutoGrow(inputRef, text);
 
   const folder = chosen ?? recentFolders[0] ?? null;
   const cloudOn = cloud !== undefined && runtime === "cloud";
+  const snapshotOn = cloudOn && source === "snapshot";
   // Cloud sessions run Claude Code wherever the computer's own setup is, so the local harness picks no longer apply.
   const activeHarness: HarnessId = cloudOn ? "claude" : harness;
   const localProblem = cloudOn ? undefined : availability[harness];
@@ -123,11 +198,15 @@ export function SessionStartScreen({
   const line = problemLine(getHarness(harness)?.label ?? harness, localProblem, devOnly);
   const defaults = useAgentDefaults(cloudOn ? undefined : agentDefaults, activeHarness);
   const folderRemote = cloud?.folderRemote;
+  const envFilesOf = cloud?.envFiles;
 
   const repoValue = cloudRepoFromRemote(repo);
   const repoError = repo.trim() ? repoProblem(repoValue) : null;
   const branchError = branchProblem(branch);
   const cloudReady = !repoProblem(repoValue) && !branchProblem(branch) && repoValue !== "" && branch.trim() !== "";
+  // The checklist must have loaded, or failed, before a snapshot can start. A failed listing includes no .env files.
+  const snapshotReady = folder !== null && (envFiles !== null || envError !== null);
+  const cloudStartable = snapshotOn ? snapshotReady : cloudReady;
 
   // The repository follows the folder's git remote until the person types their own.
   useEffect(() => {
@@ -143,6 +222,26 @@ export function SessionStartScreen({
     };
   }, [cloudOn, folder, folderRemote]);
 
+  // The .env checklist follows the folder. A new folder starts with nothing ticked.
+  useEffect(() => {
+    setEnvFiles(null);
+    setEnvError(null);
+    setIncludeEnv([]);
+    if (!snapshotOn || !folder || !envFilesOf) return;
+    let current = true;
+    envFilesOf(folder)
+      .then((files) => {
+        if (current) setEnvFiles(files);
+      })
+      .catch((error: unknown) => {
+        console.error("[sessions] could not list the folder's .env files", error);
+        if (current) setEnvError("Draft could not read this folder's .env files, so none will be included.");
+      });
+    return () => {
+      current = false;
+    };
+  }, [snapshotOn, folder, envFilesOf]);
+
   function chooseRuntime(next: Runtime) {
     setFailure(null);
     setRuntime(next);
@@ -153,12 +252,14 @@ export function SessionStartScreen({
     }
   }
 
-  function onRuntimeKey(event: KeyboardEvent<HTMLButtonElement>) {
-    if (!event.key.startsWith("Arrow")) return;
-    event.preventDefault();
-    const next: Runtime = runtime === "local" ? "cloud" : "local";
-    chooseRuntime(next);
-    runtimeButtons.current[RUNTIMES.findIndex((option) => option.value === next)]?.focus();
+  function chooseSource(next: Source) {
+    setFailure(null);
+    setSource(next);
+  }
+
+  function toggleEnvFile(file: string, ticked: boolean) {
+    setFailure(null);
+    setIncludeEnv((current) => (ticked ? [...current, file] : current.filter((entry) => entry !== file)));
   }
 
   async function browse() {
@@ -167,21 +268,38 @@ export function SessionStartScreen({
     if (picked) setChosen(picked);
   }
 
+  /** The failure the person sees for a start that did not happen. A server code maps to the part of the form it is about. */
+  function failureOf(result: { error: string; detail?: string }): Failure {
+    if (!cloudOn) return { field: "general", message: result.error };
+    if (result.detail) return { field: "general", message: result.detail };
+    return cloudStartFailure(result.error, snapshotOn ? "snapshot" : "repo");
+  }
+
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const message = text.trim();
     if (!message || starting) return;
-    if (cloudOn ? !cloudReady : !folder) return;
+    if (cloudOn ? !cloudStartable : !folder) return;
     const fields = { text: message, model, effort };
     const request: StartRequest = cloudOn
-      ? { ...fields, runtime: "cloud", harness: "claude", gitRemote: repoValue, branch: branch.trim(), network: openNetwork ? "open" : "restricted" }
+      ? snapshotOn
+        ? {
+            ...fields,
+            runtime: "cloud",
+            harness: "claude",
+            source: "snapshot",
+            folderPath: folder!,
+            includeEnvFiles: (envFiles ?? []).filter((file) => includeEnv.includes(file)),
+            network: openNetwork ? "open" : "restricted",
+          }
+        : { ...fields, runtime: "cloud", harness: "claude", source: "repo", gitRemote: repoValue, branch: branch.trim(), network: openNetwork ? "open" : "restricted" }
       : { ...fields, harness, folderPath: folder! };
     setStarting(true);
     setFailure(null);
     try {
       const result = await onStart(request);
       if (result.ok) clearDraft(NEW_SESSION_DRAFT_KEY);
-      else setFailure(cloudOn ? cloudStartFailure(result.error) : { field: "general", message: result.error });
+      else setFailure(failureOf(result));
     } finally {
       setStarting(false);
     }
@@ -203,23 +321,13 @@ export function SessionStartScreen({
         {cloud && (
           <div className="ui-start__where">
             <span id={ids.where} className="ui-muted">Where it runs</span>
-            <div className="ui-segmented" role="radiogroup" aria-labelledby={ids.where}>
-              {RUNTIMES.map((option, index) => (
-                <button
-                  key={option.value}
-                  ref={(node) => { runtimeButtons.current[index] = node; }}
-                  type="button"
-                  role="radio"
-                  aria-checked={runtime === option.value}
-                  tabIndex={runtime === option.value ? 0 : -1}
-                  className={`ui-segmented__option${runtime === option.value ? " ui-segmented__option--selected" : ""}`}
-                  onClick={() => chooseRuntime(option.value)}
-                  onKeyDown={onRuntimeKey}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+            <Segmented labelId={ids.where} options={RUNTIMES} value={runtime} onChoose={chooseRuntime} />
+          </div>
+        )}
+        {cloudOn && (
+          <div className="ui-start__where">
+            <span id={ids.source} className="ui-muted">Source</span>
+            <Segmented labelId={ids.source} options={SOURCES} value={source} onChoose={chooseSource} />
           </div>
         )}
         <form className="ui-composer__box ui-start__box" onSubmit={submit}>
@@ -245,7 +353,7 @@ export function SessionStartScreen({
               </ul>
             )}
           </div>
-          {cloudOn && (
+          {cloudOn && !snapshotOn && (
             <div className="ui-start__repo">
               <div className="ui-start__field ui-start__field--repo">
                 <label htmlFor={ids.repo} className="ui-muted">Repository</label>
@@ -278,6 +386,24 @@ export function SessionStartScreen({
               </div>
             </div>
           )}
+          {snapshotOn && (
+            <div className="ui-start__snapshot">
+              <p className="ui-muted">Copies this folder to Draft cloud. The .git folder and node_modules are left out.</p>
+              <fieldset className="ui-start__env">
+                <legend className="ui-muted">.env files</legend>
+                {envFiles && envFiles.length > 0 && <p className="ui-start__warning" role="note">Anyone in this session can ask the agent to read these.</p>}
+                {envError && <p className="ui-error" role="alert">{envError}</p>}
+                {envFiles === null && !envError && <p className="ui-muted" role="status">Looking for .env files…</p>}
+                {envFiles?.length === 0 && <p className="ui-muted">No .env files in this folder.</p>}
+                {envFiles?.map((file) => (
+                  <label key={file} className="ui-start__env-file">
+                    <input type="checkbox" checked={includeEnv.includes(file)} onChange={(event) => toggleEnvFile(file, event.target.checked)} />
+                    <code>{file}</code>
+                  </label>
+                ))}
+              </fieldset>
+            </div>
+          )}
           <div className="ui-composer__row">
             <label className="ui-visually-hidden" htmlFor="start-message">First message</label>
             <textarea
@@ -308,7 +434,7 @@ export function SessionStartScreen({
               <button
                 type="submit"
                 className="ui-btn ui-btn--primary"
-                disabled={starting || !text.trim() || (cloudOn ? !cloudReady : !folder || blocks(localProblem))}
+                disabled={starting || !text.trim() || (cloudOn ? !cloudStartable : !folder || blocks(localProblem))}
               >
                 {starting ? "Starting…" : "Start"}
               </button>
@@ -332,6 +458,7 @@ export function SessionStartScreen({
           </div>
         )}
         {!cloudOn && !folder && <p className="ui-muted">Choose a folder to start in.</p>}
+        {snapshotOn && !folder && <p className="ui-muted">Choose a folder to copy.</p>}
         {!cloudOn && (setup ?? (line && <p className={blocks(localProblem) ? "ui-error" : "ui-muted"} role="status">{line}</p>))}
         {failure && failure.field !== "repo" && failure.field !== "branch" && failure.field !== "network" && <p className="ui-error" role="alert">{failure.message}</p>}
       </div>

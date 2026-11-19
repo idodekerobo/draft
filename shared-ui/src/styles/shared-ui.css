@@ -1068,6 +1068,12 @@
 .ui-start__network { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
 .ui-start__network-label { color: var(--color-text-primary); }
 .ui-start__warning { margin: 0; color: var(--color-status-yellow); }
+.ui-start__snapshot { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; max-width: 680px; padding: var(--space-3) var(--space-3) 0; font-size: var(--font-size-secondary); }
+.ui-start__snapshot > p { margin: 0; }
+.ui-start__env { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; margin: 0; padding: 0; border: 0; }
+.ui-start__env legend { padding: 0; margin-bottom: var(--space-1); }
+.ui-start__env-file { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.ui-start__env-file code { overflow-wrap: anywhere; }
 
 .ui-sessions__scroll { overflow-x: hidden; }
 .ui-sessions__list > li { min-width: 0; }

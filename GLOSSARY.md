@@ -22,6 +22,9 @@ When you add a concept, add it here first.
   computer; the sandbox host runs in a cloud machine. Column `sessions.host_id`.
 - **Machine**: one computer or VM. A host runs on a machine. Fly VM IDs are `sandbox_machine_id`.
 - **Sandbox**: an isolated cloud machine Draft starts through a `SandboxProvider`. It may have a volume.
+- **Seed**: what a cloud session's workspace starts from. A GitHub repository (`repo`, cloned), or a folder snapshot
+  (`snapshot`, a `tar.gz` in the `session-seeds` bucket that the person packed from their folder). Column `sessions.seed`.
+  Not a run's context or a routine's input.
 - **Environment**: staging or production. Only that.
 
 ## Agents

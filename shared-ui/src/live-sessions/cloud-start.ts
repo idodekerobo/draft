@@ -52,7 +52,24 @@ const FAILURES: Record<string, CloudStartFailure> = {
   start_failed: GENERAL_FAILURE,
 };
 
+/** Where the cloud seed comes from. A snapshot has no repository or branch field to point at. */
+export type CloudStartSource = "repo" | "snapshot";
+
+/** Snapshot failures all show under the form, since the repository fields are not on screen. */
+const SNAPSHOT_FAILURES: Record<string, CloudStartFailure> = {
+  invalid_seed: { field: "general", message: "Draft cloud could not use this folder. Try again." },
+  seed_not_uploaded: { field: "general", message: "The folder did not finish uploading. Try again." },
+  snapshot_empty: { field: "general", message: "There is nothing to copy in this folder. Add files, then try again." },
+  not_a_folder: { field: "general", message: "Choose a folder to copy." },
+  unknown_env_file: { field: "general", message: "The .env files changed. Check the list and try again." },
+  snapshot_pack_failed: { field: "general", message: "Draft could not pack this folder. Try again." },
+  snapshot_too_large: { field: "general", message: "This folder is too large to copy to Draft cloud." },
+  snapshot_upload_failed: { field: "general", message: "The folder could not be uploaded. Try again." },
+  seed_upload_url_failed: { field: "general", message: "Draft cloud could not prepare the upload. Try again." },
+};
+
 /** The message for an error code from a cloud start. Codes that are not listed get the general message. */
-export function cloudStartFailure(code: string): CloudStartFailure {
-  return FAILURES[code] ?? GENERAL_FAILURE;
+export function cloudStartFailure(code: string, source: CloudStartSource = "repo"): CloudStartFailure {
+  const snapshot = source === "snapshot" ? SNAPSHOT_FAILURES[code] : undefined;
+  return snapshot ?? FAILURES[code] ?? GENERAL_FAILURE;
 }

@@ -1,9 +1,17 @@
 import type { ApprovalResponse, SessionViewQuery, SessionViewResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-core/live-sessions";
 import { hostServices, ServerError } from "draft-core/host/services";
 import { sessionBase, type StartLiveSessionResult } from "draft-core/host/live-session";
+import { listSnapshotEnvFiles, nodeSnapshotFs, putArchive, uploadSnapshot, type SnapshotExec, type SnapshotFs, type PutArchive, type SnapshotUploadResult } from "./snapshot";
+import { capture } from "../exec";
 
 export type LocalStartParams = { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null };
-export type CloudStartParams = { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; gitRemote: string; branch: string };
+
+/** The seed a cloud session starts from: a GitHub repository, or a folder snapshot already uploaded under `sessionId`. */
+export type CloudSeedParams =
+  | { kind: "repo"; gitRemote: string; branch: string }
+  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string };
+
+export type CloudStartParams = { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; seed: CloudSeedParams };
 
 /** The server calls a desktop makes to create a cloud session. Injected so tests can run without a signed-in host. */
 export interface CloudStartDeps {
@@ -11,9 +19,23 @@ export interface CloudStartDeps {
   fetchServerJSON<T>(path: string, init?: RequestInit): Promise<T>;
 }
 
+/** What packing and uploading a folder needs beyond the server calls. */
+export interface CloudSnapshotDeps extends CloudStartDeps {
+  fs: SnapshotFs;
+  exec: SnapshotExec;
+  put: PutArchive;
+}
+
 const hostCloudStartDeps: CloudStartDeps = {
   workspaceId: () => hostServices().workspaceId(),
   fetchServerJSON: (path, init) => hostServices().fetchServerJSON(path, init),
+};
+
+const hostCloudSnapshotDeps: CloudSnapshotDeps = {
+  ...hostCloudStartDeps,
+  fs: nodeSnapshotFs,
+  exec: (argv, options) => capture(argv, options),
+  put: putArchive,
 };
 
 /**
@@ -23,6 +45,10 @@ const hostCloudStartDeps: CloudStartDeps = {
 export async function startCloudLiveSession(params: CloudStartParams, deps: CloudStartDeps = hostCloudStartDeps): Promise<StartLiveSessionResult> {
   const workspaceId = deps.workspaceId();
   if (!workspaceId) return { ok: false, error: "signed_out" };
+  // A snapshot names its session in the body. The server checks that the key's session is the same one.
+  const { seed } = params;
+  const sessionFields = seed.kind === "snapshot" ? { sessionId: seed.sessionId } : {};
+  const seedBody = seed.kind === "repo" ? { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch } : { kind: "snapshot", storageKey: seed.storageKey, folderName: seed.folderName };
   try {
     const body = await deps.fetchServerJSON<{ ok: true; session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
       method: "POST",
@@ -32,13 +58,43 @@ export async function startCloudLiveSession(params: CloudStartParams, deps: Clou
         model: params.model,
         reasoningEffort: params.effort,
         network: params.network,
-        seed: { kind: "repo", gitRemote: params.gitRemote, branch: params.branch },
+        ...sessionFields,
+        seed: seedBody,
       }),
     });
     return { ok: true, sessionId: body.session.id };
   } catch (error) {
     return { ok: false, error: error instanceof ServerError ? error.code : "start_failed" };
   }
+}
+
+/** The `.env*` files of a folder, for the checklist before a snapshot. Nothing is sent to the server. */
+export function listLiveSessionEnvFiles(folderPath: string, fs: SnapshotFs = nodeSnapshotFs): { ok: true; files: string[] } | { ok: false; error: string } {
+  return listSnapshotEnvFiles(folderPath, fs);
+}
+
+/**
+ * Packs a folder with the chosen `.env` files, uploads it under a new session id, and returns what the start call
+ * needs. Nothing is uploaded when the folder is refused.
+ */
+export async function uploadLiveSessionSnapshot(
+  params: { folderPath: string; includeEnvFiles: string[] },
+  deps: CloudSnapshotDeps = hostCloudSnapshotDeps,
+): Promise<SnapshotUploadResult> {
+  const workspaceId = deps.workspaceId();
+  if (!workspaceId) return { ok: false, error: "signed_out" };
+  return uploadSnapshot(params.folderPath, params.includeEnvFiles, {
+    fs: deps.fs,
+    exec: deps.exec,
+    put: deps.put,
+    requestUpload: async () => {
+      const { sessionId, storageKey, signedUrl } = await deps.fetchServerJSON<{ ok: true; sessionId: string; storageKey: string; signedUrl: string }>(
+        `workspaces/${workspaceId}/live-sessions/seed-upload`,
+        { method: "POST" },
+      );
+      return { sessionId, storageKey, signedUrl };
+    },
+  });
 }
 
 /**

@@ -8,8 +8,9 @@ import type { SandboxRef, VolumeRef } from "../metaharness/sandbox/providers";
 import type { ErrorOperation } from "../types/enums";
 import type { AgentRunRow, SessionRow } from "../types/tables";
 import { claudeCredentialRules } from "./claude-credential";
-import { START_FAILED, cloudRunEnv, cloudRunSpec, endCloudSession, failRun, type CloudSessionDeps } from "./launch";
+import { START_FAILED, cloudRunEnv, cloudRunSpec, endCloudSession, failRun, hostSeedFor, snapshotStoreOf, type CloudSessionDeps, type StoredSeed } from "./launch";
 import { parseGitHubRemote } from "./parse-start";
+import type { SeedSpec } from "../sandbox/host/config";
 
 /** A sleeping session whose last runs all failed is ended, so a broken sandbox cannot wake it forever. */
 export const RESTART_LIMIT = 3;
@@ -106,9 +107,9 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
 
   const latest = runs[0];
   if (!latest) return abandon({ operation: "session", code: "wake_run_missing", message: "The sleeping session has no earlier run to wake from" });
-  const seed = repoSeedOf(session);
-  if (!seed) return abandon({ operation: "session", code: "session_seed_invalid", message: "The sleeping session has no repository seed to wake from" });
-  const repo = parseGitHubRemote(seed.gitRemote)?.repo ?? null;
+  const seed = storedSeedOf(session);
+  if (!seed) return abandon({ operation: "session", code: "session_seed_invalid", message: "The sleeping session has no seed to wake from" });
+  const repo = seed.kind === "repo" ? (parseGitHubRemote(seed.gitRemote)?.repo ?? null) : null;
 
   let network: "restricted" | "open";
   try {
@@ -143,6 +144,14 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
     return abandon({ operation: "session", code: "claude_credential_failed", message: "Reading the workspace's Claude Code login failed", cause });
   }
 
+  // The first link has expired. The host downloads this one only when the workspace is missing from the volume.
+  let hostSeed: SeedSpec;
+  try {
+    hostSeed = await hostSeedFor(seed, snapshotStoreOf(deps));
+  } catch (cause) {
+    return abandon({ operation: "session", code: "snapshot_link_failed", message: "Creating the download link of the folder snapshot failed", cause });
+  }
+
   const volume = volumeOf(session.sandbox_volume);
   if (!volume) return abandon({ operation: "session", code: "sandbox_volume_missing", message: "The sleeping session has no sandbox volume to wake on" });
 
@@ -161,7 +170,7 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
 
   let machine: SandboxRef;
   try {
-    const env = cloudRunEnv({ sessionId, workspaceId, runId, claudeToken, seed, network }, deps);
+    const env = cloudRunEnv({ sessionId, workspaceId, runId, claudeToken, seed: hostSeed, network }, deps);
     machine = await provider.create({ runId, env, metadata: { session_id: sessionId, run_id: runId, kind: "cloud_session" }, volume: { existing: volume } });
   } catch (cause) {
     return abandon({ operation: "execution", code: "sandbox_create_failed", message: "Creating the machine of a woken cloud session failed", cause });
@@ -192,9 +201,10 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
   return { status: "woken", runId };
 }
 
-/** The repository a session was started from, read back from its row. Null when the row has none. */
-function repoSeedOf(session: SessionRow): { kind: "repo"; gitRemote: string; branch: string } | null {
-  const seed = session.seed as { kind?: unknown; branch?: unknown } | null;
+/** The seed a session was started from, read back from its row. Null when the row has none. */
+function storedSeedOf(session: SessionRow): StoredSeed | null {
+  const seed = session.seed as { kind?: unknown; branch?: unknown; storageKey?: unknown } | null;
+  if (seed?.kind === "snapshot") return typeof seed.storageKey === "string" ? { kind: "snapshot", storageKey: seed.storageKey } : null;
   if (!session.git_remote || seed?.kind !== "repo" || typeof seed.branch !== "string") return null;
   return { kind: "repo", gitRemote: session.git_remote, branch: seed.branch };
 }

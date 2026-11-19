@@ -8,8 +8,9 @@ import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import type { SandboxRef } from "../metaharness/sandbox/providers";
 import type { ErrorOperation } from "../types/enums";
 import { claudeCredentialRules } from "./claude-credential";
-import { START_FAILED, cloudRunEnv, cloudRunSpec, endCloudSession, failRun, type CloudSessionDeps } from "./launch";
+import { START_FAILED, cloudRunEnv, cloudRunSpec, endCloudSession, failRun, hostSeedFor, snapshotStoreOf, type CloudSessionDeps } from "./launch";
 import type { CloudStartInput } from "./parse-start";
+import type { SeedSpec } from "../sandbox/host/config";
 
 export const CLOUD_HOST_NAME = "Draft cloud";
 /** The volume that holds the workspace and HOME, so a sleeping session keeps its files. */
@@ -42,8 +43,22 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
   const newId = deps.newId ?? randomUUID;
   const resolveCredential = deps.resolveCredential ?? resolveHarnessCredential;
   const { workspaceId, ownerUserId, seed } = input;
-  const sessionId = newId();
+  const snapshots = snapshotStoreOf(deps);
+  // A snapshot's session id is its object key's, so the upload sits under the session that starts from it.
+  const sessionId = seed.kind === "snapshot" ? seed.sessionId : newId();
   const runId = newId();
+
+  // Checked before any row exists, so a snapshot that never finished uploading leaves nothing behind.
+  if (seed.kind === "snapshot") {
+    let uploaded: boolean;
+    try {
+      uploaded = await snapshots.exists(seed.storageKey);
+    } catch (cause) {
+      await recordError({ client, workspaceId, operation: "session", code: "snapshot_check_failed", message: "Checking the uploaded folder snapshot failed", error: cause });
+      return { ok: false, status: 502, error: START_FAILED };
+    }
+    if (!uploaded) return { ok: false, status: 409, error: "seed_not_uploaded" };
+  }
 
   const { error: insertError } = await client
     .from("sessions")
@@ -56,9 +71,9 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
       reasoning_effort: input.reasoningEffort,
       host_id: cloudHostId(sessionId),
       host_name: CLOUD_HOST_NAME,
-      git_remote: seed.gitRemote,
-      folder_name: repoName(seed.gitRemote),
-      seed: { kind: "repo", branch: seed.branch },
+      git_remote: seed.kind === "repo" ? seed.gitRemote : null,
+      folder_name: seed.kind === "repo" ? repoName(seed.gitRemote) : seed.folderName,
+      seed: seed.kind === "repo" ? { kind: "repo", branch: seed.branch } : { kind: "snapshot", storageKey: seed.storageKey },
       runtime: "cloud",
       status: "starting",
     })
@@ -97,7 +112,7 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
       model: input.model,
       reasoningEffort: input.reasoningEffort,
       network: input.network,
-      repo: seed.repo,
+      repo: seed.kind === "repo" ? seed.repo : null,
     });
     await createAgentRun(client, { spec, idempotencyKey: `cloud-session:${sessionId}`, status: "preparing", sessionId });
     runCreated = true;
@@ -115,9 +130,16 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
     return abandon({ status: 502, response: START_FAILED, code: "claude_credential_failed", operation: "session", message: "Reading the workspace's Claude Code login failed", cause });
   }
 
+  let hostSeed: SeedSpec;
+  try {
+    hostSeed = await hostSeedFor(seed, snapshots);
+  } catch (cause) {
+    return abandon({ status: 502, response: START_FAILED, code: "snapshot_link_failed", operation: "session", message: "Creating the download link of the folder snapshot failed", cause });
+  }
+
   let created: SandboxRef;
   try {
-    const env = cloudRunEnv({ sessionId, workspaceId, runId, claudeToken, seed: { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch }, network: input.network }, deps);
+    const env = cloudRunEnv({ sessionId, workspaceId, runId, claudeToken, seed: hostSeed, network: input.network }, deps);
     created = await provider.create({ runId, env, metadata: { session_id: sessionId, run_id: runId, kind: "cloud_session" }, volume: { sizeGb: CLOUD_VOLUME_GB } });
   } catch (cause) {
     return abandon({ status: 502, response: START_FAILED, code: "sandbox_create_failed", operation: "execution", message: "Creating the sandbox of a cloud session failed", cause });

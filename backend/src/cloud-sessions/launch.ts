@@ -7,8 +7,10 @@ import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
 import { createAgentRunToken, type AgentRunTokenScope } from "../metaharness/runs/run-token";
 import type { SandboxDeploymentConfig } from "../metaharness/sandbox/config";
 import type { SandboxProvider } from "../metaharness/sandbox/providers";
+import type { SeedSpec } from "../sandbox/host/config";
 import { buildCloudRunSpec, type CloudRunSpecInput } from "./run-spec";
 import { cloudSandboxEnv, type CloudSandboxEnvInput } from "./sandbox-env";
+import { SNAPSHOT_DOWNLOAD_TTL_SECONDS, storageSnapshotStore, type SnapshotStore } from "./snapshot-seed";
 
 export const START_FAILED = "start_failed";
 const RUN_TOKEN_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -21,8 +23,23 @@ export interface CloudSessionDeps {
   /** Signs the run token. It is the sandbox callback secret, which run tokens derive their own key from. */
   tokenSecret: string;
   resolveCredential?: typeof resolveHarnessCredential;
+  /** Defaults to the service-role client's storage. */
+  snapshots?: SnapshotStore;
   now?: () => number;
   newId?: () => string;
+}
+
+/** A session's seed as its row keeps it. A snapshot keeps its object key, since a download link expires. */
+export type StoredSeed = { kind: "repo"; gitRemote: string; branch: string } | { kind: "snapshot"; storageKey: string };
+
+export function snapshotStoreOf(deps: Pick<CloudSessionDeps, "client" | "snapshots">): SnapshotStore {
+  return deps.snapshots ?? storageSnapshotStore(deps.client);
+}
+
+/** What the host is told to fetch. A snapshot gets a new download link on every launch. */
+export async function hostSeedFor(seed: StoredSeed, snapshots: SnapshotStore): Promise<SeedSpec> {
+  if (seed.kind === "repo") return { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch };
+  return { kind: "snapshot", url: await snapshots.downloadUrl(seed.storageKey, SNAPSHOT_DOWNLOAD_TTL_SECONDS) };
 }
 
 /** The spec of a new run of a cloud session. The run reads the workspace's current base context. */

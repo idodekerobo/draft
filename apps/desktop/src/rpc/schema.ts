@@ -83,6 +83,11 @@ export interface AppState {
   activeProfile: string;
 }
 
+/** What a cloud session starts from: a GitHub repository, or a folder snapshot already uploaded under `sessionId`. */
+export type CloudSessionSeed =
+  | { kind: "repo"; gitRemote: string; branch: string }
+  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string };
+
 export interface SessionLaunchConfig {
   tool: "claude-code" | "codex";
   profile: string;
@@ -350,8 +355,20 @@ export type AppRPCType = {
       startLiveSession: {
         params:
           | { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null }
-          | { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; gitRemote: string; branch: string };
+          | { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; seed: CloudSessionSeed };
         response: { ok: true; sessionId: string } | { ok: false; error: string };
+      };
+
+      /** The `.env*` files in a folder, nested ones included, for the snapshot checklist. All start unticked by the caller. */
+      listSessionEnvFiles: { params: { folderPath: string }; response: { ok: true; files: string[] } | { ok: false; error: string } };
+
+      /**
+       * Packs a folder for a cloud session's snapshot, with the ticked .env files, and uploads it. The result holds the
+       * session id, key and folder name that startLiveSession needs. A folder over the cap returns its size and a message.
+       */
+      uploadSessionSnapshot: {
+        params: { folderPath: string; includeEnvFiles: string[] };
+        response: { ok: true; sessionId: string; storageKey: string; folderName: string; bytes: number } | { ok: false; error: string; bytes?: number; detail?: string };
       };
 
       /** The origin remote of a folder as git reports it, or null when it is not a git repository or has none. */

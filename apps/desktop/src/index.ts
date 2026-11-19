@@ -47,10 +47,12 @@ import {
   getLiveSessionEvents,
   getLiveSessionView,
   listLiveSessions,
+  listLiveSessionEnvFiles,
   sendLiveSessionMessage,
   setLiveSessionMode,
   stopLiveSession,
   startLiveSessionRequest,
+  uploadLiveSessionSnapshot,
 } from "./main/live-session-api";
 import {
   endLiveSession,
@@ -828,6 +830,10 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       },
 
       startLiveSession: (params) => startLiveSessionRequest(params, ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort })),
+
+      listSessionEnvFiles: ({ folderPath }) => listLiveSessionEnvFiles(folderPath),
+
+      uploadSessionSnapshot: (params) => uploadLiveSessionSnapshot(params),
 
       folderGitRemote: async ({ folderPath }) => ({ gitRemote: await gitRemote(folderPath) }),
 

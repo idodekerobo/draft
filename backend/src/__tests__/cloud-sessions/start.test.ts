@@ -5,6 +5,7 @@ import { CredentialError } from "../../credentials/crypto";
 import { verifyAgentRunToken } from "../../metaharness/runs/run-token";
 import { startCloudSession, type StartCloudSessionDeps } from "../../cloud-sessions/start";
 import type { CloudStartInput } from "../../cloud-sessions/parse-start";
+import type { SnapshotStore } from "../../cloud-sessions/snapshot-seed";
 import { fakeClient, fakeDb, type FakeDb } from "../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -313,5 +314,118 @@ describe("startCloudSession", () => {
     expect(errorCodes()).toEqual(["run_create_failed"]);
     expect(session()).toMatchObject({ status: "ended", end_reason: "start_failed" });
     expect(db.tables.errors![0]).toMatchObject({ agent_run_id: null });
+  });
+});
+
+const SNAPSHOT_KEY = `${WS}/${SESSION}/seed.tar.gz`;
+const snapshotInput: CloudStartInput = { ...input, seed: { kind: "snapshot", sessionId: SESSION, storageKey: SNAPSHOT_KEY, folderName: "marigold" } };
+
+/** Returns the ids in order. A snapshot start takes its session id from the key, so only the run id and the token nonce come from here. */
+function sequence(...values: string[]): () => string {
+  const queue = [...values];
+  return () => queue.shift() ?? crypto.randomUUID();
+}
+
+/** A snapshot store holding the objects a test names. Every link it signs is new, so a test can tell launches apart. */
+function fakeSnapshots(objects: string[] = [SNAPSHOT_KEY]) {
+  const signed: Array<{ key: string; ttl: number; url: string }> = [];
+  const store: SnapshotStore = {
+    async exists(key) {
+      return objects.includes(key);
+    },
+    async downloadUrl(key, ttl) {
+      const url = `https://project.supabase.co/storage/v1/object/sign/session-seeds/${key}?token=${signed.length + 1}`;
+      signed.push({ key, ttl, url });
+      return url;
+    },
+  };
+  return { store, signed };
+}
+
+describe("startCloudSession from a folder snapshot", () => {
+  let logs: unknown[][];
+  let spies: Array<{ mockRestore(): void }>;
+  beforeEach(() => {
+    logs = [];
+    spies = ["log", "error", "warn", "info"].map((level) => spyOn(console, level as "log").mockImplementation((...args: unknown[]) => void logs.push(args)));
+  });
+  afterEach(() => spies.forEach((spy) => spy.mockRestore()));
+
+  it("starts under the key's session, stores the key, and gives the host a fresh one-hour download link", async () => {
+    const fly = fakeProvider();
+    const snapshots = fakeSnapshots();
+    const outcome = await startCloudSession(snapshotInput, deps({ provider: fly.provider, snapshots: snapshots.store, newId: sequence(RUN, NONCE) }));
+
+    expect(outcome).toEqual({ ok: true, sessionId: SESSION });
+    expect(session()).toMatchObject({
+      id: SESSION,
+      workspace_id: WS,
+      git_remote: null,
+      folder_name: "marigold",
+      seed: { kind: "snapshot", storageKey: SNAPSHOT_KEY },
+      runtime: "cloud",
+      status: "starting",
+      host_id: `cloud:${SESSION}`,
+    });
+    expect(snapshots.signed).toEqual([{ key: SNAPSHOT_KEY, ttl: 3600, url: expect.stringContaining(SNAPSHOT_KEY) }]);
+    expect(fly.created[0]!.env.DRAFT_SEED).toBe(JSON.stringify({ kind: "snapshot", url: snapshots.signed[0]!.url }));
+    expect(run()).toMatchObject({ id: RUN, status: "running", sandbox_machine_id: "machine-1" });
+  });
+
+  it("gives the run no GitHub credential, since a snapshot has no repository", async () => {
+    await startCloudSession(snapshotInput, deps({ provider: fakeProvider().provider, snapshots: fakeSnapshots().store, newId: sequence(RUN, NONCE) }));
+
+    const names = (run().permissions as Array<{ tool: string }>).map((p) => p.tool);
+    expect(names).toContain("context.read");
+    expect(names).not.toContain("github.credential");
+  });
+
+  it("refuses a snapshot that is not uploaded, before any row, run or sandbox exists", async () => {
+    const fly = fakeProvider();
+    const outcome = await startCloudSession(snapshotInput, deps({ provider: fly.provider, snapshots: fakeSnapshots([]).store, newId: sequence(RUN, NONCE) }));
+
+    expect(outcome).toEqual({ ok: false, status: 409, error: "seed_not_uploaded" });
+    expect(db.tables.sessions).toEqual([]);
+    expect(db.tables.agent_runs).toEqual([]);
+    expect(fly.calls).toEqual([]);
+    expect(db.tables.errors).toEqual([]);
+  });
+
+  it("records a failed object check and returns 502 before any row exists", async () => {
+    const fly = fakeProvider();
+    const failing: SnapshotStore = {
+      exists: async () => { throw new Error("storage 503"); },
+      downloadUrl: async () => "unused",
+    };
+    const outcome = await startCloudSession(snapshotInput, deps({ provider: fly.provider, snapshots: failing, newId: sequence(RUN, NONCE) }));
+
+    expect(outcome).toEqual({ ok: false, status: 502, error: "start_failed" });
+    expect(db.tables.sessions).toEqual([]);
+    expect(errorCodes()).toEqual(["snapshot_check_failed"]);
+    expect(fly.calls).toEqual([]);
+  });
+
+  it("ends the session as start_failed, fails its run, and creates no sandbox when the download link cannot be made", async () => {
+    const fly = fakeProvider();
+    const failing: SnapshotStore = {
+      exists: async () => true,
+      downloadUrl: async () => { throw new Error("sign failed"); },
+    };
+    const outcome = await startCloudSession(snapshotInput, deps({ provider: fly.provider, snapshots: failing, newId: sequence(RUN, NONCE) }));
+
+    expect(outcome).toEqual({ ok: false, status: 502, error: "start_failed" });
+    expect(fly.calls).toEqual([]);
+    expect(errorCodes()).toEqual(["snapshot_link_failed"]);
+    expect(session()).toMatchObject({ status: "ended", end_reason: "start_failed" });
+    expect(run()).toMatchObject({ status: "failed", failure_code: "snapshot_link_failed" });
+  });
+
+  it("never logs the download link", async () => {
+    const fly = fakeProvider();
+    const snapshots = fakeSnapshots();
+    await startCloudSession(snapshotInput, deps({ provider: fly.provider, snapshots: snapshots.store, newId: sequence(RUN, NONCE) }));
+
+    expect(JSON.stringify(logs)).not.toContain(snapshots.signed[0]!.url);
+    expect(JSON.stringify(db.tables)).not.toContain(snapshots.signed[0]!.url);
   });
 });

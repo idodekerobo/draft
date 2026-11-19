@@ -3,6 +3,8 @@ import { parseCloudStart } from "../../cloud-sessions/parse-start";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const OWNER = "66666666-6666-4666-8666-666666666666";
+const SESSION = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const OTHER_SESSION = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const owner = { workspaceId: WS, ownerUserId: OWNER };
 const repoSeed = (overrides: Record<string, unknown> = {}) => ({ kind: "repo", gitRemote: "https://github.com/acme/app", branch: "main", ...overrides });
 const body = (overrides: Record<string, unknown> = {}) => ({ runtime: "cloud", harness: "claude", model: "haiku", seed: repoSeed(), ...overrides });
@@ -70,9 +72,60 @@ describe("parseCloudStart", () => {
     }
   });
 
-  it("checks a snapshot's key against the workspace, then refuses it as not yet supported", () => {
-    expect(errorOf(parseCloudStart(body({ seed: { kind: "snapshot", storageKey: "other-ws/snap.tar.gz" } }), owner))).toBe("invalid_seed");
-    expect(errorOf(parseCloudStart(body({ seed: { kind: "snapshot", storageKey: `${WS}/../snap.tar.gz` } }), owner))).toBe("invalid_seed");
-    expect(errorOf(parseCloudStart(body({ seed: { kind: "snapshot", storageKey: `${WS}/snap.tar.gz` } }), owner))).toBe("snapshot_not_supported");
+  it("accepts a snapshot whose key is this workspace's session seed, and takes the session id from the key", () => {
+    const result = parseCloudStart(body({ seed: { kind: "snapshot", storageKey: `${WS}/${SESSION}/seed.tar.gz`, folderName: "marigold" } }), owner);
+    expect(result).toEqual({
+      ok: true,
+      input: {
+        workspaceId: WS,
+        ownerUserId: OWNER,
+        harness: "claude",
+        model: "haiku",
+        reasoningEffort: null,
+        network: "restricted",
+        seed: { kind: "snapshot", sessionId: SESSION, storageKey: `${WS}/${SESSION}/seed.tar.gz`, folderName: "marigold" },
+      },
+    });
+  });
+
+  it("accepts a body sessionId only when it is the key's session", () => {
+    const key = `${WS}/${SESSION}/seed.tar.gz`;
+    expect(parseCloudStart(body({ sessionId: SESSION, seed: { kind: "snapshot", storageKey: key } }), owner).ok).toBe(true);
+    expect(errorOf(parseCloudStart(body({ sessionId: OTHER_SESSION, seed: { kind: "snapshot", storageKey: key } }), owner))).toBe("invalid_seed");
+    expect(errorOf(parseCloudStart(body({ sessionId: "not-a-uuid", seed: { kind: "snapshot", storageKey: key } }), owner))).toBe("invalid_seed");
+  });
+
+  it("refuses a snapshot key outside this workspace, outside the seed file, or with a session id that is not a UUID", () => {
+    const refused = [
+      `other-ws/${SESSION}/seed.tar.gz`,
+      `${WS}/../seed.tar.gz`,
+      `${WS}/${SESSION}/other.tar.gz`,
+      `${WS}/${SESSION}/nested/seed.tar.gz`,
+      `${WS}/not-a-uuid/seed.tar.gz`,
+      `${WS}/${SESSION.toUpperCase()}/seed.tar.gz`,
+      `${WS}/${SESSION}/seed.tar.gz/../../other`,
+    ];
+    for (const storageKey of refused) {
+      expect(errorOf(parseCloudStart(body({ seed: { kind: "snapshot", storageKey } }), owner))).toBe("invalid_seed");
+    }
+    expect(errorOf(parseCloudStart(body({ seed: { kind: "snapshot" } }), owner))).toBe("invalid_seed");
+  });
+
+  it("gives a snapshot the folder name it was sent with, and 'snapshot' when the name is missing or unusable", () => {
+    const seedWith = (folderName: unknown) => ({ kind: "snapshot", storageKey: `${WS}/${SESSION}/seed.tar.gz`, folderName });
+    const nameOf = (folderName: unknown) => {
+      const result = parseCloudStart(body({ seed: seedWith(folderName) }), owner);
+      return result.ok && result.input.seed.kind === "snapshot" ? result.input.seed.folderName : null;
+    };
+    expect(nameOf("  marigold  ")).toBe("marigold");
+    expect(nameOf(undefined)).toBe("snapshot");
+    expect(nameOf(42)).toBe("snapshot");
+    expect(nameOf("")).toBe("snapshot");
+    expect(nameOf("x".repeat(201))).toBe("snapshot");
+    expect(nameOf("bad\nname")).toBe("snapshot");
+  });
+
+  it("refuses a session id on a repository seed", () => {
+    expect(errorOf(parseCloudStart(body({ sessionId: SESSION }), owner))).toBe("invalid_seed");
   });
 });

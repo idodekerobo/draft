@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { SessionStartScreen, type StartRequest } from "./SessionStartScreen";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { SessionStartScreen, type StartRequest, type StartResult } from "./SessionStartScreen";
 
 afterEach(cleanup);
 
@@ -197,7 +197,8 @@ describe("SessionStartScreen in Draft cloud", () => {
   const REMOTE = "https://github.com/acme/marigold";
   const cloudSetup = ({ remote = REMOTE as string | null, recent = ["/work/marigold", "/work/other"], onStart = mock(async (_request: StartRequest) => ({ ok: true }) as { ok: true } | { ok: false; error: string }), availability = {} as Partial<Record<string, "missing" | "signed_out" | "untested_version">> } = {}) => {
     const folderRemote = mock(async (_folder: string) => remote);
-    render(<SessionStartScreen recentFolders={recent} onBrowse={async () => null} onStart={onStart} cloud={{ folderRemote }} availability={availability} />);
+    const envFiles = mock(async (_folder: string) => [] as string[]);
+    render(<SessionStartScreen recentFolders={recent} onBrowse={async () => null} onStart={onStart} cloud={{ folderRemote, envFiles }} availability={availability} />);
     return { onStart, folderRemote };
   };
   const chooseCloud = () => fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
@@ -243,7 +244,7 @@ describe("SessionStartScreen in Draft cloud", () => {
     await waitFor(() => expect((screen.getByRole("textbox", { name: "Repository" }) as HTMLInputElement).value).toBe(REMOTE));
     message("  fix the build  ");
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
-    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ runtime: "cloud", harness: "claude", gitRemote: REMOTE, branch: "main", network: "restricted", text: "fix the build", model: null, effort: null }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith({ runtime: "cloud", harness: "claude", source: "repo", gitRemote: REMOTE, branch: "main", network: "restricted", text: "fix the build", model: null, effort: null }));
   });
 
   it("sends the chosen branch, and an open network when the switch is on", async () => {
@@ -368,5 +369,156 @@ describe("SessionStartScreen in Draft cloud", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
     await waitFor(() => expect(onStart).toHaveBeenCalledWith({ harness: "claude", folderPath: "/work/marigold", text: "go", model: null, effort: null }));
     expect(onStart.mock.calls[0]![0]).not.toHaveProperty("runtime");
+  });
+});
+
+describe("SessionStartScreen in Draft cloud from a folder snapshot", () => {
+  const WARNING = "Anyone in this session can ask the agent to read these.";
+  const chooseCloud = () => fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+  const chooseSnapshot = () => fireEvent.click(screen.getByRole("radio", { name: "This folder (snapshot)" }));
+  const message = (value: string) => fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value } });
+  const startButton = () => screen.getByRole("button", { name: "Start" }) as HTMLButtonElement;
+
+  function snapshotSetup({
+    recent = ["/work/marigold", "/work/other"],
+    envFiles = mock(async (_folder: string) => [".env", ".env.local"]),
+    onStart = mock(async (_request: StartRequest) => ({ ok: true }) as StartResult),
+  }: {
+    recent?: string[];
+    envFiles?: (folder: string) => Promise<string[]>;
+    onStart?: (request: StartRequest) => Promise<StartResult>;
+  } = {}) {
+    const folderRemote = mock(async (_folder: string) => "https://github.com/acme/marigold");
+    render(<SessionStartScreen recentFolders={recent} onBrowse={async () => null} onStart={onStart} cloud={{ folderRemote, envFiles }} />);
+    return { onStart, envFiles };
+  }
+
+  it("offers the GitHub repository first, and This folder (snapshot) as the other source", () => {
+    snapshotSetup();
+    chooseCloud();
+    expect((screen.getByRole("radio", { name: "GitHub repository" }) as HTMLElement).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "This folder (snapshot)" })).toBeTruthy();
+  });
+
+  it("lists the folder's .env files with none ticked and the warning, and drops the repository fields", async () => {
+    const { envFiles } = snapshotSetup();
+    chooseCloud();
+    chooseSnapshot();
+    expect(await screen.findByRole("checkbox", { name: ".env" })).toBeTruthy();
+    expect(envFiles).toHaveBeenCalledWith("/work/marigold");
+    for (const box of screen.getAllByRole("checkbox")) expect((box as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole("checkbox", { name: ".env.local" })).toBeTruthy();
+    expect(screen.getByText(WARNING)).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Repository" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Branch" })).toBeNull();
+  });
+
+  it("says there are no .env files, with no warning, when the folder has none", async () => {
+    snapshotSetup({ envFiles: mock(async (_folder: string) => []) });
+    chooseCloud();
+    chooseSnapshot();
+    expect(await screen.findByText("No .env files in this folder.")).toBeTruthy();
+    expect(screen.queryByText(WARNING)).toBeNull();
+  });
+
+  it("keeps Start disabled until the checklist has loaded", async () => {
+    let finish: (files: string[]) => void = () => {};
+    const envFiles = mock(() => new Promise<string[]>((resolve) => { finish = resolve; }));
+    snapshotSetup({ envFiles });
+    chooseCloud();
+    chooseSnapshot();
+    message("go");
+    expect(startButton().disabled).toBe(true);
+    await act(async () => finish([".env"]));
+    await screen.findByRole("checkbox", { name: ".env" });
+    expect(startButton().disabled).toBe(false);
+  });
+
+  it("starts the snapshot with only the ticked .env files, the folder, and the first message", async () => {
+    const { onStart } = snapshotSetup();
+    chooseCloud();
+    chooseSnapshot();
+    fireEvent.click(await screen.findByRole("checkbox", { name: ".env.local" }));
+    message("  fix the build  ");
+    fireEvent.click(startButton());
+    await waitFor(() =>
+      expect(onStart).toHaveBeenCalledWith({
+        runtime: "cloud",
+        harness: "claude",
+        source: "snapshot",
+        folderPath: "/work/marigold",
+        includeEnvFiles: [".env.local"],
+        network: "restricted",
+        text: "fix the build",
+        model: null,
+        effort: null,
+      }),
+    );
+  });
+
+  it("sends no .env file when none is ticked, and the open network when its switch is on", async () => {
+    const { onStart } = snapshotSetup();
+    chooseCloud();
+    chooseSnapshot();
+    await screen.findByRole("checkbox", { name: ".env" });
+    fireEvent.click(screen.getByRole("switch", { name: "Open network" }));
+    message("go");
+    fireEvent.click(startButton());
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ source: "snapshot", includeEnvFiles: [], network: "open" })));
+  });
+
+  it("clears the ticks when another folder is picked", async () => {
+    snapshotSetup();
+    chooseCloud();
+    chooseSnapshot();
+    fireEvent.click(await screen.findByRole("checkbox", { name: ".env" }));
+    expect((screen.getByRole("checkbox", { name: ".env" }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /marigold/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /other/ }));
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: ".env" }) as HTMLInputElement).checked).toBe(false));
+  });
+
+  it("says the checklist could not be read, and starts with no .env file", async () => {
+    const consoleError = spyOn(console, "error").mockImplementation(() => {});
+    const { onStart } = snapshotSetup({ envFiles: mock(async (_folder: string) => { throw new Error("denied"); }) });
+    chooseCloud();
+    chooseSnapshot();
+    expect(await screen.findByText("Draft could not read this folder's .env files, so none will be included.")).toBeTruthy();
+    message("go");
+    fireEvent.click(startButton());
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ source: "snapshot", includeEnvFiles: [] })));
+    consoleError.mockRestore();
+  });
+
+  it("shows the size refusal with its own sentence, under the form", async () => {
+    const detail = "This folder packs to 212.4 MB. Snapshots are limited to 200 MB, so move large files out of the folder or use a GitHub repository.";
+    snapshotSetup({ onStart: mock(async () => ({ ok: false, error: "snapshot_too_large", detail }) as StartResult) });
+    chooseCloud();
+    chooseSnapshot();
+    await screen.findByRole("checkbox", { name: ".env" });
+    message("go");
+    fireEvent.click(startButton());
+    const alert = await screen.findByText(detail);
+    expect(alert.getAttribute("role")).toBe("alert");
+  });
+
+  it("puts a snapshot's server refusal under the form, not under the repository field it does not show", async () => {
+    snapshotSetup({ onStart: mock(async () => ({ ok: false, error: "invalid_seed" }) as StartResult) });
+    chooseCloud();
+    chooseSnapshot();
+    await screen.findByRole("checkbox", { name: ".env" });
+    message("go");
+    fireEvent.click(startButton());
+    expect((await screen.findByRole("alert")).textContent).toBe("Draft cloud could not use this folder. Try again.");
+    expect((screen.getByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe("go");
+  });
+
+  it("asks for a folder before a snapshot can start", () => {
+    snapshotSetup({ recent: [] });
+    chooseCloud();
+    chooseSnapshot();
+    expect(screen.getByText("Choose a folder to copy.")).toBeTruthy();
+    message("go");
+    expect(startButton().disabled).toBe(true);
   });
 });

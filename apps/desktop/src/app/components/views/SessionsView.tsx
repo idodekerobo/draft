@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isTestedVersion } from "draft-core/harnesses";
-import { SessionStartScreen, SessionView, SessionsLayout, type LiveSession, type SessionMenuItem, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
+import { SessionStartScreen, SessionView, SessionsLayout, type CloudSnapshotStartRequest, type CloudStartRequest, type LiveSession, type SessionMenuItem, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { CodexSetupPanel } from "../connections/CodexSetupPanel";
 import { liveSessionsApi } from "../../liveSessionsApi";
@@ -13,7 +13,14 @@ import { rpc } from "../../rpc";
 
 const loadAgentDefaults = (harness: string) => rpc.request.getAgentDefaults({ harness });
 // Module-level so the start screen's effect does not run again on every render.
-const cloudStart = { folderRemote: (folderPath: string) => rpc.request.folderGitRemote({ folderPath }).then(({ gitRemote }) => gitRemote) };
+const cloudStart = {
+  folderRemote: (folderPath: string) => rpc.request.folderGitRemote({ folderPath }).then(({ gitRemote }) => gitRemote),
+  envFiles: (folderPath: string) =>
+    rpc.request.listSessionEnvFiles({ folderPath }).then((listing) => {
+      if (!listing.ok) throw new Error(listing.error);
+      return listing.files;
+    }),
+};
 const REVEAL_LABEL = /Windows/i.test(navigator.userAgent) ? "Open in Explorer" : "Reveal in Finder";
 
 /** The webview has no process.env, so a dev build is read from the app channel. */
@@ -122,10 +129,24 @@ export function SessionsView() {
     return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
+  /** A repository is sent as it is. A folder is packed and uploaded first, and the start names the upload it made. */
+  async function startCloud(request: CloudStartRequest | CloudSnapshotStartRequest): Promise<{ ok: true; sessionId: string } | { ok: false; error: string; detail?: string }> {
+    const common = { runtime: "cloud" as const, model: request.model, effort: request.effort, network: request.network };
+    if (request.source === "repo") {
+      return rpc.request.startLiveSession({ ...common, seed: { kind: "repo" as const, gitRemote: request.gitRemote, branch: request.branch } });
+    }
+    const upload = await rpc.request.uploadSessionSnapshot({ folderPath: request.folderPath, includeEnvFiles: request.includeEnvFiles });
+    if (!upload.ok) return { ok: false, error: upload.error, ...(upload.detail ? { detail: upload.detail } : {}) };
+    return rpc.request.startLiveSession({
+      ...common,
+      seed: { kind: "snapshot" as const, sessionId: upload.sessionId, storageKey: upload.storageKey, folderName: upload.folderName },
+    });
+  }
+
   async function start(request: StartRequest): Promise<StartResult> {
     const { harness, text, model, effort } = request;
     const result = request.runtime === "cloud"
-      ? await rpc.request.startLiveSession({ runtime: "cloud", model, effort, network: request.network, gitRemote: request.gitRemote, branch: request.branch })
+      ? await startCloud(request)
       : await rpc.request.startLiveSession({ harness, folderPath: request.folderPath, model, effort });
     if (!result.ok) return result;
     track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default", effort: effort ?? "default", runtime: request.runtime ?? "local" });

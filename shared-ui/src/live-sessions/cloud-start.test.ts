@@ -54,4 +54,19 @@ describe("cloudStartFailure", () => {
   it("gives an unknown code the general message", () => {
     expect(cloudStartFailure("request_failed_500")).toEqual({ field: "general", message: "The cloud session could not start. Try again." });
   });
+
+  it("puts a snapshot's invalid seed under the form, since the repository field is not on screen", () => {
+    expect(cloudStartFailure("invalid_seed", "snapshot")).toEqual({ field: "general", message: "Draft cloud could not use this folder. Try again." });
+    expect(cloudStartFailure("invalid_seed", "repo").field).toBe("repo");
+  });
+
+  it("gives each snapshot upload code its own general message, and keeps the login message for both sources", () => {
+    expect(cloudStartFailure("seed_not_uploaded", "snapshot").message).toBe("The folder did not finish uploading. Try again.");
+    expect(cloudStartFailure("snapshot_too_large", "snapshot").field).toBe("general");
+    expect(cloudStartFailure("claude_not_connected", "snapshot").message).toBe("This workspace has no Claude Code login. Connect Claude Code, then try again.");
+  });
+
+  it("gives an unknown snapshot code the general message", () => {
+    expect(cloudStartFailure("request_failed_500", "snapshot")).toEqual({ field: "general", message: "The cloud session could not start. Try again." });
+  });
 });
