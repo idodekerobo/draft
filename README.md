@@ -20,7 +20,7 @@ Local capture + agent connection
              |
              v
 Draft API and workspace
-  Auth · integrations · context versions · session history
+  Auth · connections · context versions · session history
              |
              v
 Server-side synthesis
@@ -33,7 +33,7 @@ Company brain
 
 ### What happens on the server
 
-The Draft backend is the control plane for a team workspace. It handles authentication, organizations, invitations, integrations, webhooks, source data, coding-agent sessions, context versions, and synthesis runs.
+The Draft backend is the control plane for a team workspace. It handles authentication, organizations, invitations, connections, webhooks, source data, coding-agent sessions, context versions, and synthesis runs.
 
 Synthesis runs execute in disposable [Fly Machines](https://fly.io/docs/machines/) so model-backed processing is isolated from the long-running API. The backend schedules the work, prepares a bounded input bundle, starts the sandbox, validates the result, and commits the resulting context version to the workspace.
 
@@ -44,9 +44,9 @@ The hosted service runs this stack for you. In a self-hosted deployment, these s
 The local components connect your agents and computer to the Draft workspace:
 
 - The Electrobun desktop app signs in, displays the shared workspace, manages connections, and shows synthesis activity.
-- The CLI authenticates against the configured Draft API, can read workspace context and coding-agent session data, and can connect/disconnect the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Claude Code) directly — see `draft integrations` in the [CLI reference](./docs/cli.md).
+- The CLI authenticates against the configured Draft API, can read workspace context and coding-agent session data, and can connect/disconnect the workspace's hosted connections (GitHub, Slack, Linear, Fireflies, Claude Code) directly — see `draft connections` in the [CLI reference](./docs/cli.md).
 - The remote MCP server lets supported agents query the authenticated workspace directly during a session. The current read-only tools expose context dimensions, full context documents, and shared skills.
-- The CLI is the scriptable connection path: it can read context and skills, configure project instruction files, install session capture, and manage hosted integrations. Use MCP for direct in-session access and the CLI for setup, scripts, and explicit reads.
+- The CLI is the scriptable connection path: it can read context and skills, configure project instruction files, install session capture, and manage hosted connections. Use MCP for direct in-session access and the CLI for setup, scripts, and explicit reads.
 - The CLI can install a Claude Code project hook that reads a completed transcript from the project machine and sends it to the configured Draft API. The local machine keeps authentication state, project configuration, and temporary capture/runtime files.
 
 The canonical company brain is the workspace in the Draft deployment, not a Git repository on the user's machine. Local files are connection state, caches, runtime state, or source material waiting to be uploaded.
@@ -56,7 +56,7 @@ The canonical company brain is the workspace in the Draft deployment, not a Git 
 1. Sign up at [draftai.us](https://draftai.us).
 2. Download the Draft desktop app for macOS Apple Silicon.
 3. Sign in and create or join a team workspace.
-4. Connect the integrations your team uses.
+4. Connect the providers your team uses.
 5. Connect your coding agents through MCP, or use the CLI/plugin setup for project-local instructions and session capture.
 
 The hosted web app handles account creation, sign-in, desktop pairing, and team invitations. The desktop app is the primary workspace surface today; the CLI is useful for agents, scripts, and session access.
@@ -127,11 +127,11 @@ draft/
 └── Makefile              # Local stack and release automation
 ~~~
 
-## Current integrations
+## Current connections
 
-The backend currently supports connections for Slack, Fireflies, Linear, GitHub, and Claude Code session capture. GitHub is an integration and source of activity, and can also be used for source import. It is no longer the primary team-context synchronization layer.
+The backend currently supports connections for Slack, Fireflies, Linear, GitHub, and Claude Code session capture. GitHub is a connection and source of activity, and can also be used for source import. It is no longer the primary team-context synchronization layer.
 
-Connect or manage any of these from the desktop app, or from the CLI: `draft integrations list` reports each provider's status, `draft integrations connect <provider>` walks through that provider's setup (a browser handoff for github/slack, a hidden credential prompt for linear/claude-code/slack/fireflies, or both), and `draft integrations disconnect <provider>` revokes it. Slack additionally supports `draft integrations slack channels list`/`set` to manage which channels the bot has joined. See [docs/cli.md](./docs/cli.md#hosted-integrations) for the full command reference, including automation flags (`--credential-stdin`/`--credential-fd`) and the JSON Lines event contract.
+Connect or manage any of these from the desktop app, or from the CLI: `draft connections list` reports each provider's status, `draft connections connect <provider>` walks through that provider's setup (a browser handoff for github/slack, a hidden credential prompt for linear/claude-code/slack/fireflies, or both), and `draft connections disconnect <provider>` revokes it. Slack additionally supports `draft connections slack channels list`/`set` to manage which channels the bot has joined. See [docs/cli.md](./docs/cli.md#hosted-connections) for the full command reference, including automation flags (`--credential-stdin`/`--credential-fd`) and the JSON Lines event contract.
 
 ## Connect agents with MCP or CLI
 
@@ -162,8 +162,8 @@ draft context read --all
 draft skills list
 draft skills read <name>
 draft sessions list
-draft integrations list
-draft integrations connect github
+draft connections list
+draft connections connect github
 draft --help
 ~~~
 

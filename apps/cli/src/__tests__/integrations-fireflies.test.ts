@@ -275,7 +275,7 @@ describe("Fireflies connect provider", () => {
   });
 });
 
-describe("draft integrations connect fireflies", () => {
+describe("draft connections connect fireflies", () => {
   let backend: ReturnType<typeof createMockBackend>;
   let home: string;
 
@@ -289,11 +289,11 @@ describe("draft integrations connect fireflies", () => {
 
   it("rejects invalid grammar before any request", async () => {
     const cases = [
-      ["integrations", "connect", "fireflies", "extra"],
-      ["integrations", "connect", "fireflies", "--json", "--json"],
-      ["integrations", "connect", "fireflies", "--no-open", "--no-open"],
-      ["integrations", "connect", "fireflies", "--credential-stdin"],
-      ["integrations", "connect", "fireflies", "--credential-fd", "3"],
+      ["connections", "connect", "fireflies", "extra"],
+      ["connections", "connect", "fireflies", "--json", "--json"],
+      ["connections", "connect", "fireflies", "--no-open", "--no-open"],
+      ["connections", "connect", "fireflies", "--credential-stdin"],
+      ["connections", "connect", "fireflies", "--credential-fd", "3"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });

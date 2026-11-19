@@ -3,19 +3,15 @@
 import { callPersonTool, type ToolCallResult } from "../cloud-client.ts";
 import { SCHEMA_VERSION, EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, errorPayload } from "../utils/json-output.ts";
 import { red } from "../utils/output.ts";
+import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
 import { PROVIDER_LABELS } from "./types.ts";
 
-export const CONNECT_CLI_PROVIDERS = ["github", "slack", "linear", "fireflies", "granola", "claude-code"] as const;
+export const CONNECT_CLI_PROVIDERS = HOSTED_CONNECTION_PROVIDERS;
 export type ConnectCliProvider = (typeof CONNECT_CLI_PROVIDERS)[number];
 
-const BACKEND_PROVIDER: Record<ConnectCliProvider, string> = {
-  github: "github",
-  slack: "slack",
-  linear: "linear",
-  fireflies: "fireflies",
-  granola: "granola",
-  "claude-code": "claude_session",
-};
+function toBackendProvider(provider: ConnectCliProvider): string {
+  return provider === "claude-code" ? "claude_session" : provider;
+}
 
 const POLL_INTERVAL_MS = 3_000;
 
@@ -76,7 +72,7 @@ function readConnectOutput(output: unknown): ConnectOutput | null {
 }
 
 function isConnectedIn(output: unknown, backendProvider: string): boolean {
-  const list = (output as { integrations?: unknown } | null)?.integrations;
+  const list = (output as { connections?: unknown } | null)?.connections;
   return Array.isArray(list) && list.some((item) =>
     (item as { provider?: unknown; status?: unknown }).provider === backendProvider &&
     (item as { status?: unknown }).status === "connected"
@@ -89,7 +85,7 @@ function emitJson(deps: AgentConnectDeps, value: object): void {
 
 function fail(json: boolean, deps: AgentConnectDeps, code: string, message: string): number {
   if (json) emitJson(deps, errorPayload(code, message));
-  else deps.stderr(`${red(`draft integrations connect: ${message}`)}\n`);
+  else deps.stderr(`${red(`draft connections connect: ${message}`)}\n`);
   return EXIT_OPERATIONAL_ERROR;
 }
 
@@ -103,10 +99,10 @@ export async function runAgentConnect(
   options: ParsedAgentConnectArgs,
   deps: AgentConnectDeps = defaultAgentConnectDeps,
 ): Promise<number> {
-  const backendProvider = BACKEND_PROVIDER[options.provider];
+  const backendProvider = toBackendProvider(options.provider);
   const label = PROVIDER_LABELS[options.provider];
 
-  const started = await deps.callTool("integrations.connect", { provider: backendProvider });
+  const started = await deps.callTool("connections.connect", { provider: backendProvider });
   if (!started.ok) {
     return fail(options.json, deps, started.refusal ?? started.code, started.message ?? "Could not start the connection. Retry shortly.");
   }
@@ -123,7 +119,7 @@ export async function runAgentConnect(
   const deadline = Date.parse(link.expiresAt);
   while (deps.now() < deadline) {
     await deps.sleep(POLL_INTERVAL_MS);
-    const listed = await deps.callTool("integrations.list", {});
+    const listed = await deps.callTool("connections.list", {});
     if (!listed.ok) {
       return fail(options.json, deps, listed.refusal ?? listed.code, listed.message ?? "Could not check the connection. Retry shortly.");
     }

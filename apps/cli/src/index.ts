@@ -45,7 +45,7 @@ if (command === "--version" || command === "-v") {
     case "context":
       process.exitCode = await runContext(rest);
       break;
-    case "integrations":
+    case "connections":
       process.exitCode = await runIntegrations(rest);
       break;
     case "people":
@@ -85,13 +85,13 @@ if (command === "--version" || command === "-v") {
   }
 
   // Integrations reserves stdout/stderr for stable provider lifecycle output.
-  if (command !== "update" && command !== "uninstall" && command !== "completion" && command !== "integrations" && !rest.includes("--json")) {
+  if (command !== "update" && command !== "uninstall" && command !== "completion" && command !== "connections" && !rest.includes("--json")) {
     const notice = getCachedUpdateNotice();
     if (notice) console.error(notice);
     checkForUpdateBackground();
   }
 })().catch((error: unknown) => {
-  if (command === "integrations") {
+  if (command === "connections") {
     process.exitCode = reportUnexpectedIntegrationFailure({ json: rest.includes("--json") });
     return;
   }

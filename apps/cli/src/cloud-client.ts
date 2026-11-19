@@ -18,7 +18,7 @@ import {
 import { getCliRuntimeConfig } from "./runtime-config.ts";
 import { decodeToolEnvelope } from "draft-core/tool-envelope";
 import type { SourceListInput, SourceListResponse, SourceReadInput, SourceReadResponse, SourceSearchInput, SourceSearchResponse } from "draft-core/sources";
-import { normalizeBackfillSummary, type HostedConnectionBackfillSummary } from "draft-core/integrations/hosted-connections";
+import { normalizeBackfillSummary, type HostedConnectionBackfillSummary, type HostedConnectionProvider } from "draft-core/integrations/hosted-connections";
 
 export interface WhoamiBody {
   organization_id: string | null;
@@ -331,7 +331,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<{ ok: true
   return { ok: true, token: resolved.token, workspaceId: resolved.workspaceId, response };
 }
 
-export type BackendProvider = "github" | "slack" | "linear" | "fireflies" | "granola" | "claude_code";
+export type BackendProvider = Exclude<HostedConnectionProvider, "claude-code"> | "claude_code";
 export type BackendConnectionProvider = BackendProvider | "claude_session";
 export type BackendConnectionStatus = "pending" | "active" | "degraded" | "error" | "revoked" | "expired";
 

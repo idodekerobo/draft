@@ -54,17 +54,17 @@ type Run = { id: string; status: string; startedBy: { type: string }; result: st
 // 1. Discover.
 const listed = await rpc("tools/list");
 const names = (listed.tools ?? []).map((tool) => tool.name);
-check("the MCP offers the routine, connection and activity tools", ["routines.options", "routines.runs", "integrations.list", "integrations.connect", "activity.list"].every((name) => names.includes(name)), `${names.length} tools`);
+check("the MCP offers the routine, connection and activity tools", ["routines.options", "routines.runs", "connections.list", "connections.connect", "activity.list"].every((name) => names.includes(name)), `${names.length} tools`);
 
 const activity = await call<{ runs: Array<{ id: string }>; nextCursor: string | null }>("activity.list");
 check("activity.list returns the workspace's runs with a cursor for older ones", activity.ok && Array.isArray(activity.body.runs) && "nextCursor" in activity.body, `${activity.body.runs?.length} runs, nextCursor ${activity.body.nextCursor ?? "none"}`);
 const badCursor = await call("activity.list", { cursor: "nope" });
 check("activity.list refuses a cursor it didn't hand out", !badCursor.ok && badCursor.text.includes("invalid_cursor"));
 
-const integrations = (await call<{ integrations: Integration[] }>("integrations.list")).body.integrations ?? [];
-check("integrations.list returns every provider", integrations.length === 6, integrations.map((item) => `${item.provider}:${item.status}`).join(" "));
-const missing = integrations.find((item) => item.status !== "connected" && item.triggers.length > 0);
-const connected = integrations.find((item) => item.status === "connected" && item.triggers.length > 0);
+const connections = (await call<{ connections: Integration[] }>("connections.list")).body.connections ?? [];
+check("connections.list returns every provider", connections.length === 6, connections.map((item) => `${item.provider}:${item.status}`).join(" "));
+const missing = connections.find((item) => item.status !== "connected" && item.triggers.length > 0);
+const connected = connections.find((item) => item.status === "connected" && item.triggers.length > 0);
 
 const options = await call<{ triggers: Array<{ event: string; connected: boolean }>; agents: Array<{ harness: string; status: string }> }>("routines.options");
 check("routines.options lists triggers and agents", options.ok && options.body.triggers.length > 0, `agents: ${options.body.agents?.map((agent) => `${agent.harness}:${agent.status}`).join(" ")}`);
@@ -77,8 +77,8 @@ const base = { prompt: "Reply with the single word: ok.", harness, schedule: { p
 if (missing) {
   const refused = await call("routines.create", { ...base, title: "Proof: missing connection", events: [missing.triggers[0]!.event] });
   check(`creating a ${missing.provider} trigger is refused while ${missing.provider} is not connected`, !refused.ok && refused.text.includes(`${missing.provider}_not_connected`), refused.text);
-  const link = await call<{ status: string; url: string }>("integrations.connect", { provider: missing.provider });
-  check("integrations.connect answers with a link for the person", link.ok && link.body.status === "action_required" && link.body.url.includes("/connect/"));
+  const link = await call<{ status: string; url: string }>("connections.connect", { provider: missing.provider });
+  check("connections.connect answers with a link for the person", link.ok && link.body.status === "action_required" && link.body.url.includes("/connect/"));
   const token = link.body.url?.split("/connect/")[1] ?? "";
   check("the link works for the person who asked", (await findConnectRequest(serviceClient, token, userId)).ok);
   check("the link does not work for anyone else", !(await findConnectRequest(serviceClient, token, "00000000-0000-4000-8000-000000000000")).ok);

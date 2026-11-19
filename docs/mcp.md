@@ -83,7 +83,7 @@ Runs cannot grant wider access, change routines outside their permitted descenda
 
 | Code | Meaning |
 | --- | --- |
-| `<provider>_not_connected` | A trigger or access needs a provider the workspace hasn't connected, for example `linear_not_connected`. Offer to connect it with `integrations.connect`. |
+| `<provider>_not_connected` | A trigger or access needs a provider the workspace hasn't connected, for example `linear_not_connected`. Offer to connect it with `connections.connect`. |
 | `claude_not_connected`, `codex_not_connected` | That agent isn't connected for routines in this workspace. |
 | `claude_needs_reconnect`, `codex_needs_reconnect` | That agent's routine login needs reconnecting. |
 | `too_far_ahead`, `in_the_past` | Choose a future one-time date within 365 days. |
@@ -106,10 +106,10 @@ Run rows include `routineKind` (`once`, `rule` or `null`) and `createdRoutines`,
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `integrations.list` | `{}` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; and how to connect it. |
-| `integrations.connect` | `{ provider }` | Start connecting a provider. Answers `{ status: "action_required", url, expiresAt }`. Your agent gives you the link, and you sign in or enter the key on that page in the Draft app. The link works once, only for you, for 15 minutes. Answers `{ status: "connected" }` if it already is. |
+| `connections.list` | `{}` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; and how to connect it. |
+| `connections.connect` | `{ provider }` | Start connecting a provider. Answers `{ status: "action_required", url, expiresAt }`. Your agent gives you the link, and you sign in or enter the key on that page in the Draft app. The link works once, only for you, for 15 minutes. Answers `{ status: "connected" }` if it already is. |
 
-Your agent never sees your keys: you enter them on the Draft page the link opens. To disconnect a provider, use the Draft app or `draft integrations disconnect`.
+Your agent never sees your keys: you enter them on the Draft page the link opens. To disconnect a provider, use the Draft app or `draft connections disconnect`.
 
 ### Skills, people and Slack
 

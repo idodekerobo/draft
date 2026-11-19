@@ -70,7 +70,7 @@ async function refuseMissingConnections(workspaceId: string, needed: string[]): 
   const connected = await (await scheduleService()).listConnectedProviders(workspaceId);
   const missing = needed.filter((provider) => !connected.includes(provider));
   if (missing.length === 0) return null;
-  return refuse(`${missing[0]}_not_connected`, `${missing.join(", ")} is not connected. Ask the person whether to connect it, then call integrations.connect.`);
+  return refuse(`${missing[0]}_not_connected`, `${missing.join(", ")} is not connected. Ask the person whether to connect it, then call connections.connect.`);
 }
 
 /** The routine as routines.list shows it, so a write answers with exactly what was stored. */

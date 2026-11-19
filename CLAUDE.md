@@ -105,6 +105,21 @@ This project uses Draft for its company brain and agent context.
 Use the CLI below to access the company brain — Draft's current, synthesized
 context about the product, team, and priorities — whenever you need it.
 
+### Getting the latest information
+
+For anything about what is happening now, read memory first. It holds daily,
+weekly, and monthly summaries of what happened in the business.
+
+- `draft context read --dimension memory --period <id>` — read one memory document.
+  `<id>` is a day (`YYYY-MM-DD`), a week (`week-YYYY-MM-DD`, using that week's
+  Monday), or a month (`YYYY-MM`). Aliases like `today`, `this-week` and
+  `last-month` also work. For a longer span, read several periods and combine them.
+
+Use `draft context list` and `draft context read --dimension <name>` for stable
+background (product, team, priorities).
+
+### Commands
+
 - `draft auth login` — sign in if a command reports you're not authenticated.
 - `draft context list` — discover available context dimensions.
 - `draft context read --dimension <name>` (repeatable) or `--all` — read current context.
@@ -116,51 +131,40 @@ Context is Draft's maintained business map. Sources are direct evidence across p
 Use context for orientation, then search and read sources when the map is incomplete
 or when a claim needs direct support.
 
+- `draft sources list [--provider <p>] [--type <t[,t...]>]` — browse ingested evidence without a query.
 - `draft sources search "<query>" [--provider <p>] [--type <t[,t...]>] [--since <UTC>] [--until <UTC>]` — search stored default representations.
 - `draft sources read <source_item_id> [--representation default|transcript|messages|structured]` — read selected evidence with bounded continuation.
+- `draft sources capture enable claude-code --dir <repo>` — install a repository-local Claude Code capture hook.
 
 A readable original transcript may not be searchable: default representations vary by
 provider and can be summaries, rendered source content, or mixed content. Draft returns
 evidence; the calling agent owns investigation, comparison, and answer generation.
 
-### Coding sessions
+### Sessions
 
-- `draft sessions list [--provider <p>] [--user <email>] [--since <ISO>]` — list captured sessions.
-- `draft sessions read <id> [--summary|--transcript]` — read one session's summary or raw transcript.
-- `draft sessions search "<pattern>"` — search session **summaries** by keyword (fast, snippet-only).
-- `draft sessions read <id> --transcript --grep "<pattern>" [--context <n>]` and `--max-bytes <n>` — search a raw transcript (different corpus than `search` — see `draft sessions search` vs. `draft sessions read --grep` in `docs/cli.md`).
+- `draft sessions list [--provider <harness>] [--since <ISO>]` — list interactive conversations created in the Draft app.
+- `draft sessions read <id>` — read a Draft app conversation and its events.
+Captured coding sessions are source items with type `coding_session`; use `draft sources list` to browse them.
 
-List sessions and read summaries first. Fetch a full transcript, or use
-`--grep`, only when the summary is missing, stale, or insufficient.
+### Hosted connections
 
-Resolve people by exact display name or Git email. Present choices when a
-name is ambiguous.
-
-### Hosted integrations
-
-- `draft integrations list` — see which of GitHub, Linear, Slack, Fireflies,
+- `draft connections list` — see which of GitHub, Linear, Slack, Fireflies,
   Granola, and Claude Code are connected.
-- `draft integrations connect <github|linear|slack|fireflies|granola|claude-code>` —
+- `draft connections connect <github|linear|slack|fireflies|granola|claude-code>` —
   connect one. These need a human at a terminal (browser handoffs, hidden
   credential prompts) — don't run this on the user's behalf unless asked.
   Granola also takes `--workspace-key` to connect the workspace's shared key
   instead of a personal one, and requires a Granola Business/Enterprise plan.
-- `draft integrations disconnect <github|linear|slack|fireflies|granola>` —
+- `draft connections disconnect <github|linear|slack|fireflies|granola>` —
   disconnect one (Granola also takes `--workspace-key`).
 
 ### Skills
 
-Draft's skills are a company skill marketplace — reusable procedures,
-templates, and heuristics the team has saved for any future workflow, not
-just one task type.
+Skills are reusable procedures the team saved. Use them only when the user
+names a skill or asks for a saved workflow or template.
 
-- Discover: before starting a task that might match an existing company
-  procedure, run `draft skills list` to browse the marketplace. Read the
-  full description text for each; if one matches, run `draft skills read
-  <name>` and follow it.
-- Add: when a teammate asks you to save a template or procedure for future
-  use, run `draft skills add` with the content. Write the description the
-  way you'd write a skill's own SKILL.md description — the same judgment
-  you already use for that format's frontmatter.
+- `draft skills list` / `draft skills read <name>` — find and read a skill.
+- `draft skills add` — save a procedure when a teammate asks. Write the description
+  the way you'd write a skill's own SKILL.md description.
 - `draft skills --help` — see add/update/remove/list/read usage.
 <!-- draft:end -->

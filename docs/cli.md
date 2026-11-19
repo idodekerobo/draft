@@ -196,7 +196,7 @@ Instructions must be a self-contained brief: what to do, why, and what done mean
 
 One-time routines are hidden from `list` by default. `--once` selects them; `--upcoming` and `--fired` imply `--once` and cannot be combined. `--mine` shows routines created by you. Filters apply to the list, so do not combine them with an individual `<id>`.
 
-One-time rows show their scheduled time or when they fired. Routines an agent made have a “made by an agent” label. A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft integrations connect linear`. An agent that isn't set up for routines in your workspace is refused too, with how to set it up. Failed commands print the error and exit nonzero.
+One-time rows show their scheduled time or when they fired. Routines an agent made have a “made by an agent” label. A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft connections connect linear`. An agent that isn't set up for routines in your workspace is refused too, with how to set it up. Failed commands print the error and exit nonzero.
 
 `run <id>` requests an immediate run, including for a paused routine or a one-time routine that already fired. If work for it is in progress, the request is queued until that work ends; the response has `queued: true` and no run ID. In that case `--wait` returns the queued result rather than waiting. Otherwise, use the returned run ID with `runs`, or use `--wait` to follow it immediately. A manual run does not repeat the original one-time delay.
 
@@ -337,11 +337,11 @@ If any of the given directories fail validation, `status` is `partial_error`, ea
 
 ---
 
-## Hosted integrations
+## Hosted connections
 
-`draft integrations` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, and Claude Code. This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `integrations` is workspace-level and has nothing to do with any one project's directory. Run `draft integrations <command> --help` for details.
+`draft connections` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, and Claude Code. This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `connections` is workspace-level and has nothing to do with any one project's directory. Run `draft connections <command> --help` for details.
 
-### `draft integrations list [--json]`
+### `draft connections list [--json]`
 
 Shows each provider: its status, what it brings into Draft, the routine triggers and abilities it unlocks, and how to connect it if it isn't connected. Status is one of:
 
@@ -350,11 +350,11 @@ Shows each provider: its status, what it brings into Draft, the routine triggers
 - `needs_reconnect`: it stopped working and needs to be connected again.
 - `not_connected`
 
-`--json` prints the same answer as the MCP tool `integrations.list`. For Slack's channels, use `draft integrations slack channels list`.
+`--json` prints the same answer as the MCP tool `connections.list`. For Slack's channels, use `draft connections slack channels list`.
 
 ```bash
-draft integrations list
-draft integrations list --json
+draft connections list
+draft connections list --json
 ```
 
 ### Connect through a link
@@ -368,11 +368,11 @@ When you run `connect` with `--json`, or without a terminal (for example, when a
 Open the link and connect the provider on that page in the Draft app. The link works once, only for you, for 15 minutes, and your key never passes through the CLI or the agent. Add `--wait` to keep checking until the provider is connected.
 
 ```bash
-draft integrations connect linear --json
-draft integrations connect linear --json --wait
+draft connections connect linear --json
+draft connections connect linear --json --wait
 ```
 
-### `draft integrations connect <provider> [--json] ...`
+### `draft connections connect <provider> [--json] ...`
 
 In an interactive terminal, without `--json`, `connect` runs each provider's own flow:
 
@@ -391,24 +391,24 @@ list of valid providers — it never falls through to any one provider's
 flow by default.
 
 ```bash
-draft integrations connect github                        # prints install-app guidance, then waits for install
-draft integrations connect github --no-open --json      # print the install URL instead of opening a browser
+draft connections connect github                        # prints install-app guidance, then waits for install
+draft connections connect github --no-open --json      # print the install URL instead of opening a browser
 
-draft integrations connect linear                        # prompts for a Linear API key on the terminal
-echo '{"api_key":"..."}' | draft integrations connect linear --credential-stdin --json
+draft connections connect linear                        # prompts for a Linear API key on the terminal
+echo '{"api_key":"..."}' | draft connections connect linear --credential-stdin --json
 
-draft integrations connect claude-code
-echo '{"setup_token":"..."}' | draft integrations connect claude-code --credential-stdin
+draft connections connect claude-code
+echo '{"setup_token":"..."}' | draft connections connect claude-code --credential-stdin
 
-draft integrations connect slack                         # opens the Slack app-manifest page, then prompts for
+draft connections connect slack                         # opens the Slack app-manifest page, then prompts for
                                                            # xoxb-/xapp- tokens, then an interactive channel picker
-draft integrations connect slack --credential-fd 3 3<tokens.json   # automation mode — channel_ids default to []
+draft connections connect slack --credential-fd 3 3<tokens.json   # automation mode — channel_ids default to []
 
-draft integrations connect fireflies                      # requires an attended terminal end to end
+draft connections connect fireflies                      # requires an attended terminal end to end
 
-draft integrations connect granola                        # prompts for a personal Granola API key
-draft integrations connect granola --workspace-key         # connects the workspace's shared key instead
-echo '{"api_token":"grn_..."}' | draft integrations connect granola --credential-stdin --json
+draft connections connect granola                        # prompts for a personal Granola API key
+draft connections connect granola --workspace-key         # connects the workspace's shared key instead
+echo '{"api_token":"grn_..."}' | draft connections connect granola --credential-stdin --json
 ```
 
 `github`, `linear`, `claude-code`, `slack`, and `granola` accept
@@ -463,11 +463,11 @@ deploy.
 verify you actually finished pasting them into Fireflies. It opens (or
 prints, with `--no-open`) a local handoff page with the webhook URL and
 secret, and both the page and the terminal spell out the Fireflies webhook
-settings URL (`https://app.fireflies.ai/integrations/api/webhook`) and the
+  settings URL (`https://app.fireflies.ai/integrations/api/webhook`) and the
 two events to enable — Meeting Transcribed and Meeting Summarized. Re-running
 `connect fireflies` on an existing connection always warns before rotating
 the secret (`y`/`N` at the terminal); declining exits `1` with `cancelled`
-and makes no request. See `integrations list` above for why the connection
+and makes no request. See `connections list` above for why the connection
 still shows `pending` after this succeeds.
 
 **Granola** requires a Business or Enterprise plan — Granola only issues API
@@ -483,12 +483,12 @@ backend registers a webhook with Granola directly using the key (no
 paste-into-Granola-UI step) and backfills the last 7 days of existing notes;
 everything after that arrives via the webhook.
 
-### `draft integrations disconnect <provider> [--json] [--workspace-key]`
+### `draft connections disconnect <provider> [--json] [--workspace-key]`
 
 ```bash
-draft integrations disconnect github
-draft integrations disconnect linear --json
-draft integrations disconnect granola --workspace-key   # the workspace key, not your own
+draft connections disconnect github
+draft connections disconnect linear --json
+draft connections disconnect granola --workspace-key   # the workspace key, not your own
 ```
 
 Supported for `github`, `fireflies`, `linear`, `slack`, `granola` — each
@@ -503,16 +503,16 @@ key); it selects which one to disconnect and is ignored (rejected as
 `invalid_usage`) for every other provider. Omitting it disconnects your own
 personal Granola connection.
 
-### `draft integrations slack channels list [--json]`
+### `draft connections slack channels list [--json]`
 
 Lists the connected Slack workspace's channels — `id`, `name`,
 `memberCount`, `isMember` — as seen by the backend today.
 
 ```bash
-draft integrations slack channels list
+draft connections slack channels list
 ```
 
-### `draft integrations slack channels set [<channel-id>...] [--json]`
+### `draft connections slack channels set [<channel-id>...] [--json]`
 
 Replaces the bot's channel membership with exactly the given set (not a
 diff — omitted channels are left). Given no IDs at all: on an attended
@@ -520,8 +520,8 @@ terminal, lists the current channels and offers the same interactive picker
 as `connect slack`; without a TTY, defaults to `[]` (leaves every channel).
 
 ```bash
-draft integrations slack channels set C0123 C0456
-draft integrations slack channels set                # interactive picker (TTY) or [] (automation)
+draft connections slack channels set C0123 C0456
+draft connections slack channels set                # interactive picker (TTY) or [] (automation)
 ```
 
 A join/leave that fails for one channel doesn't fail the whole command —
@@ -627,9 +627,9 @@ Follow the printed instructions to install into your shell profile.
 
 ## Machine-readable output
 
-Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `integrations connect github`/`slack`/`fireflies`/`linear`/`granola` (one `browser_required`/`handoff_required` line for github/slack/fireflies, plus `awaiting_install`/`awaiting_credentials` progress lines for some providers, then one terminal line) — see [Hosted integrations](#hosted-integrations) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
+Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `connections connect github`/`slack`/`fireflies`/`linear`/`granola` (one `browser_required`/`handoff_required` line for github/slack/fireflies, plus `awaiting_install`/`awaiting_credentials` progress lines for some providers, then one terminal line) — see [Hosted connections](#hosted-connections) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
 
-**Exit codes:** `0` success · `1` authentication/API/operational error · `2` invalid usage · `130` interrupted (Ctrl+C — during `auth login`, or during an `integrations connect`/`slack channels set` prompt).
+**Exit codes:** `0` success · `1` authentication/API/operational error · `2` invalid usage · `130` interrupted (Ctrl+C — during `auth login`, or during an `connections connect`/`slack channels set` prompt).
 
 ---
 

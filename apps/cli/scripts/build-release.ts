@@ -43,10 +43,10 @@ function hostMatchesBunTarget(bunTarget: string): boolean {
 
 // Runs the compiled binary from an empty cwd/HOME with no source tree and no
 // stored auth, proving: (1) the CLI starts and its help mentions
-// `integrations` without needing any files on disk beyond the binary itself
+// `connections` without needing any files on disk beyond the binary itself
 // (verifies the Slack manifest and other compile-time JSON imports are truly
 // embedded, not read from a relative path at runtime); (2) a real command
-// (`integrations list`) runs cleanly unauthenticated, without crashing or
+// (`connections list`) runs cleanly unauthenticated, without crashing or
 // printing anything secret, since there's nothing secret to print yet.
 async function smokeTest(binaryPath: string, assetName: string): Promise<void> {
   console.log(`[build-release] Smoke-testing ${assetName}...`);
@@ -55,14 +55,14 @@ async function smokeTest(binaryPath: string, assetName: string): Promise<void> {
   const runOpts = { cwd: emptyCwd, env: { HOME: emptyHome }, timeoutMs: 10_000 };
   try {
     const help = await capture([binaryPath, "--help"], runOpts);
-    if (help.exitCode !== 0 || !help.stdout.includes("integrations")) {
-      throw new Error(`--help failed or didn't mention integrations (exit ${help.exitCode}): ${help.stdout}${help.stderr}`);
+    if (help.exitCode !== 0 || !help.stdout.includes("connections")) {
+      throw new Error(`--help failed or didn't mention connections (exit ${help.exitCode}): ${help.stdout}${help.stderr}`);
     }
 
-    const list = await capture([binaryPath, "integrations", "list", "--json"], runOpts);
+    const list = await capture([binaryPath, "connections", "list", "--json"], runOpts);
     const listPayload = JSON.parse(list.stdout);
     if (list.exitCode !== 1 || listPayload.status !== "error" || listPayload.code !== "not_authenticated") {
-      throw new Error(`unauthenticated 'integrations list' didn't fail cleanly with not_authenticated (exit ${list.exitCode}): ${list.stdout}`);
+      throw new Error(`unauthenticated 'connections list' didn't fail cleanly with not_authenticated (exit ${list.exitCode}): ${list.stdout}`);
     }
 
     // --credential-stdin forces the automation credential path (reads from fd
@@ -71,7 +71,7 @@ async function smokeTest(binaryPath: string, assetName: string): Promise<void> {
     // "ignore" stdin (fd 0 -> /dev/null) hits EOF immediately and the command
     // fails fast on invalid_credential_input, but only after emitting the
     // manifest-derived browser_required line first, which is what this checks.
-    const slack = await capture([binaryPath, "integrations", "connect", "slack", "--no-open", "--credential-stdin", "--json"], runOpts);
+    const slack = await capture([binaryPath, "connections", "connect", "slack", "--no-open", "--credential-stdin", "--json"], runOpts);
     const slackPayload = JSON.parse(slack.stdout.trim().split("\n")[0]!);
     if (
       slackPayload.status !== "browser_required" ||
@@ -79,7 +79,7 @@ async function smokeTest(binaryPath: string, assetName: string): Promise<void> {
       typeof slackPayload.url !== "string" ||
       !slackPayload.url.startsWith("https://api.slack.com/apps?new_app=1&manifest_json=")
     ) {
-      throw new Error(`'integrations connect slack --no-open' didn't emit a valid manifest URL from a directory with no source tree: ${slack.stdout}`);
+      throw new Error(`'connections connect slack --no-open' didn't emit a valid manifest URL from a directory with no source tree: ${slack.stdout}`);
     }
   } finally {
     rmSync(emptyCwd, { recursive: true, force: true });

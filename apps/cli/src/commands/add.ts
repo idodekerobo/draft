@@ -8,6 +8,8 @@
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
+import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
+import { DISCONNECT_PROVIDERS } from "../integrations/types.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { bold, cyan, dim, green, red } from "../utils/output.ts";
 
@@ -24,6 +26,8 @@ const INSTRUCTION_FILE: Record<Tool, string> = {
 
 const MANAGED_BLOCK_BEGIN = "<!-- draft:begin (managed by Draft — do not edit this block) -->";
 const MANAGED_BLOCK_END = "<!-- draft:end -->";
+const CONNECT_PROVIDER_ARGUMENT = HOSTED_CONNECTION_PROVIDERS.join("|");
+const DISCONNECT_PROVIDER_ARGUMENT = DISCONNECT_PROVIDERS.filter((provider) => provider !== "claude-code").join("|");
 
 const MANAGED_BLOCK_BODY = [
   "## Draft context",
@@ -74,16 +78,16 @@ const MANAGED_BLOCK_BODY = [
   "- `draft sessions read <id>` — read a Draft app conversation and its events.",
   "Captured coding sessions are source items with type `coding_session`; use `draft sources list` to browse them.",
   "",
-  "### Hosted integrations",
+  "### Hosted connections",
   "",
-  "- `draft integrations list` — see which of GitHub, Linear, Slack, Fireflies,",
+  "- `draft connections list` — see which of GitHub, Linear, Slack, Fireflies,",
   "  Granola, and Claude Code are connected.",
-  "- `draft integrations connect <github|linear|slack|fireflies|granola|claude-code>` —",
+  `- \`draft connections connect <${CONNECT_PROVIDER_ARGUMENT}>\` —`,
   "  connect one. These need a human at a terminal (browser handoffs, hidden",
   "  credential prompts) — don't run this on the user's behalf unless asked.",
   "  Granola also takes `--workspace-key` to connect the workspace's shared key",
   "  instead of a personal one, and requires a Granola Business/Enterprise plan.",
-  "- `draft integrations disconnect <github|linear|slack|fireflies|granola>` —",
+  `- \`draft connections disconnect <${DISCONNECT_PROVIDER_ARGUMENT}>\` —`,
   "  disconnect one (Granola also takes `--workspace-key`).",
   "",
   "### Skills",

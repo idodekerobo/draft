@@ -49,8 +49,7 @@ When you add a concept, add it here first.
 
 ## Data
 
-- **Connection**: an account linked to Draft (Slack, GitHub, a remote MCP server). Table `connections`.
-- **Integration**: the user-facing word for a provider a person can connect. Not a table.
+- **Connection**: the user-facing word for a provider a person can connect; the linked account is stored in table `connections`.
 - **Source item**: one piece of ingested content (a meeting, a message, a captured session). Table `source_items`.
 - **Context**: the company brain: synthesized documents by dimension, versioned in `workspace_context_versions`.
 - **Synthesis**: the run that updates context. UI: "Context update".

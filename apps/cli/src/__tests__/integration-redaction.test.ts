@@ -63,7 +63,7 @@ describe("integration safe output", () => {
       schema_version: 1,
       status: "error",
       code: "request_failed",
-      message: "Could not complete the integration request. Retry shortly.",
+      message: "Could not complete the connection request. Retry shortly.",
     });
     expect(stdout.join("")).not.toContain("raw-");
 
