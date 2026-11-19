@@ -513,8 +513,12 @@ export function SessionStartScreen({
                   value: { harness: activeHarness, model, effort },
                   defaults,
                   onChange: (next) => { setHarness(next.harness); setModel(next.model); setEffort(next.effort); },
-                  harnesses: HARNESSES.map((option) => ({ value: option.id, label: option.label, hint: availability[option.id] ? PROBLEM_HINTS[availability[option.id]!] : undefined })),
-                  lockHarness: cloudOn,
+                  // Draft cloud runs Claude Code only for now; the others show as coming soon.
+                  harnesses: HARNESSES.map((option) =>
+                    cloudOn && option.id !== "claude"
+                      ? { value: option.id, label: option.label, hint: "Coming soon", disabled: true }
+                      : { value: option.id, label: option.label, hint: availability[option.id] ? PROBLEM_HINTS[availability[option.id]!] : undefined },
+                  ),
                 })}
               >
                 {agentSummary(activeHarness, model, effort, defaults)}

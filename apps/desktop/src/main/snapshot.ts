@@ -6,8 +6,16 @@ import { ServerError } from "draft-core/host/services";
 /** The most a snapshot may weigh once packed. The storage bucket enforces the same limit. */
 export const SNAPSHOT_MAX_BYTES = 200 * 1024 * 1024;
 const PACK_TIMEOUT_MS = 10 * 60_000;
-/** Never packed, at any depth: git history is rebuilt on the sandbox, and dependencies are reinstalled. */
-const EXCLUDED_NAMES = new Set([".git", "node_modules"]);
+/** The most a folder may hold before packing. Checked first, so a huge folder is refused in seconds, not after minutes of packing. */
+export const SNAPSHOT_MAX_RAW_BYTES = 1024 * 1024 * 1024;
+/** Never packed, at any depth: git history is rebuilt on the sandbox, and dependencies and build output are recreated. */
+const EXCLUDED_NAMES = new Set([".git", "node_modules", ".next", ".turbo", ".venv", "__pycache__"]);
+
+/** A git repository's files: those git tracks or would track, and the ignored files it lists one by one. */
+export interface GitListing {
+  files: string[];
+  ignoredFiles: string[];
+}
 
 /** The parts of a directory entry a snapshot reads. Node's Dirent has all of them. */
 export interface SnapshotEntry {
@@ -25,6 +33,23 @@ export interface SnapshotFs {
   makeTempDirectory(): string;
   writeText(path: string, text: string): void;
   remove(path: string): void;
+  /** The folder's files as git sees them, or null when it is not in a git repository. Then the folder is walked. */
+  gitListing?(path: string): GitListing | null;
+  exists?(path: string): boolean;
+}
+
+/** Runs `git ls-files` in the folder. Null when git is missing or the folder is not in a repository. */
+function nodeGitListing(root: string): GitListing | null {
+  const list = (args: string[]): string[] | null => {
+    const result = Bun.spawnSync(["git", "-C", root, "ls-files", "-z", ...args], { stdout: "pipe", stderr: "pipe" });
+    if (result.exitCode !== 0) return null;
+    return result.stdout.toString().split("\0").filter(Boolean);
+  };
+  const files = list(["--cached", "--others", "--exclude-standard"]);
+  if (!files) return null;
+  // With --directory an ignored folder comes back as one entry ending in "/", so only loose ignored files are listed.
+  const ignored = list(["--others", "--ignored", "--exclude-standard", "--directory"]) ?? [];
+  return { files, ignoredFiles: ignored.filter((entry) => !entry.endsWith("/")) };
 }
 
 /** Runs a command and returns its exit code. The app passes its `capture`, which never throws on a missing binary. */
@@ -40,6 +65,8 @@ export const nodeSnapshotFs: SnapshotFs = {
   makeTempDirectory: () => mkdtempSync(join(tmpdir(), "draft-snapshot-")),
   writeText: (path, text) => writeFileSync(path, text),
   remove: (path) => rmSync(path, { recursive: true, force: true }),
+  gitListing: nodeGitListing,
+  exists: (path) => statSync(path, { throwIfNoEntry: false })?.isFile() ?? false,
 };
 
 export const putArchive: PutArchive = async (signedUrl, archive, bytes) => {
@@ -54,8 +81,20 @@ export const putArchive: PutArchive = async (signedUrl, archive, bytes) => {
 /** A `.env*` file by name: `.env`, `.env.local`, `.envrc`. The same match as the glob the person sees. */
 export const isEnvFileName = (name: string): boolean => name.startsWith(".env");
 
-/** The files under the folder as paths relative to it, with `/` separators. Symbolic links are listed, not followed. */
+/**
+ * The files under the folder as paths relative to it, with `/` separators. In a git repository this is what git
+ * tracks or would track, plus ignored `.env*` files, so ignored build output and nested worktrees stay out.
+ * Elsewhere the folder is walked. Symbolic links are listed, not followed.
+ */
 function folderFiles(root: string, fs: SnapshotFs): string[] {
+  const git = fs.gitListing?.(root) ?? null;
+  if (git) {
+    const kept = (path: string) => !path.split("/").some((part) => EXCLUDED_NAMES.has(part));
+    const envIgnored = git.ignoredFiles.filter((path) => isEnvFileName(basename(path)));
+    const all = [...new Set([...git.files, ...envIgnored])].filter(kept);
+    // git keeps listing a tracked file that was deleted from the folder until the deletion is committed.
+    return (fs.exists ? all.filter((path) => fs.exists!(join(root, path))) : all).sort();
+  }
   const files: string[] = [];
   const visit = (dir: string, relative: string) => {
     for (const entry of fs.readDirectory(dir)) {
@@ -95,6 +134,9 @@ export async function packSnapshot(root: string, includeEnvFiles: string[], deps
   const included = new Set(includeEnvFiles);
   const members = files.filter((file) => !envFiles.has(file) || included.has(file));
   if (members.length === 0) return { ok: false, error: "snapshot_empty" };
+  let rawBytes = 0;
+  for (const file of members) rawBytes += fs.fileSize(join(root, file));
+  if (rawBytes > SNAPSHOT_MAX_RAW_BYTES) return { ok: false, error: "snapshot_too_large", bytes: rawBytes, detail: snapshotTooLargeMessage(rawBytes, "holds") };
 
   const workDir = fs.makeTempDirectory();
   const list = join(workDir, "members.list");
@@ -119,9 +161,10 @@ export async function packSnapshot(root: string, includeEnvFiles: string[], deps
   }
 }
 
-export function snapshotTooLargeMessage(bytes: number): string {
+export function snapshotTooLargeMessage(bytes: number, verb: "packs to" | "holds" = "packs to"): string {
   const megabytes = (bytes / (1024 * 1024)).toFixed(1);
-  return `This folder packs to ${megabytes} MB. Snapshots are limited to 200 MB, so move large files out of the folder or use a GitHub repository.`;
+  const limit = verb === "holds" ? "1 GB before packing" : "200 MB packed";
+  return `This folder ${verb} ${megabytes} MB. Snapshots are limited to ${limit}, so move large files out of the folder, add them to .gitignore, or use a GitHub repository.`;
 }
 
 export interface SnapshotUpload {

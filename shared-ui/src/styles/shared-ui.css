@@ -1253,3 +1253,4 @@
 @media (pointer: coarse) {
   .ui-activity-row .ui-link { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; }
 }
+.ui-picker__option--disabled { color: var(--color-text-secondary); cursor: default; }

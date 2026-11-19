@@ -271,7 +271,7 @@ describe("SessionStartScreen in Draft cloud", () => {
     expect(screen.queryByText("Anyone in this session can make the agent send data anywhere.")).toBeNull();
   });
 
-  it("offers only Claude Code, with a note, and moves a Codex choice to Claude", () => {
+  it("shows Codex as coming soon, keeps Claude Code chosen, and moves a Codex choice to Claude", () => {
     cloudSetup();
     fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Codex" }));
@@ -279,7 +279,10 @@ describe("SessionStartScreen in Draft cloud", () => {
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     chooseCloud();
     fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
-    expect(screen.queryByRole("menuitemradio", { name: "Codex" })).toBeNull();
+    const codex = screen.getByRole("menuitemradio", { name: /Codex/ });
+    expect(codex.textContent).toContain("Coming soon");
+    expect(codex.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(codex);
     expect(screen.getByRole("menuitemradio", { name: "Opus" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Agent and model" }).textContent).toContain("Claude Code");
   });

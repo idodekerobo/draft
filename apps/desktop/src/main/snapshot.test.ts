@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { ServerError } from "draft-core/host/services";
-import { SNAPSHOT_MAX_BYTES, listSnapshotEnvFiles, packSnapshot, uploadSnapshot, type SnapshotEntry, type SnapshotFs } from "./snapshot";
+import { SNAPSHOT_MAX_BYTES, SNAPSHOT_MAX_RAW_BYTES, listSnapshotEnvFiles, packSnapshot, uploadSnapshot, type SnapshotEntry, type SnapshotFs } from "./snapshot";
 
 const ROOT = "/work/marigold";
 const ARCHIVE_DIR = "/tmp/draft-snapshot-test";
@@ -249,5 +249,32 @@ describe("uploadSnapshot", () => {
 
     expect(result).toEqual({ ok: false, error: "snapshot_pack_failed" });
     expect(requestUpload).not.toHaveBeenCalled();
+  });
+});
+
+describe("snapshots of a git repository", () => {
+  const gitFs = (listing: { files: string[]; ignoredFiles: string[] }, size = () => 1) => {
+    const { fs, writes } = fakeFs(TREE);
+    return { fs: { ...fs, gitListing: () => listing, fileSize: (path: string) => (path === ARCHIVE ? 1024 : size()) }, writes };
+  };
+
+  it("lists what git tracks or would track, plus ignored .env files, and leaves ignored folders out", () => {
+    const { fs } = gitFs({ files: ["package.json", "src/index.ts", "apps/web/.next/cache.bin"], ignoredFiles: [".env.staging", "notes.log"] });
+    expect(listSnapshotEnvFiles(ROOT, fs)).toEqual({ ok: true, files: [".env.staging"] });
+  });
+
+  it("packs only those files", async () => {
+    const { fs, writes } = gitFs({ files: ["package.json", "src/index.ts"], ignoredFiles: [".env.staging"] });
+    const exec = mock(async () => ({ exitCode: 0, stderr: "" }));
+    await packSnapshot(ROOT, [".env.staging"], { fs, exec });
+    expect(Object.values(writes)[0]!.split("\0")).toEqual([".env.staging", "package.json", "src/index.ts"]);
+  });
+
+  it("refuses a folder over the size limit before it starts packing", async () => {
+    const { fs } = gitFs({ files: ["big.bin"], ignoredFiles: [] }, () => SNAPSHOT_MAX_RAW_BYTES + 1);
+    const exec = mock(async () => ({ exitCode: 0, stderr: "" }));
+    const result = await packSnapshot(ROOT, [], { fs, exec });
+    expect(result).toMatchObject({ ok: false, error: "snapshot_too_large" });
+    expect(exec).not.toHaveBeenCalled();
   });
 });
