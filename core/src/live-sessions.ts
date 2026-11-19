@@ -315,3 +315,53 @@ export interface LiveSessionInput {
   /** The caller wrote it. */
   mine: boolean;
 }
+
+export interface SessionViewQuery {
+  agentId?: string;
+  before?: number;
+  after?: number;
+  around?: number;
+  through?: number;
+  limit?: number;
+  state?: boolean;
+}
+
+export interface SessionTranscriptPage {
+  agentId: string | null;
+  events: LiveSessionEvent[];
+  dependencies: LiveSessionEvent[];
+  before: number | null;
+  after: number | null;
+  hasOlder: boolean;
+  hasNewer: boolean;
+  through: number;
+  readThrough: number;
+}
+
+export interface SessionAgentSummary {
+  key: string;
+  agentId: string | null;
+  hostSeq: number | null;
+  firstSeq: number;
+  lastSeq: number;
+  name: string | null;
+  description: string | null;
+  model: string | null;
+  steps: number;
+  isError: boolean;
+  state: "working" | "idle";
+}
+
+export interface SessionViewSnapshot {
+  session: LiveSession;
+  viewer: LiveSessionViewer;
+  inputs: LiveSessionInput[];
+  approvals: LiveSessionEvent[];
+  agents: SessionAgentSummary[];
+  authors?: LiveSessionEventsPage["authors"];
+}
+
+export interface SessionViewResponse {
+  page: SessionTranscriptPage;
+  snapshot?: SessionViewSnapshot;
+}

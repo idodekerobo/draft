@@ -12,6 +12,7 @@ import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
 import { SessionComposer } from "./SessionComposer";
 import { DisclosureState, revealPath, useSessionViewStates, viewStateKey } from "./view-state";
+import { AgentTranscripts } from "./agent-transcript";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
 import { getHarness, harnessModes, type HarnessId } from "draft-core/harnesses";
@@ -201,6 +202,7 @@ function SessionContents({
   stream,
 }: SessionViewProps & { stream: SessionStreamState }) {
   const { session, viewer, events, inputs: waiting, refresh } = stream;
+  const history = stream.history;
   const viewStates = useSessionViewStates();
   const stateKey = viewStateKey(sessionId, viewer.id);
   const savedView = useMemo(() => {
@@ -208,11 +210,16 @@ function SessionContents({
     return viewStates.get(stateKey);
   }, [viewStates, stateKey, viewer.id]);
   const [expanded, setExpanded] = useState(savedView.expanded);
-  const updateExpanded = useCallback((next: Readonly<Record<number, boolean>>) => {
+  const [agentTarget, setAgentTarget] = useState<number | null>(null);
+  const navigationRequested = useRef<number | null>(null);
+  const prependAnchor = useRef<{ id: string; top: number; before: number | null; overflowAnchor: string } | null>(null);
+  const restoredAnchor = useRef(false);
+  const olderRequest = useRef(false);
+  const updateExpanded = useCallback((next: Readonly<Record<string, boolean>>) => {
     viewStates.get(stateKey).expanded = next;
     setExpanded(next);
   }, [viewStates, stateKey]);
-  const changeDisclosure = useCallback((seq: number, open: boolean) => {
+  const changeDisclosure = useCallback((seq: string | number, open: boolean) => {
     setExpanded((current) => {
       const next = { ...current, [seq]: open };
       viewStates.get(stateKey).expanded = next;
@@ -232,19 +239,41 @@ function SessionContents({
     // Once per open: the view remounts for another session, and a poll never gets here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const inputs = useSessionInputs(api, sessionId, waiting, refresh, track);
+  const inputs = useSessionInputs(api, sessionId, waiting, refresh, track, stream.cacheKey);
   const { scrollRef, contentRef, scrollToBottom, stopScroll, isAtBottom, state: scrollState } = useStickToBottom({
     initial: "instant",
     resize: prefersReducedMotion() ? "instant" : undefined,
   });
+  const discardPrepend = useCallback(() => {
+    if (prependAnchor.current && scrollRef.current) scrollRef.current.style.overflowAnchor = prependAnchor.current.overflowAnchor;
+    prependAnchor.current = null;
+  }, [scrollRef]);
   const [stopping, setStopping] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [modeError, setModeError] = useState<string | null>(null);
-  const logItems = useMemo(() => buildStreamItems(events), [events]);
-  const livePreviews = useLiveText(api, sessionId, events);
+  const logItems = useMemo(() => {
+    const items = buildStreamItems(events);
+    if (!stream.agents) return items;
+    const included = new Set<string>();
+    const mapped = items.map((item) => {
+      if (item.type !== "tool") return item;
+      const agent = stream.agents!.find((agent) => agent.hostSeq === item.seq);
+      if (!agent) return item;
+      included.add(agent.key);
+      return { ...item, agent };
+    });
+    for (const agent of stream.agents) {
+      if (included.has(agent.key) || (agent.hostSeq !== null && !events.some((e) => e.seq === agent.hostSeq))) continue;
+      mapped.push({ type: "tool", seq: agent.hostSeq ?? agent.firstSeq, name: "Agent", summary: agent.description ?? "", input: null, result: null, agentId: null, agent });
+    }
+    return mapped.sort((a, b) => ("seq" in a ? a.seq : 0) - ("seq" in b ? b.seq : 0));
+  }, [events, stream.agents, agentTarget]);
+  const livePreviews = useLiveText(api, sessionId, stream.recentEvents, stream.readThrough);
   const liveText = useMemo(() => (session.status === "ended" ? [] : livePreviews), [session.status, livePreviews]);
-  const approvals = useMemo(() => openApprovals(logItems), [logItems]);
-  const team = useMemo(() => teamRoster(events), [events]);
+  const approvals = useMemo(() => stream.approvals ? openApprovals(buildStreamItems(stream.approvals)) : openApprovals(logItems), [stream.approvals, logItems]);
+  const team = useMemo(() => stream.agents ? stream.agents.filter((agent) => agent.name).map((agent) => ({
+    name: agent.name!, state: agent.state, hostSeq: agent.hostSeq ?? agent.firstSeq, description: agent.description, model: agent.model, key: agent.key,
+  })) : teamRoster(events), [events, stream.agents]);
   const ownerName = session.owner_name ?? "the owner";
   const harnessId = session.harness ?? "claude";
   const agentName = shortName(harnessId);
@@ -255,19 +284,32 @@ function SessionContents({
   const items = useMemo<StreamItem[]>(
     () => [
       ...liveText.map((preview) => ({ type: "live" as const, messageId: preview.messageId, text: preview.text })),
-      ...pendingItems(inputs.inputs, events, { viewerName, ownerName, hostOffline }),
+      ...pendingItems(inputs.inputs, stream.recentEvents, { viewerName, ownerName, hostOffline }),
     ],
-    [liveText, inputs.inputs, events, viewerName, ownerName, hostOffline],
+    [liveText, inputs.inputs, stream.recentEvents, viewerName, ownerName, hostOffline],
   );
   const needAttention = useMemo(() => inputs.inputs.filter((input) => input.state === "failed" || input.state === "uncertain"), [inputs.inputs]);
 
   const jumpToLatest = useCallback(() => {
+    discardPrepend();
+    history?.latest();
+    setAgentTarget(null);
+    wantedSeq.current = null;
+    navigationRequested.current = null;
+    restoreOffset.current = null;
     void scrollToBottom({ animation: prefersReducedMotion() ? "instant" : undefined });
-  }, [scrollToBottom]);
+  }, [scrollToBottom, history, discardPrepend]);
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (el) viewStates.get(stateKey).scroll = scrollState.isNearBottom ? null : el.scrollTop;
+    if (!el) return;
+    const memory = viewStates.get(stateKey);
+    memory.scroll = scrollState.isNearBottom ? null : el.scrollTop;
+    if (memory.scroll === null) delete memory.anchor;
+    else {
+      const anchor = Array.from(el.querySelectorAll<HTMLElement>(".ui-stream > .ui-stream__item[id]")).find((row) => row.getBoundingClientRect().bottom > el.getBoundingClientRect().top);
+      if (anchor) memory.anchor = { seq: Number(anchor.id.slice(2)), offset: anchor.getBoundingClientRect().top - el.getBoundingClientRect().top };
+    }
   }, [viewStates, stateKey, scrollRef, scrollState]);
 
   useLayoutEffect(() => {
@@ -284,13 +326,40 @@ function SessionContents({
 
   const [highlightSeq, setHighlightSeq] = useState<number | null>(null);
   const wantedSeq = useRef<number | null>(null);
+  const restoreOffset = useRef<{ seq: number; offset: number } | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // A long session arrives in pages, so the linked message can show up after the first render.
   const scrollToWanted = useCallback(() => {
     const seq = wantedSeq.current;
     if (seq === null) return;
     const path = revealPath(logItems, seq);
-    if (!path) return;
+    if (!path) {
+      const target = scrollRef.current?.querySelector(`#${messageDomId(seq)}`);
+      if (target) {
+        const details = target.firstElementChild;
+        if (details?.tagName === "DETAILS" && !details.hasAttribute("open")) { changeDisclosure(seq, true); return; }
+        wantedSeq.current = null;
+        stopScroll();
+        if (restoreOffset.current?.seq === seq && scrollRef.current) {
+          scrollRef.current.scrollTop += target.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top - restoreOffset.current.offset;
+          restoreOffset.current = null;
+        } else target.scrollIntoView({ block: "center" });
+        setHighlightSeq(seq);
+        clearTimeout(highlightTimer.current); highlightTimer.current = setTimeout(() => setHighlightSeq(null), HIGHLIGHT_MS);
+        return;
+      }
+      if (history && navigationRequested.current !== seq) {
+        navigationRequested.current = seq;
+        discardPrepend();
+        void history.focus(seq).then((target) => {
+          if (target?.agentId) {
+            changeDisclosure(`agent:${target.agentId}`, true);
+            setAgentTarget(target.seq);
+          }
+        });
+      }
+      return;
+    }
     if (path.some((parent) => expanded[parent] !== true)) {
       updateExpanded({ ...expanded, ...Object.fromEntries(path.map((parent) => [parent, true])) });
       return;
@@ -299,11 +368,14 @@ function SessionContents({
     if (seq === null || !target) return;
     wantedSeq.current = null;
     stopScroll();
-    target.scrollIntoView({ block: "center" });
+    if (restoreOffset.current?.seq === seq && scrollRef.current) {
+      scrollRef.current.scrollTop += target.getBoundingClientRect().top - scrollRef.current.getBoundingClientRect().top - restoreOffset.current.offset;
+      restoreOffset.current = null;
+    } else target.scrollIntoView({ block: "center" });
     setHighlightSeq(seq);
     clearTimeout(highlightTimer.current);
     highlightTimer.current = setTimeout(() => setHighlightSeq(null), HIGHLIGHT_MS);
-  }, [scrollRef, stopScroll, logItems, expanded, updateExpanded]);
+  }, [scrollRef, stopScroll, logItems, expanded, updateExpanded, history, changeDisclosure, discardPrepend]);
   const showAgent = useCallback(
     (member: TeamMember) => {
       wantedSeq.current = member.hostSeq;
@@ -313,11 +385,49 @@ function SessionContents({
   );
   useLayoutEffect(() => {
     wantedSeq.current = focusSeq;
+    navigationRequested.current = null;
   }, [focusSeq]);
   useEffect(() => () => clearTimeout(highlightTimer.current), []);
   useLayoutEffect(() => {
     scrollToWanted();
   }, [events.length, scrollToWanted]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (prependAnchor.current && el && history?.before !== prependAnchor.current.before) {
+      const anchor = el.querySelector<HTMLElement>(`#${prependAnchor.current.id}`);
+      if (anchor) el.scrollTop += anchor.getBoundingClientRect().top - prependAnchor.current.top;
+      discardPrepend();
+    }
+    if (!history || restoredAnchor.current || focusSeq !== null) return;
+    restoredAnchor.current = true;
+    const anchor = savedView.anchor;
+    if (!anchor) return;
+    const restore = () => {
+      const row = el?.querySelector<HTMLElement>(`#${messageDomId(anchor.seq)}`);
+      if (row && el) { stopScroll(); el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset; }
+    };
+    if (events.some((e) => e.seq === anchor.seq)) restore();
+    else { restoreOffset.current = anchor; wantedSeq.current = anchor.seq; navigationRequested.current = null; scrollToWanted(); }
+  }, [events, history, focusSeq, savedView, scrollRef, stopScroll, scrollToWanted, discardPrepend]);
+
+  const older = async () => {
+    if (!history || history.loading || !history.hasOlder || olderRequest.current) return;
+    olderRequest.current = true;
+    const el = scrollRef.current;
+    const anchor = Array.from(el?.querySelectorAll<HTMLElement>(".ui-stream > .ui-stream__item[id]") ?? []).find((row) => row.getBoundingClientRect().bottom > el!.getBoundingClientRect().top);
+    stopScroll();
+    if (anchor && el) {
+      prependAnchor.current = { id: anchor.id, top: anchor.getBoundingClientRect().top, before: history.before, overflowAnchor: el.style.overflowAnchor };
+      el.style.overflowAnchor = "none";
+    }
+    try { if (!await history.loadOlder()) discardPrepend(); }
+    finally { olderRequest.current = false; }
+  };
+  const agentRuntime = useMemo(() => ({ api, sessionId, cacheKey: stream.cacheKey, target: agentTarget, mounted: scrollToWanted,
+    linkFor: shareBaseUrl ? linkFor : undefined, harness: harnessId, ownerName, hostName: session.host_name,
+    viewerId: viewer.id, viewerName, viewerIsOwner: session.mine ?? false,
+  }), [api, sessionId, stream.cacheKey, agentTarget, scrollToWanted, shareBaseUrl, linkFor, harnessId, ownerName, session.host_name, viewer.id, viewerName, session.mine]);
 
   const stop = useCallback(async () => {
     setStopping(true);
@@ -483,16 +593,21 @@ function SessionContents({
         </div>
       </header>
       {menu.dialog}
+      {stream.updateError && <p className="ui-muted ui-session__notice" role="status">{stream.updateError} <button type="button" className="ui-link" onClick={() => void refresh()}>Retry</button></p>}
       {banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
       <SessionLinks session={session} onOpenSession={onOpenSession} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
-      <div className="ui-session__scroll" ref={scrollRef} onScroll={onScroll}>
+      <div className="ui-session__scroll" ref={scrollRef} onScroll={() => { onScroll(); if (history && scrollRef.current && scrollRef.current.scrollTop > 0 && scrollRef.current.scrollTop < 200) void older(); }}>
         <div className="ui-session__column" ref={contentRef}>
+          {history?.hasOlder && <button type="button" className="ui-link" disabled={history.loading} onClick={() => void older()}>{history.loading ? "Loading…" : "Load older messages"}</button>}
+          {history?.error && <p role="alert">{history.error} <button type="button" className="ui-link" onClick={() => { if (history.failedTarget !== null) { navigationRequested.current = null; scrollToWanted(); } else void older(); }}>Retry</button></p>}
+          <AgentTranscripts.Provider value={agentRuntime}>
           <DisclosureState.Provider value={disclosureState}>
             <SessionStream
               items={logItems}
               liveItems={items}
+              separateLive={history?.focused}
               ownerName={session.owner_name ?? undefined}
               hostName={session.host_name}
               viewerId={viewer.id}
@@ -508,9 +623,10 @@ function SessionContents({
               highlightSeq={highlightSeq}
             />
           </DisclosureState.Provider>
+          </AgentTranscripts.Provider>
         </div>
       </div>
-      {!isAtBottom && (
+      {(!isAtBottom || history?.focused) && (
         <button type="button" className="ui-btn ui-session__jump" onClick={jumpToLatest} aria-label="Jump to latest message">↓</button>
       )}
       <div className="ui-session__footer">

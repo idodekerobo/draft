@@ -18,6 +18,7 @@ export const liveSessionsApi: LiveSessionsApi = {
   watchLiveText: (sessionId, onChunk) => watchSignals(liveTextTopic(sessionId), liveTextListener(onChunk)),
   watchConnection: signals.watchConnection,
   listSessions: () => rpc.request.listLiveSessions(),
+  fetchView: (sessionId, query) => rpc.request.getLiveSessionView({ sessionId, query }),
   fetchEvents: (sessionId, after) => rpc.request.getLiveSessionEvents({ sessionId, after }),
   sendMessage: async (sessionId, text) => {
     const result = await rpc.request.sendLiveSessionMessage({ sessionId, text });

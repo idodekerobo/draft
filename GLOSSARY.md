@@ -63,3 +63,7 @@ When you add a concept, add it here first.
 - **Event**: one item in a session's feed (`session_events`). Not a workspace event (`workspace_events`) or an
   inbox event that can start a routine (`agent_event_inbox`).
 - **Approval**: a person allowing or denying a tool call the agent asked for. Not the Codex approval *mode* setting.
+
+- **Root conversation**: session events without a subagent identity, shown in the main session timeline.
+- **Subagent**: an agent transcript identified by `payload.agent_id` within one session; its display name is not its identity.
+- **Session view**: a scoped transcript page with supporting events and optional current state. Read-through sequence records how far a filtered read has examined the session, independently of displayed events.

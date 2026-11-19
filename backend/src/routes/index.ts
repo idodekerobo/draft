@@ -17,6 +17,7 @@ import * as sandboxCallback from "./sandbox-callback";
 import * as sessionProjects from "./session-projects";
 import * as sessionsIngest from "./sessions-ingest";
 import * as sessionsLive from "./sessions-live";
+import { VIEW as sessionView } from "./sessions-view";
 import * as sessionsLiveApprovals from "./sessions-live-approvals";
 import * as sessionsLiveInputs from "./sessions-live-inputs";
 import * as sessionsLiveTitle from "./sessions-live-title";
@@ -75,6 +76,7 @@ export const routes = {
   "/live-session-titles/:sessionId": { GET: withCors(sessionsLiveTitle.TITLE), OPTIONS },
   "/workspaces/:id/live-sessions": { GET: withCors(sessionsLive.LIST), POST: withCors(sessionsLive.CREATE), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId": { DELETE: withCors(sessionsLive.DELETE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/view": { GET: withCors(sessionView), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/events": { GET: withCors(sessionsLive.EVENTS), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/lines": { POST: withCors(sessionsLive.LINES), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/heartbeat": { POST: withCors(sessionsLive.HEARTBEAT), OPTIONS },

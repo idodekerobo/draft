@@ -36,3 +36,8 @@ create trigger session_events_signal
   after insert on session_events
   referencing new table as new_rows
   for each statement execute function signal_session_events();
+
+create index session_events_scope_seq_idx on session_events (session_id, (nullif(payload->>'agent_id', '')), seq);
+create index session_events_tool_idx on session_events (session_id, (payload->>'tool_use_id'), seq) where kind in ('tool_use', 'tool_result');
+create index session_events_permission_idx on session_events (session_id, (payload->>'requestId'), seq) where kind in ('permission_request', 'permission_resolved');
+create index session_events_kind_seq_idx on session_events (session_id, kind, seq);

@@ -1,4 +1,4 @@
-import type { ApprovalResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-core/live-sessions";
+import type { ApprovalResponse, SessionViewQuery, SessionViewResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-core/live-sessions";
 import { hostServices, ServerError } from "draft-core/host/services";
 import { sessionBase } from "draft-core/host/live-session";
 
@@ -59,4 +59,10 @@ export async function stopLiveSession(sessionId: string, keepQueued = false): Pr
   } catch (error) {
     return { ok: false, error: error instanceof ServerError ? error.code : "stop_failed" };
   }
+}
+
+export async function getLiveSessionView(sessionId: string, query: SessionViewQuery): Promise<SessionViewResponse> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value));
+  return hostServices().fetchServerJSON<SessionViewResponse>(`${sessionBase(sessionId)}/view?${params}`);
 }

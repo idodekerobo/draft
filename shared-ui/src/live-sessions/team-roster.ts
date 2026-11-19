@@ -1,6 +1,7 @@
 import type { LiveSessionEvent } from "./types";
 
 export interface TeamMember {
+  key?: string;
   name: string;
   /** Idle once it reports back. Working again when it gets a new message. */
   state: "working" | "idle";

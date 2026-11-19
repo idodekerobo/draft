@@ -590,3 +590,32 @@ describe("raw upload routes", () => {
     expect(updates.at(-1)?.payload.raw_uploaded_at).toBeString();
   });
 });
+
+const viewRoutes = await import("../../routes/sessions-view");
+
+describe("session view route", () => {
+  it("rejects conflicting, unsafe or malformed cursors", () => {
+    for (const query of ["before=2&after=1", "around=-1", "after=1.5", "before=9007199254740992", "agentId=../other", "state=maybe", "limit=201"]) {
+      expect(viewRoutes.parseViewQuery(new URLSearchParams(query))).toBeNull();
+    }
+    expect(viewRoutes.parseViewQuery(new URLSearchParams("after=0&through=20&state=false"))).toMatchObject({after:0,through:20,state:false});
+  });
+
+  it("authorizes before reading the scoped transcript", async () => {
+    accessResult = Response.json({error:"forbidden"},{status:403});
+    const request = Object.assign(new Request("https://test/view"),{params:{id:WS,sessionId:SESSION}});
+    expect((await viewRoutes.VIEW(request as never)).status).toBe(403);
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("returns history-only pages without looking up current inputs or session links", async () => {
+    const page = {agentId:null,events:[],dependencies:[],before:null,after:null,hasOlder:false,hasNewer:false,through:500,readThrough:500};
+    rpcResult = {data:{page},error:null};
+    const request = Object.assign(new Request("https://test/view?after=10&state=false"),{params:{id:WS,sessionId:SESSION}});
+    const response = await viewRoutes.VIEW(request as never);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({page});
+    expect(rpcCalls[0]).toMatchObject({fn:"read_session_view",args:{p_session_id:SESSION,p_workspace_id:WS,p_after:10,p_state:false}});
+    expect(queriedTables).toEqual([]);
+  });
+});

@@ -110,7 +110,7 @@ const LINK_COLUMNS = "id, title, folder_name";
 type SessionLink = Pick<SessionRow, "id" | "title" | "folder_name">;
 
 /** The session this one continues, and the one that continues it after a /clear. */
-async function loadSessionLinks(workspaceId: string, session: SessionRow) {
+export async function loadSessionLinks(workspaceId: string, session: SessionRow) {
   const previous = session.previous_session_id
     ? serviceClient.from("sessions").select(LINK_COLUMNS).eq("id", session.previous_session_id).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<SessionLink>()
     : null;
@@ -190,7 +190,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
 const RECENT_AUTHORS_LIMIT = 20;
 
 /** Who sent the latest messages Claude took, newest first, for labelling a session's recent turns. */
-async function loadRecentAuthors(workspaceId: string, sessionId: string) {
+export async function loadRecentAuthors(workspaceId: string, sessionId: string) {
   const { data, error } = await serviceClient
     .from("session_inputs")
     .select("consumed_seq, author_user_id")
@@ -205,7 +205,7 @@ async function loadRecentAuthors(workspaceId: string, sessionId: string) {
 }
 
 /** Who sent each user turn that came through Draft, by event seq. A turn typed in the terminal has no entry. */
-async function loadTurnAuthors(workspaceId: string, sessionId: string, events: Partial<SessionEventRow>[]) {
+export async function loadTurnAuthors(workspaceId: string, sessionId: string, events: { seq?: number; kind?: string }[]) {
   const seqs = events.filter((e) => e.kind === "user_message").map((e) => e.seq as number);
   const bySeq = new Map<number, string>();
   if (seqs.length === 0) return { ok: true as const, bySeq };
