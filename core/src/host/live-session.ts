@@ -18,6 +18,23 @@ const PANE_WATCH_MS = 2_000;
 
 export type StartLiveSessionResult = { ok: true; sessionId: string } | { ok: false; error: string };
 
+/** A session this machine runs for a server row that already exists (a cloud session). */
+export interface AttachedSession {
+  hasEnded(): boolean;
+  activity(): Promise<SessionActivity>;
+  /** Stops the passes, then forwards what is left. True when all of it reached the server. */
+  retire(): Promise<boolean>;
+}
+
+/** What a host reads to decide whether its session can sleep. */
+export interface SessionActivity {
+  turnRunning: boolean;
+  /** Ms since epoch of the last pass that found an input from the server. */
+  lastInputAt: number;
+  /** Ms since epoch each permission request still open was asked. */
+  openApprovalsSince: number[];
+}
+
 const running = new Map<string, SessionHost>();
 
 /** Keeps one session alive on this computer: heartbeat, inputs, posting. The driver does what is specific to the harness. */
@@ -36,6 +53,8 @@ class SessionHost {
   /** The last list from the server. Passes between fetches reuse it; each delivery still claims its input first. */
   private pending: HostInput[] = [];
   private finished = false;
+  private lastInputAt = Date.now();
+  private readonly openSince = new Map<string, number>();
   private readonly base: string;
 
   constructor(private state: HostSessionState) {
@@ -155,6 +174,13 @@ class SessionHost {
   private persist(patch: Partial<HostSessionState>): void {
     this.state = { ...this.state, ...patch };
     saveState(this.state);
+    if (patch.openRequests) this.trackOpenRequests(patch.openRequests);
+  }
+
+  /** Remembers when each open request was asked, so a host can tell a fresh one from a stale one. */
+  private trackOpenRequests(open: string[]): void {
+    for (const id of open) if (!this.openSince.has(id)) this.openSince.set(id, Date.now());
+    for (const id of [...this.openSince.keys()]) if (!open.includes(id)) this.openSince.delete(id);
   }
 
   /** There is no login, or this one cannot reach the session (another environment or account). Stop work and keep the saved state. */
@@ -206,6 +232,7 @@ class SessionHost {
       }
       this.topics.open();
       this.inputWake.answered(this.pending.length);
+      if (this.pending.length > 0) this.lastInputAt = Date.now();
     }
     await this.driver.serve(this.pending);
   }
@@ -339,6 +366,26 @@ class SessionHost {
   isAlive(): Promise<boolean> {
     return this.driver.isAlive();
   }
+
+  async activity(): Promise<SessionActivity> {
+    return {
+      turnRunning: (await this.driver.turnRunning?.()) ?? false,
+      lastInputAt: this.lastInputAt,
+      openApprovalsSince: [...this.openSince.values()],
+    };
+  }
+
+  async retire(): Promise<boolean> {
+    this.finished = true;
+    if (this.watcher) clearTimeout(this.watcher);
+    while (this.stepping || this.uploading) await new Promise((done) => setTimeout(done, 100));
+    const flushed = (await this.driver.flush()) && (await this.driver.finalize());
+    this.stopHeartbeat?.();
+    this.stopWatching();
+    this.driver.dispose();
+    running.delete(this.state.sessionId);
+    return flushed;
+  }
 }
 
 export async function startLiveSession(input: { harness?: string; folderPath: string; model?: string | null; effort?: string | null }): Promise<StartLiveSessionResult> {
@@ -414,6 +461,28 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   saveState(state);
   new SessionHost(state).start();
   return { ok: true, sessionId };
+}
+
+/**
+ * Runs a session whose server row already exists, such as a cloud session the backend created. `resume` continues the
+ * saved conversation, `launch` starts a new one. Throws when the harness cannot start.
+ */
+export async function attachLiveSession(state: HostSessionState, mode: "launch" | "resume"): Promise<{ ok: true; session: AttachedSession } | { ok: false; error: string }> {
+  const { launcher } = registrationFor(state.harness);
+  const checked = await launcher.check();
+  if (!checked.ok) return { ok: false, error: checked.error };
+  const model = state.model ?? null;
+  const effort = state.reasoningEffort ?? null;
+  const options = { bin: checked.bin };
+  const started =
+    mode === "resume"
+      ? await launcher.resume({ sessionId: state.sessionId, nativeSessionId: state.nativeSessionId, model, effort, options })
+      : await launcher.launch({ sessionId: state.sessionId, workspace: { path: state.folderPath }, model, effort, nativeSessionId: state.nativeSessionId, options });
+  const next: HostSessionState = { ...state, ...started, harnessVersion: checked.version };
+  saveState(next);
+  const session = new SessionHost(next);
+  session.start();
+  return { ok: true, session };
 }
 
 /** Starts an ended session of the owner again on this computer. It is the same session, live again. */

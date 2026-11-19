@@ -8,6 +8,7 @@
     "start": "bun run src/server.ts",
     "test": "bun test",
     "build:runner": "bun build --target=node --outfile=src/sandbox/image/runner.mjs src/sandbox/runner.ts",
+    "build:host": "bun build --target=bun --outfile=src/sandbox/image/host.mjs src/sandbox/host.ts",
     "test:db:lifecycle": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/integration-lifecycle.test.ts",
     "test:db:retrieval": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/retrieval.test.ts",
     "test:db:synthesis-consumption": "DRAFT_REQUIRE_DB_INTEGRATION_TESTS=1 bun test src/__tests__/db/synthesis-consumption.test.ts",
