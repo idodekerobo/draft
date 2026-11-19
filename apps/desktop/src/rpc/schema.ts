@@ -368,6 +368,8 @@ export type AppRPCType = {
 
       /** The `.env*` files in a folder, nested ones included, for the snapshot checklist. All start unticked by the caller. */
       listSessionEnvFiles: { params: { folderPath: string }; response: { ok: true; files: string[] } | { ok: false; error: string } };
+      /** How much a folder snapshot would copy, `.env` files aside. */
+      snapshotFolderSize: { params: { folderPath: string }; response: { ok: true; bytes: number; fileCount: number } | { ok: false; error: string } };
 
       /**
        * Packs a folder for a cloud session's snapshot, with the ticked .env files, and uploads it. The result holds the

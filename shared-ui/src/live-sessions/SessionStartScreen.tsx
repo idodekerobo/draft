@@ -14,6 +14,11 @@ import { branchProblem, cloudRepoFromRemote, cloudStartFailure, repoProblem, typ
 import { EnvChecklist } from "./EnvChecklist";
 import { loadRecentRepos, rememberRepo } from "./recent-repos";
 
+/** Above this a snapshot warns that copying takes a while; above the limit it is refused. The desktop app checks the limit again. */
+const SNAPSHOT_WARN_BYTES = 100 * 1024 * 1024;
+const SNAPSHOT_LIMIT_BYTES = 1024 * 1024 * 1024;
+const megabytes = (bytes: number) => (bytes < 1024 * 1024 ? "under 1 MB" : `${Math.round(bytes / (1024 * 1024)).toLocaleString()} MB`);
+
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
 /** `detail` is a sentence for the person, when the code alone does not say enough (a folder over the size cap). */
@@ -162,6 +167,8 @@ export function SessionStartScreen({
   /** Offers Draft cloud. Keep both functions stable: each runs again whenever its identity changes. */
   cloud?: {
     folderRemote: (folderPath: string) => Promise<string | null>;
+    /** How much a snapshot of the folder would copy. Rejects when the folder cannot be read. */
+    folderSize?: (folderPath: string) => Promise<{ bytes: number; fileCount: number }>;
     /** The `.env*` files in a folder, relative to it. Rejects when the folder cannot be read. */
     envFiles: (folderPath: string) => Promise<string[]>;
     /** A repository's branches (owner/name), or null when Draft cannot list them. The branch field stays free text then. */
@@ -189,6 +196,7 @@ export function SessionStartScreen({
   const [envFiles, setEnvFiles] = useState<string[] | null>(null);
   const [envError, setEnvError] = useState<string | null>(null);
   const [includeEnv, setIncludeEnv] = useState<string[]>([]);
+  const [size, setSize] = useState<{ bytes: number; fileCount: number } | null>(null);
   const repoEdited = useRef(false);
   const [starting, setStarting] = useState(false);
   const [step, setStep] = useState<string | null>(null);
@@ -213,6 +221,8 @@ export function SessionStartScreen({
   const defaults = useAgentDefaults(cloudOn ? undefined : agentDefaults, activeHarness);
   const folderRemote = cloud?.folderRemote;
   const envFilesOf = cloud?.envFiles;
+  const folderSizeOf = cloud?.folderSize;
+  const tooLarge = size !== null && size.bytes > SNAPSHOT_LIMIT_BYTES;
 
   const repoValue = cloudRepoFromRemote(repo);
   const repoError = repo.trim() ? repoProblem(repoValue) : null;
@@ -220,7 +230,7 @@ export function SessionStartScreen({
   const emptyProject = repoValue === "";
   const cloudReady = emptyProject || (!repoProblem(repoValue) && !branchProblem(branch) && branch.trim() !== "");
   // The checklist must have loaded, or failed, before a snapshot can start. A failed listing includes no .env files.
-  const snapshotReady = folder !== null && (envFiles !== null || envError !== null);
+  const snapshotReady = folder !== null && (envFiles !== null || envError !== null) && !tooLarge;
   const cloudStartable = snapshotOn ? snapshotReady : cloudReady;
 
   // The repository follows the folder's git remote until the person types their own.
@@ -262,6 +272,19 @@ export function SessionStartScreen({
       clearTimeout(timer);
     };
   }, [cloudOn, snapshotOn, repoSlug, branchesOf]);
+
+  // The size follows the folder. A failed check shows nothing; the desktop app still refuses a folder over the limit.
+  useEffect(() => {
+    setSize(null);
+    if (!snapshotOn || !folder || !folderSizeOf) return;
+    let current = true;
+    folderSizeOf(folder)
+      .then((found) => { if (current) setSize(found); })
+      .catch((error: unknown) => console.error("[sessions] could not measure the folder", error));
+    return () => {
+      current = false;
+    };
+  }, [snapshotOn, folder, folderSizeOf]);
 
   // The .env checklist follows the folder. A new folder starts with nothing ticked.
   useEffect(() => {
@@ -481,7 +504,14 @@ export function SessionStartScreen({
           )}
           {snapshotOn && (
             <div className="ui-start__snapshot">
-              <p className="ui-muted">Copies this folder to Draft cloud. The .git folder and node_modules are left out.</p>
+              <p className="ui-muted">Copies this folder to Draft cloud. Files your .gitignore skips, .git and node_modules are left out.</p>
+              {size && !tooLarge && size.bytes <= SNAPSHOT_WARN_BYTES && <p className="ui-muted">{size.fileCount.toLocaleString()} files, {megabytes(size.bytes)}</p>}
+              {size && !tooLarge && size.bytes > SNAPSHOT_WARN_BYTES && (
+                <p className="ui-start__warning" role="note">This folder holds {megabytes(size.bytes)} in {size.fileCount.toLocaleString()} files. Copying it may take a few minutes.</p>
+              )}
+              {tooLarge && (
+                <p className="ui-error" role="alert">This folder holds {megabytes(size!.bytes)}, over the 1 GB limit. Add large files to .gitignore, or start from a GitHub repository.</p>
+              )}
               <fieldset className="ui-start__env">
                 <legend className="ui-muted">.env files</legend>
                 {envFiles && envFiles.length > 0 && <p className="ui-start__warning" role="note">Anyone in this session can ask the agent to read these.</p>}

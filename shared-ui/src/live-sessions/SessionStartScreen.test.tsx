@@ -574,3 +574,30 @@ describe("SessionStartScreen empty project", () => {
     await waitFor(() => expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ source: "repo", gitRemote: "", branch: "" })));
   });
 });
+
+describe("SessionStartScreen snapshot size", () => {
+  const setup = (bytes: number) => {
+    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={async () => ({ ok: true })} cloud={{ folderRemote: async () => null, envFiles: async () => [], folderSize: async () => ({ bytes, fileCount: 1200 }), githubConnected: true }} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    fireEvent.click(screen.getByRole("radio", { name: "This folder (snapshot)" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "hi" } });
+  };
+  const start = () => screen.getByRole("button", { name: "Start" }) as HTMLButtonElement;
+
+  it("shows a small folder's size and lets it start", async () => {
+    setup(20 * 1024 * 1024);
+    expect(await screen.findByText("1,200 files, 20 MB")).toBeTruthy();
+    await waitFor(() => expect(start().disabled).toBe(false));
+  });
+
+  it("warns that a large folder takes a while", async () => {
+    setup(300 * 1024 * 1024);
+    expect(await screen.findByText(/Copying it may take a few minutes/)).toBeTruthy();
+  });
+
+  it("refuses a folder over the limit before Start", async () => {
+    setup(2 * 1024 * 1024 * 1024);
+    expect(await screen.findByText(/over the 1 GB limit/)).toBeTruthy();
+    expect(start().disabled).toBe(true);
+  });
+});

@@ -47,7 +47,7 @@ import {
   getLiveSessionEvents,
   getLiveSessionView,
   listLiveSessions,
-  listLiveSessionEnvFiles,
+  listLiveSessionEnvFiles, liveSessionSnapshotSize,
   sendLiveSessionMessage,
   setLiveSessionMode,
   stopLiveSession,
@@ -837,6 +837,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       startLiveSession: (params) => startLiveSessionRequest(params, ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort })),
 
       listSessionEnvFiles: ({ folderPath }) => listLiveSessionEnvFiles(folderPath),
+      snapshotFolderSize: ({ folderPath }) => liveSessionSnapshotSize(folderPath),
 
       uploadSessionSnapshot: (params) => uploadLiveSessionSnapshot(params),
 

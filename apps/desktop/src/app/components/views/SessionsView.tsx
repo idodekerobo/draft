@@ -17,6 +17,11 @@ const loadAgentDefaults = (harness: string) => rpc.request.getAgentDefaults({ ha
 const cloudStart = {
   folderRemote: (folderPath: string) => rpc.request.folderGitRemote({ folderPath }).then(({ gitRemote }) => gitRemote),
   branches: (repo: string) => rpc.request.listGithubBranches({ repo }).then((found) => (found.branches && found.defaultBranch ? { defaultBranch: found.defaultBranch, branches: found.branches } : null)),
+  folderSize: (folderPath: string) =>
+    rpc.request.snapshotFolderSize({ folderPath }).then((size) => {
+      if (!size.ok) throw new Error(size.error);
+      return { bytes: size.bytes, fileCount: size.fileCount };
+    }),
   envFiles: (folderPath: string) =>
     rpc.request.listSessionEnvFiles({ folderPath }).then((listing) => {
       if (!listing.ok) throw new Error(listing.error);

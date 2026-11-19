@@ -116,6 +116,15 @@ export function listSnapshotEnvFiles(root: string, fs: SnapshotFs): EnvFileListi
   return { ok: true, files: folderFiles(root, fs).filter((file) => isEnvFileName(basename(file))) };
 }
 
+/** How much a snapshot of the folder would copy, `.env` files aside, so the person can be warned before Start. */
+export function snapshotFolderSize(root: string, fs: SnapshotFs): { ok: true; bytes: number; fileCount: number } | { ok: false; error: "not_a_folder" } {
+  if (!fs.isDirectory(root)) return { ok: false, error: "not_a_folder" };
+  const files = folderFiles(root, fs).filter((file) => !isEnvFileName(basename(file)));
+  let bytes = 0;
+  for (const file of files) bytes += fs.fileSize(join(root, file));
+  return { ok: true, bytes, fileCount: files.length };
+}
+
 export type PackResult =
   | { ok: true; workDir: string; archive: string; bytes: number }
   | { ok: false; error: "not_a_folder" | "unknown_env_file" | "snapshot_empty" | "snapshot_pack_failed" | "snapshot_too_large"; bytes?: number; detail?: string };

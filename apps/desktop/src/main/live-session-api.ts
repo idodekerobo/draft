@@ -1,7 +1,7 @@
 import type { ApprovalResponse, SessionViewQuery, SessionViewResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-core/live-sessions";
 import { hostServices, ServerError } from "draft-core/host/services";
 import { sessionBase, type StartLiveSessionResult } from "draft-core/host/live-session";
-import { listSnapshotEnvFiles, nodeSnapshotFs, putArchive, uploadSnapshot, type SnapshotExec, type SnapshotFs, type PutArchive, type SnapshotUploadResult } from "./snapshot";
+import { listSnapshotEnvFiles, snapshotFolderSize, nodeSnapshotFs, putArchive, uploadSnapshot, type SnapshotExec, type SnapshotFs, type PutArchive, type SnapshotUploadResult } from "./snapshot";
 import { capture } from "../exec";
 
 export type LocalStartParams = { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null };
@@ -83,6 +83,11 @@ export async function startCloudLiveSession(params: CloudStartParams, deps: Clou
 /** The `.env*` files of a folder, for the checklist before a snapshot. Nothing is sent to the server. */
 export function listLiveSessionEnvFiles(folderPath: string, fs: SnapshotFs = nodeSnapshotFs): { ok: true; files: string[] } | { ok: false; error: string } {
   return listSnapshotEnvFiles(folderPath, fs);
+}
+
+/** How much a snapshot of the folder would copy, for the size warning before Start. */
+export function liveSessionSnapshotSize(folderPath: string, fs: SnapshotFs = nodeSnapshotFs) {
+  return snapshotFolderSize(folderPath, fs);
 }
 
 /**
