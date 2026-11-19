@@ -1,4 +1,5 @@
 import { memo, useEffect, useState } from "react";
+import { AgentPanel } from "./agent-transcript";
 import { Disclosure } from "./view-state";
 import { cachedMarkdown } from "./markdown-cache";
 import { LiveText } from "./LiveText";
@@ -8,7 +9,7 @@ import { isPromptBlock } from "draft-core/live-sessions";
 import { inputStatusLine, isBlocked } from "./input-status";
 import { approvalOutcome, isMine, oneLine, type StreamItem } from "./stream-items";
 
-const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.type === "live" ? `live-${item.messageId}` : item.seq);
+const keyOf = (item: StreamItem) => (item.type === "pending" ? `pending-${item.key}` : item.type === "live" ? `live-${item.messageId}` : item.type === "tool" && item.agent ? item.agent.key : item.seq);
 
 function formatInput(input: unknown): string {
   return typeof input === "string" ? input : JSON.stringify(input, null, 2);
@@ -138,6 +139,7 @@ function Item({ item, mine, ownerName, hostName, viewerId, linkFor, harness, onS
         </p>
       );
     case "tool":
+      if (item.agent) return <AgentPanel agent={item.agent} seq={item.seq} />;
       if (item.name === "ExitPlanMode" && typeof (item.input as { plan?: unknown } | null)?.plan === "string") {
         return (
           <Disclosure seq={item.seq} initiallyOpen summary={<span className="ui-stream__tool">Plan</span>}>
@@ -243,8 +245,8 @@ const StreamList = memo(function StreamList({
         return (
           <li
             key={keyOf(item)}
-            id={item.type === "pending" || item.type === "live" ? undefined : messageDomId(item.seq)}
-            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type === "live" ? "assistant" : item.type}${item.type === "tool" && item.children ? " ui-stream__item--agent" : ""}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.type !== "live" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
+            id={item.type === "pending" || item.type === "live" ? undefined : item.type === "tool" && item.agent?.hostSeq === null ? `agent-${encodeURIComponent(item.agent.key)}` : messageDomId(item.seq)}
+            className={`ui-stream__item ui-stream__item--${item.type === "pending" ? "user" : item.type === "live" ? "assistant" : item.type}${item.type === "tool" && (item.children || item.agent) ? " ui-stream__item--agent" : ""}${item.type === "user" || item.type === "pending" ? ` ui-stream__item--human${mine ? "" : " ui-stream__item--theirs"}` : ""}${item.type !== "pending" && item.type !== "live" && item.seq === highlightSeq ? " ui-stream__item--highlight" : ""}`}
           >
             <Item item={item} mine={mine} ownerName={ownerName} hostName={hostName} viewerId={viewerId} linkFor={linkFor} harness={harness} onSteer={onSteer} onCancel={onCancel} onShowRequest={onShowRequest} onSkipQuestions={onSkipQuestions} onDismissPrompt={onDismissPrompt} />
           </li>
@@ -254,12 +256,13 @@ const StreamList = memo(function StreamList({
   );
 });
 
-export function SessionStream({ liveItems, ...props }: Parameters<typeof StreamList>[0] & { liveItems?: StreamItem[] }) {
+export function SessionStream({ liveItems, separateLive = false, ...props }: Parameters<typeof StreamList>[0] & { liveItems?: StreamItem[]; separateLive?: boolean }) {
   if (!liveItems) return <StreamList {...props} />;
   const { onSteer, onCancel, onShowRequest, onSkipQuestions, onDismissPrompt, ...history } = props;
   const hasHistory = history.items.some((item) => item.type !== "approval" || item.resolved !== null);
   return <>
     <StreamList {...history} showEmpty={hasHistory || liveItems.length === 0} />
+    {separateLive && liveItems.length > 0 && <p className="ui-muted">Latest activity</p>}
     {liveItems.length > 0 && <StreamList {...props} items={liveItems} />}
   </>;
 }

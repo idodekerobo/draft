@@ -43,3 +43,21 @@ it("finishes a bounded in-flight initial read into cache after leaving",async()=
  await waitFor(()=>expect(t.client.getQueryCache().getAll().some(q=>(q.state.data as any)?.page?.events[0]?.seq===100)).toBe(true));
  expect(t.calls.length).toBe(1);
 });
+
+it("an older-history response cannot overwrite a newer input snapshot at the same event sequence",async()=>{
+ let finishOlder!:(response:SessionViewResponse)=>void;
+ const input={id:"input",author_user_id:"u",author_name:"User",text:"new message",state:"queued" as const,reason:null,created_at:"",updated_at:"",mine:true};
+ const t=setup(async q=>q.before!==undefined?new Promise(resolve=>{finishOlder=resolve;}):{page:page(q.after!==undefined?[]:[100]),snapshot:{...snapshot(),inputs:q.after!==undefined?[input]:[]}});
+ await screen.findByTestId("seqs");fireEvent.click(screen.getByText("older"));await waitFor(()=>expect(finishOlder).toBeDefined());
+ fireEvent.click(screen.getByText("refresh"));await waitFor(()=>expect(t.state().inputs[0]?.id).toBe("input"));
+ finishOlder({page:page([10],{through:500,readThrough:500,hasOlder:false})});
+ await waitFor(()=>expect(screen.getByTestId("seqs").textContent).toBe("10,100"));expect(t.state().inputs[0]?.id).toBe("input");expect(t.state().readThrough).toBe(1000);
+});
+
+it("a superseded focus request warms its cache without replacing the newer window",async()=>{
+ let finishFirst!:(response:SessionViewResponse)=>void;
+ const t=setup(async q=>q.around===5?new Promise(resolve=>{finishFirst=resolve;}):q.around===6?{page:page([6])}:{page:page([100]),snapshot:snapshot()});
+ await screen.findByTestId("seqs");fireEvent.click(screen.getByText("focus"));await waitFor(()=>expect(finishFirst).toBeDefined());
+ await t.state().history!.focus(6);await waitFor(()=>expect(screen.getByTestId("seqs").textContent).toBe("6"));
+ finishFirst({page:page([5])});await waitFor(()=>expect(t.state().history!.loading).toBe(false));expect(screen.getByTestId("seqs").textContent).toBe("6");
+});

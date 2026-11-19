@@ -64,7 +64,7 @@ export const viewStateKey = (sessionId: string, viewerId: string) => `${viewerId
 export function revealPath(items: StreamItem[], seq: number, parents: number[] = []): number[] | null {
   for (const item of items) {
     if (item.type === "pending" || item.type === "live") continue;
-    if (item.seq === seq) return [...parents, item.seq];
+    if (item.seq === seq && !(item.type === "tool" && item.agent?.hostSeq === null)) return [...parents, item.seq];
     if (item.type === "tool" && item.children) {
       const path = revealPath(item.children, seq, [...parents, item.seq]);
       if (path) return path;

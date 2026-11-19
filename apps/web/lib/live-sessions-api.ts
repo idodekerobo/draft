@@ -40,6 +40,11 @@ export function liveSessionsApi(workspaceId: string): LiveSessionsApi {
   const base = `/workspaces/${workspaceId}/live-sessions`;
   return {
     listSessions: async () => (await fetchLive<{ sessions: Awaited<ReturnType<LiveSessionsApi["listSessions"]>> }>(base)).sessions,
+    fetchView: (sessionId, query) => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value));
+      return fetchLive(`${base}/${sessionId}/view?${params}`);
+    },
     fetchEvents: (sessionId, after) => fetchLive<LiveSessionEventsPage>(`${base}/${sessionId}/events?after=${after}`),
     sendMessage: async (sessionId, text) => {
       const body = await post<{ input?: LiveSessionInput }>(`${base}/${sessionId}/inputs`, { text });

@@ -31,7 +31,8 @@ export interface SessionStreamState extends SessionStreamData {
     error: string | null;
     focused: boolean;
     failedTarget: number | null;
-    loadOlder(): Promise<void>;
+    before: number | null;
+    loadOlder(): Promise<boolean>;
     focus(seq: number): Promise<{ agentId: string | null; seq: number } | null>;
     latest(): void;
   };
@@ -71,13 +72,13 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
           const events = previous?.page?.events === page.events && previous.page.dependencies === page.dependencies ? previous.events : transcriptEvents(page);
           return { session: snapshot.session, viewer: snapshot.viewer, inputs: snapshot.inputs, events, page, agents: snapshot.agents, approvals: snapshot.approvals };
         };
+        syncSessionIntoLists(client, snapshot.session);
         while (page.hasNewer && active.current) {
           client.setQueryData(key, makeData());
           const next = await api.fetchView(sessionId, { after: page.readThrough, through: page.through, state: false });
           if (next.page.readThrough <= page.readThrough && next.page.hasNewer) throw new Error("History cursor did not advance");
           page = mergeTranscriptPage(page, next.page);
         }
-        syncSessionIntoLists(client, snapshot.session);
         return makeData();
       }
       let events = previous?.events ?? [];
@@ -104,7 +105,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
   const focused = windowSeq === null ? undefined : client.getQueryData<SessionTranscriptPage>(focusKey(windowSeq));
   const visible = focused ?? data.page;
   const loadOlder = async () => {
-    if (!api.fetchView || !visible?.hasOlder || visible.before === null || busy.current) return;
+    if (!api.fetchView || !visible?.hasOlder || visible.before === null || busy.current) return false;
     busy.current = true; setLoading(true); setError(null); setFailedTarget(null);
     const capturedSeq = windowSeq;
     try {
@@ -120,7 +121,8 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
           return { ...current, page, events: transcriptEvents(page) };
         });
       }
-    } catch { if (active.current) setError("Could not load older messages."); }
+      return true;
+    } catch { if (active.current) setError("Could not load older messages."); return false; }
     finally { busy.current = false; if (active.current) setLoading(false); }
   };
   const focus = async (seq: number) => {
@@ -132,7 +134,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
         queryFn: () => api.fetchView!(sessionId, { around: seq, state: false }), staleTime: 0 });
       if (!active.current || request !== focusRequest.current) return null;
       if (response.page.agentId) {
-        client.setQueryData([...key, "agent", response.page.agentId], response.page);
+        client.setQueryData([...key, "agent-window", response.page.agentId, String(seq)], response.page);
         const agent = data.agents?.find((a) => a.agentId === response.page.agentId);
         if (agent?.hostSeq) {
           const root = await client.fetchQuery({ queryKey: [...key, "around-root", String(agent.hostSeq)],
@@ -144,6 +146,7 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
         client.setQueryData(focusKey(seq), response.page);
         setWindowSeq(seq); setWindowVersion((v) => v + 1);
       }
+      if (!active.current || request !== focusRequest.current) return null;
       return { agentId: response.page.agentId, seq };
     } catch {
       if (active.current && request === focusRequest.current) { setError("This message is unavailable or could not be loaded."); setFailedTarget(seq); }
@@ -153,5 +156,5 @@ export function useSessionStream(api: LiveSessionsApi, sessionId: string): Sessi
   const events = useMemo(() => focused ? transcriptEvents(focused) : data.events, [focused, data.events, windowVersion]);
   return { ...data, events, cacheKey: key, recentEvents: data.events, readThrough: data.page?.readThrough ?? data.events.at(-1)?.seq ?? 0,
     refresh: async () => void (await refetch({ cancelRefetch: false })),
-    history: api.fetchView ? { hasOlder: visible?.hasOlder ?? false, loading, error, failedTarget, focused: windowSeq !== null, loadOlder, focus, latest: () => { focusRequest.current++; setWindowSeq(null); setError(null); setFailedTarget(null); setLoading(false); } } : undefined };
+    history: api.fetchView ? { before: visible?.before ?? null, hasOlder: visible?.hasOlder ?? false, loading, error, failedTarget, focused: windowSeq !== null, loadOlder, focus, latest: () => { focusRequest.current++; setWindowSeq(null); setError(null); setFailedTarget(null); setLoading(false); } } : undefined };
 }

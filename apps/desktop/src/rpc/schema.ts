@@ -1,3 +1,4 @@
+import type { SessionViewQuery, SessionViewResponse } from "draft-core/live-sessions";
 // desktop/src/rpc/schema.ts — typed IPC contract between Bun main process and renderer
 //
 // Import this file in BOTH bun (src/index.ts) and browser (src/mainview/index.ts).
@@ -355,6 +356,7 @@ export type AppRPCType = {
       listLiveSessions: { params: void; response: LiveSession[] };
 
       /** Events of one live session above `after`. */
+      getLiveSessionView: { params: { sessionId: string; query: SessionViewQuery }; response: SessionViewResponse };
       getLiveSessionEvents: { params: { sessionId: string; after: number }; response: LiveSessionEventsPage };
 
       /** Queue a message for a live session; the error is the server's error code. */

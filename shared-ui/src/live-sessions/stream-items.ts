@@ -46,6 +46,7 @@ export type StreamItem =
       agentId: string | null;
       /** The sub-agent's own items, for a tool call that started one. */
       children?: StreamItem[];
+      agent?: import("./types").SessionAgentSummary;
     };
 
 const SUMMARY_MAX_CHARS = 100;
@@ -116,7 +117,7 @@ function nestAgentRuns(items: StreamItem[]): StreamItem[] {
 }
 
 /** Turns the event log into display items. A tool result joins its tool call by id. */
-export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
+export function buildStreamItems(events: LiveSessionEvent[], scoped = false): StreamItem[] {
   const items: StreamItem[] = [];
   const toolsById = new Map<string, Extract<StreamItem, { type: "tool" }>>();
   const approvalsById = new Map<string, Extract<StreamItem, { type: "approval" }>>();
@@ -211,7 +212,7 @@ export function buildStreamItems(events: LiveSessionEvent[]): StreamItem[] {
       }
     }
   }
-  return nestAgentRuns(items);
+  return scoped ? items : nestAgentRuns(items);
 }
 
 export type OpenApproval = Extract<StreamItem, { type: "approval" }>;

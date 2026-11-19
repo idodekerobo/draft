@@ -6,7 +6,7 @@ export function TeamStrip({ members, onShow }: { members: TeamMember[]; onShow: 
   return (
     <ul className="ui-team" aria-label="Agents in this session">
       {members.map((member) => (
-        <li key={member.name}>
+        <li key={member.key ?? member.name}>
           <button
             type="button"
             className="ui-team__chip"

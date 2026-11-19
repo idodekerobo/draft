@@ -45,6 +45,7 @@ import {
   actOnLiveSessionInput,
   decideLiveSessionApproval,
   getLiveSessionEvents,
+  getLiveSessionView,
   listLiveSessions,
   sendLiveSessionMessage,
   setLiveSessionMode,
@@ -832,6 +833,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       listLiveSessions: () => listLiveSessions(),
 
+      getLiveSessionView: ({ sessionId, query }) => getLiveSessionView(sessionId, query),
       getLiveSessionEvents: ({ sessionId, after }) => getLiveSessionEvents(sessionId, after),
 
       sendLiveSessionMessage: ({ sessionId, text }) => sendLiveSessionMessage(sessionId, text),
