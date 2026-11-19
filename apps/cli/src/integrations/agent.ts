@@ -89,7 +89,7 @@ function emitJson(deps: AgentConnectDeps, value: object): void {
 
 function fail(json: boolean, deps: AgentConnectDeps, code: string, message: string): number {
   if (json) emitJson(deps, errorPayload(code, message));
-  else deps.stderr(`${red(`draft integrations connect: ${message}`)}\n`);
+  else deps.stderr(`${red(`draft connections connect: ${message}`)}\n`);
   return EXIT_OPERATIONAL_ERROR;
 }
 
@@ -106,7 +106,7 @@ export async function runAgentConnect(
   const backendProvider = BACKEND_PROVIDER[options.provider];
   const label = PROVIDER_LABELS[options.provider];
 
-  const started = await deps.callTool("integrations.connect", { provider: backendProvider });
+  const started = await deps.callTool("connections.connect", { provider: backendProvider });
   if (!started.ok) {
     return fail(options.json, deps, started.refusal ?? started.code, started.message ?? "Could not start the connection. Retry shortly.");
   }
@@ -123,7 +123,7 @@ export async function runAgentConnect(
   const deadline = Date.parse(link.expiresAt);
   while (deps.now() < deadline) {
     await deps.sleep(POLL_INTERVAL_MS);
-    const listed = await deps.callTool("integrations.list", {});
+    const listed = await deps.callTool("connections.list", {});
     if (!listed.ok) {
       return fail(options.json, deps, listed.refusal ?? listed.code, listed.message ?? "Could not check the connection. Retry shortly.");
     }

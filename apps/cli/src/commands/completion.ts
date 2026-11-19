@@ -30,14 +30,14 @@ _draft_completion() {
   local cur prev commands flags
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context people routines activity sources sessions skills integrations update uninstall completion"
+  commands="add auth context people routines activity sources sessions skills connections update uninstall completion"
 
   if [[ "\$cur" == -* ]]; then
     case "\${COMP_WORDS[1]}:\${COMP_WORDS[2]}" in
       auth:login) flags="--force --json" ;;
-      integrations:connect) flags="--json --wait --no-open --workspace-key --credential-stdin --credential-fd" ;;
-      integrations:list) flags="--json" ;;
-      integrations:disconnect) flags="--json --workspace-key" ;;
+      connections:connect) flags="--json --wait --no-open --workspace-key --credential-stdin --credential-fd" ;;
+      connections:list) flags="--json" ;;
+      connections:disconnect) flags="--json --workspace-key" ;;
       activity:list) flags="--cursor --json" ;;
       sessions:list) flags="--provider --since --until --limit --cursor --json" ;;
       sessions:read) flags="--after-seq --limit --json" ;;
@@ -90,18 +90,18 @@ _draft_completion() {
       COMPREPLY=( $(compgen -W "list read add update remove" -- "\$cur") )
       return 0
       ;;
-    integrations)
+    connections)
       COMPREPLY=( $(compgen -W "list connect disconnect slack" -- "\$cur") )
       return 0
       ;;
     connect)
-      if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
+      if [[ "\${COMP_WORDS[1]}" == "connections" ]]; then
         COMPREPLY=( $(compgen -W "github slack linear fireflies granola claude-code" -- "\$cur") )
         return 0
       fi
       ;;
     disconnect)
-      if [[ "\${COMP_WORDS[1]}" == "integrations" ]]; then
+      if [[ "\${COMP_WORDS[1]}" == "connections" ]]; then
         COMPREPLY=( $(compgen -W "github fireflies linear slack granola" -- "\$cur") )
         return 0
       fi
@@ -145,7 +145,7 @@ _draft() {
         'sources:Search and read cross-provider source evidence'
         'sessions:Manage coding session capture'
         'skills:Discover and manage the company skill marketplace'
-        'integrations:Manage hosted integrations'
+        'connections:Manage hosted connections'
         'update:Update the Draft CLI'
         'uninstall:Remove the Draft CLI'
         'completion:Generate shell completion script'
@@ -219,7 +219,7 @@ _draft() {
           local subcmds=('list:List the skill marketplace' 'read:Read one skill' 'add:Add a skill' 'update:Update a skill' 'remove:Remove a skill')
           _describe 'subcommand' subcmds
           ;;
-        integrations)
+        connections)
           if (( CURRENT == 3 )); then
             local subcmds=('list:Show each integration and what it unlocks' 'connect:Connect a hosted integration' 'disconnect:Disconnect a hosted integration' 'slack:Manage Slack channels')
             _describe 'subcommand' subcmds

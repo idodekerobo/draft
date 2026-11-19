@@ -189,7 +189,7 @@ describe("GitHub connect provider", () => {
   });
 });
 
-describe("draft integrations connect github", () => {
+describe("draft connections connect github", () => {
   let backend: ReturnType<typeof createMockBackend>;
   let home: string;
 
@@ -201,9 +201,9 @@ describe("draft integrations connect github", () => {
 
   afterEach(() => backend.stop());
 
-  it("with --json calls integrations.connect and prints the link, without touching the install-session routes", async () => {
+  it("with --json calls connections.connect and prints the link, without touching the install-session routes", async () => {
     const calls: unknown[] = [];
-    backend.state.toolOutputs["integrations.connect"] = (input) => {
+    backend.state.toolOutputs["connections.connect"] = (input) => {
       calls.push(input);
       return {
         status: "action_required",
@@ -215,7 +215,7 @@ describe("draft integrations connect github", () => {
       };
     };
 
-    const result = await runCli(["integrations", "connect", "github", "--json"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "connect", "github", "--json"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -235,7 +235,7 @@ describe("draft integrations connect github", () => {
   });
 
   it("without a terminal prints a human link line and exits 0", async () => {
-    backend.state.toolOutputs["integrations.connect"] = () => ({
+    backend.state.toolOutputs["connections.connect"] = () => ({
       status: "action_required",
       action: "connect_github",
       provider: "github",
@@ -244,16 +244,16 @@ describe("draft integrations connect github", () => {
       message: "Ask the person to open this link.",
     });
 
-    const result = await runCli(["integrations", "connect", "github"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "connect", "github"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("Open this link to connect GitHub: https://draft.example/connect/token-2 (expires 2026-11-14T12:15:00.000Z)");
   });
 
-  it("maps a refusal from integrations.connect to a safe error", async () => {
-    backend.state.toolOutputs["integrations.connect"] = () => ({ __refusal: { code: "too_many_requests", message: "Too many open connect links." } });
+  it("maps a refusal from connections.connect to a safe error", async () => {
+    backend.state.toolOutputs["connections.connect"] = () => ({ __refusal: { code: "too_many_requests", message: "Too many open connect links." } });
 
-    const result = await runCli(["integrations", "connect", "github", "--json"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "connect", "github", "--json"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ schema_version: 1, status: "error", code: "too_many_requests", message: "Too many open connect links." });
@@ -261,13 +261,13 @@ describe("draft integrations connect github", () => {
 
   it("rejects invalid grammar before any request", async () => {
     const cases = [
-      ["integrations", "connect"],
-      ["integrations", "connect", "github", "extra"],
-      ["integrations", "connect", "github", "--json", "--json"],
-      ["integrations", "connect", "github", "--no-open"],
-      ["integrations", "connect", "github", "--credential-fd", "2"],
-      ["integrations", "connect", "unknown-provider"],
-      ["integrations", "connect", "--json", "github"],
+      ["connections", "connect"],
+      ["connections", "connect", "github", "extra"],
+      ["connections", "connect", "github", "--json", "--json"],
+      ["connections", "connect", "github", "--no-open"],
+      ["connections", "connect", "github", "--credential-fd", "2"],
+      ["connections", "connect", "unknown-provider"],
+      ["connections", "connect", "--json", "github"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });
@@ -277,7 +277,7 @@ describe("draft integrations connect github", () => {
   });
 
   it("lists the valid providers when connect is missing or given an unknown one", async () => {
-    for (const args of [["integrations", "connect"], ["integrations", "connect", "unknown-provider"]]) {
+    for (const args of [["connections", "connect"], ["connections", "connect", "unknown-provider"]]) {
       const human = await runCli(args, { home, apiUrl: backend.url });
       expect(human.exitCode).toBe(2);
       expect(human.stderr).toContain("github|linear|claude-code|slack|fireflies");
@@ -290,7 +290,7 @@ describe("draft integrations connect github", () => {
   });
 
   it("still reports github's own grammar error, not the generic provider list, when a valid provider is just misplaced", async () => {
-    const result = await runCli(["integrations", "connect", "--json", "github"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "connect", "--json", "github"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(2);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_usage" });
     expect(backend.state.requests).toEqual([]);

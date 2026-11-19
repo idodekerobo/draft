@@ -55,7 +55,7 @@ describe("draft routines list", () => {
     expect(result.stdout).toContain("Messages teammates: yes");
     expect(result.stdout).toContain("GitHub: acme/app (read)");
     expect(result.stdout).toContain("missing connection");
-    expect(result.stdout).toContain("draft integrations connect github");
+    expect(result.stdout).toContain("draft connections connect github");
     expect(result.stdout).toContain("next run: 2026-10-06T03:00:00.000Z");
     expect(result.stdout).toContain("last run: 2026-10-05T03:00:00.000Z  completed: Summarized 4 sessions");
     expect(result.stdout).not.toContain("Line one");
@@ -341,7 +341,7 @@ describe("draft routines create", () => {
     ], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("linear is not connected.");
-    expect(result.stderr).toContain("Connect it with: draft integrations connect linear");
+    expect(result.stderr).toContain("Connect it with: draft connections connect linear");
   });
 });
 
@@ -438,7 +438,7 @@ describe("draft routines update", () => {
     backend.state.toolOutputs["routines.update"] = () => refusal("github_not_connected", "github is not connected.");
     const result = await runCli(["routines", "update", ROUTINE_ID, "--no-triggers", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
-    expect(JSON.parse(result.stdout)).toMatchObject({ code: "github_not_connected", action: "draft integrations connect github" });
+    expect(JSON.parse(result.stdout)).toMatchObject({ code: "github_not_connected", action: "draft connections connect github" });
   });
 });
 

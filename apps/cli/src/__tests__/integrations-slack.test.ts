@@ -370,7 +370,7 @@ describe("Slack channels set", () => {
   });
 });
 
-describe("draft integrations connect slack / channels", () => {
+describe("draft connections connect slack / channels", () => {
   let backend: ReturnType<typeof createMockBackend>;
   let home: string;
 
@@ -383,7 +383,7 @@ describe("draft integrations connect slack / channels", () => {
   afterEach(() => backend.stop());
 
   it("connects slack end-to-end through --credential-stdin with default empty channels", async () => {
-    const result = await runCli(["integrations", "connect", "slack", "--credential-stdin", "--json"], {
+    const result = await runCli(["connections", "connect", "slack", "--credential-stdin", "--json"], {
       home,
       apiUrl: backend.url,
       stdin: JSON.stringify({ bot_token: "xoxb-e2e", app_token: "xapp-e2e" }),
@@ -408,7 +408,7 @@ describe("draft integrations connect slack / channels", () => {
       ok: true,
       channels: [{ id: "C1", name: "general", memberCount: 4, isMember: false }],
     });
-    const listResult = await runCli(["integrations", "slack", "channels", "list", "--json"], { home, apiUrl: backend.url });
+    const listResult = await runCli(["connections", "slack", "channels", "list", "--json"], { home, apiUrl: backend.url });
     expect(listResult.exitCode).toBe(0);
     expect(JSON.parse(listResult.stdout)).toEqual({
       schema_version: 1,
@@ -424,7 +424,7 @@ describe("draft integrations connect slack / channels", () => {
       left: [],
       failed: [],
     });
-    const setResult = await runCli(["integrations", "slack", "channels", "set", "C1", "--json"], { home, apiUrl: backend.url });
+    const setResult = await runCli(["connections", "slack", "channels", "set", "C1", "--json"], { home, apiUrl: backend.url });
     expect(setResult.exitCode).toBe(0);
     expect(JSON.parse(setResult.stdout)).toEqual({
       schema_version: 1,
@@ -448,7 +448,7 @@ describe("draft integrations connect slack / channels", () => {
       left: ["C1"],
       failed: [],
     });
-    const result = await runCli(["integrations", "slack", "channels", "set", "--json"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "slack", "channels", "set", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     const patchRequest = backend.state.requests.find((request) => request.method === "PATCH");
     expect(patchRequest && JSON.parse(patchRequest.body)).toEqual({ channel_ids: [] });
@@ -457,14 +457,14 @@ describe("draft integrations connect slack / channels", () => {
 
   it("rejects invalid grammar before any request", async () => {
     const cases = [
-      ["integrations", "connect", "slack", "extra"],
-      ["integrations", "connect", "slack", "--json", "--json"],
-      ["integrations", "connect", "slack", "--credential-stdin", "--credential-fd", "3"],
-      ["integrations", "slack"],
-      ["integrations", "slack", "channels"],
-      ["integrations", "slack", "channels", "list", "extra"],
-      ["integrations", "slack", "channels", "set", "--unknown"],
-      ["integrations", "slack", "unknown"],
+      ["connections", "connect", "slack", "extra"],
+      ["connections", "connect", "slack", "--json", "--json"],
+      ["connections", "connect", "slack", "--credential-stdin", "--credential-fd", "3"],
+      ["connections", "slack"],
+      ["connections", "slack", "channels"],
+      ["connections", "slack", "channels", "list", "extra"],
+      ["connections", "slack", "channels", "set", "--unknown"],
+      ["connections", "slack", "unknown"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });

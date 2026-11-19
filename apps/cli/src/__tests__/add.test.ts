@@ -64,14 +64,14 @@ describe("draft add — tool-to-file mapping", () => {
       expect(content).toContain("draft:end");
     });
 
-    test(`${tool} writes the hosted-integrations subsection to ${file}`, async () => {
+    test(`${tool} writes the hosted-connections subsection to ${file}`, async () => {
       const result = await runCli(["add", tool, "--dir", project], { home, apiUrl: "http://unused" });
       expect(result.exitCode).toBe(0);
       const content = readFileSync(join(project, file), "utf8");
-      expect(content).toContain("### Hosted integrations");
-      expect(content).toContain("draft integrations list");
-      expect(content).toContain("draft integrations connect <github|linear|slack|fireflies|granola|claude-code>");
-      expect(content).toContain("draft integrations disconnect <github|linear|slack|fireflies|granola>");
+      expect(content).toContain("### Hosted connections");
+      expect(content).toContain("draft connections list");
+      expect(content).toContain("draft connections connect <github|linear|slack|fireflies|granola|claude-code>");
+      expect(content).toContain("draft connections disconnect <github|linear|slack|fireflies|granola>");
     });
 
     test(`${tool} writes the latest-information subsection to ${file}`, async () => {

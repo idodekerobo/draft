@@ -25,7 +25,7 @@ function harness(options: {
   const deps: AgentConnectDeps = {
     callTool: async (name, input) => {
       calls.push({ name, input });
-      if (name === "integrations.connect") return options.connect;
+      if (name === "connections.connect") return options.connect;
       const next = lists.shift() ?? { integrations: [{ provider: "linear", status: "not_connected" }] };
       return { ok: true, output: next };
     },
@@ -63,7 +63,7 @@ describe("runAgentConnect", () => {
     const h = harness({ connect: linkResult });
     const code = await runAgentConnect({ provider: "linear", json: true, wait: false }, h.deps);
     expect(code).toBe(0);
-    expect(h.calls).toEqual([{ name: "integrations.connect", input: { provider: "linear" } }]);
+    expect(h.calls).toEqual([{ name: "connections.connect", input: { provider: "linear" } }]);
     expect(h.stdout).toHaveLength(1);
     expect(JSON.parse(h.stdout[0]!)).toEqual({ schema_version: 1, ...LINK });
   });
@@ -71,7 +71,7 @@ describe("runAgentConnect", () => {
   it("maps claude-code to the claude_session provider", async () => {
     const h = harness({ connect: { ok: true, output: { ...LINK, provider: "claude_session" } } });
     await runAgentConnect({ provider: "claude-code", json: true, wait: false }, h.deps);
-    expect(h.calls[0]).toEqual({ name: "integrations.connect", input: { provider: "claude_session" } });
+    expect(h.calls[0]).toEqual({ name: "connections.connect", input: { provider: "claude_session" } });
   });
 
   it("prints a human link line without --json", async () => {
@@ -80,7 +80,7 @@ describe("runAgentConnect", () => {
     expect(h.stdout.join("")).toBe(`Open this link to connect Linear: ${LINK.url} (expires ${EXPIRES_AT})\n`);
   });
 
-  it("with --wait polls integrations.list until the provider is connected", async () => {
+  it("with --wait polls connections.list until the provider is connected", async () => {
     const h = harness({
       connect: linkResult,
       lists: [
@@ -90,7 +90,7 @@ describe("runAgentConnect", () => {
     });
     const code = await runAgentConnect({ provider: "linear", json: true, wait: true }, h.deps);
     expect(code).toBe(0);
-    expect(h.calls.map((call) => call.name)).toEqual(["integrations.connect", "integrations.list", "integrations.list"]);
+    expect(h.calls.map((call) => call.name)).toEqual(["connections.connect", "connections.list", "connections.list"]);
     const lines = h.stdout.map((line) => JSON.parse(line));
     expect(lines.at(-1)).toEqual({ schema_version: 1, status: "connected", provider: "linear" });
   });
@@ -99,7 +99,7 @@ describe("runAgentConnect", () => {
     const h = harness({ connect: linkResult, startMs: 15 * 60_000 + 1_000 });
     const code = await runAgentConnect({ provider: "linear", json: true, wait: true }, h.deps);
     expect(code).toBe(1);
-    expect(h.calls.some((call) => call.name === "integrations.list")).toBe(false);
+    expect(h.calls.some((call) => call.name === "connections.list")).toBe(false);
     expect(JSON.parse(h.stdout.at(-1)!)).toMatchObject({ status: "error", code: "expired" });
   });
 
@@ -107,7 +107,7 @@ describe("runAgentConnect", () => {
     const h = harness({ connect: linkResult, lists: [] });
     const code = await runAgentConnect({ provider: "linear", json: true, wait: true }, h.deps);
     expect(code).toBe(1);
-    const listCalls = h.calls.filter((call) => call.name === "integrations.list").length;
+    const listCalls = h.calls.filter((call) => call.name === "connections.list").length;
     expect(listCalls).toBeGreaterThan(0);
     expect(JSON.parse(h.stdout.at(-1)!)).toMatchObject({ status: "error", code: "expired" });
   });

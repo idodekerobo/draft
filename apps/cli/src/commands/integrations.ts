@@ -243,7 +243,7 @@ async function runIntegrationsList(args: string[]): Promise<number> {
     return output.error("invalid_usage");
   }
 
-  const result = await callPersonTool("integrations.list", {});
+  const result = await callPersonTool("connections.list", {});
   if (!result.ok) {
     return output.error(toIntegrationErrorCode(result.refusal ?? result.code));
   }

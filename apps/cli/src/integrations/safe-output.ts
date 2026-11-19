@@ -45,7 +45,7 @@ interface ErrorDefinition {
 export const INTEGRATION_ERROR_REGISTRY: Record<IntegrationErrorCode, ErrorDefinition> = {
   invalid_usage: { message: "Invalid integrations command.", action: "draft --help", exitCode: 2 },
   invalid_connect_usage: {
-    message: "Usage: draft integrations connect <github|linear|claude-code|slack|fireflies|granola> [options].",
+    message: "Usage: draft connections connect <github|linear|claude-code|slack|fireflies|granola> [options].",
     exitCode: 2,
   },
   credential_input_required: { message: "Credential input requires a controlling terminal or an explicit credential source.", exitCode: 2 },

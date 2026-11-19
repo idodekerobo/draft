@@ -1,9 +1,9 @@
-// integrations/help.ts — usage text for `draft integrations`. Each subcommand has its own page so agents read only what they need.
+// integrations/help.ts — usage text for `draft connections`. Each subcommand has its own page so agents read only what they need.
 
 const PROVIDERS = "github, slack, linear, fireflies, granola, claude-code";
 
 export function integrationsGroupHelp(): string {
-  return `Usage: draft integrations <command> [options]
+  return `Usage: draft connections <command> [options]
 
 Commands:
   list                        Show each integration: status, what it brings in, what it unlocks
@@ -11,14 +11,14 @@ Commands:
   disconnect <provider>       Disconnect a provider
   slack channels list|set     List or set the Slack channels Draft reads
 
-Run \`draft integrations <command> --help\` for details.
+Run \`draft connections <command> --help\` for details.
 `;
 }
 
 export function integrationsSubcommandHelp(subcommand: string): string | null {
   switch (subcommand) {
     case "list":
-      return `Usage: draft integrations list [--json]
+      return `Usage: draft connections list [--json]
 
 Shows every provider: whether it is connected and whether you connected it,
 what it brings in, the routine triggers and abilities it unlocks, and the
@@ -30,11 +30,11 @@ Flags:
   --json    Print the tool's output unchanged, as JSON
 
 Examples:
-  draft integrations list
-  draft integrations list --json
+  draft connections list
+  draft connections list --json
 `;
     case "connect":
-      return `Usage: draft integrations connect <provider> [--json] [--wait]
+      return `Usage: draft connections connect <provider> [--json] [--wait]
 
 Providers: ${PROVIDERS}
 
@@ -53,13 +53,13 @@ Flags:
   --workspace-key        Connect the workspace's shared Granola key (granola; terminal flow only)
 
 Examples:
-  draft integrations connect linear
-  draft integrations connect linear --json
-  draft integrations connect linear --json --wait
-  draft integrations connect granola --workspace-key
+  draft connections connect linear
+  draft connections connect linear --json
+  draft connections connect linear --json --wait
+  draft connections connect granola --workspace-key
 `;
     case "disconnect":
-      return `Usage: draft integrations disconnect <provider> [--json] [--workspace-key]
+      return `Usage: draft connections disconnect <provider> [--json] [--workspace-key]
 
 Providers: github, slack, linear, fireflies, granola
 
@@ -68,12 +68,12 @@ Flags:
   --workspace-key    Disconnect the workspace's shared Granola key (granola only)
 
 Examples:
-  draft integrations disconnect linear
-  draft integrations disconnect granola --workspace-key
+  draft connections disconnect linear
+  draft connections disconnect granola --workspace-key
 `;
     case "slack":
-      return `Usage: draft integrations slack channels list [--json]
-       draft integrations slack channels set <channel-id>... [--json]
+      return `Usage: draft connections slack channels list [--json]
+       draft connections slack channels set <channel-id>... [--json]
 
 Lists the Slack channels Draft can read, or sets the channels it reads.
 
@@ -81,8 +81,8 @@ Flags:
   --json    Print the result as JSON
 
 Examples:
-  draft integrations slack channels list
-  draft integrations slack channels set C0123ABC C0456DEF
+  draft connections slack channels list
+  draft connections slack channels set C0123ABC C0456DEF
 `;
     default:
       return null;

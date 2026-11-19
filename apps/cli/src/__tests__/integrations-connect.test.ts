@@ -166,7 +166,7 @@ describe("Claude Code connect provider", () => {
   });
 });
 
-describe("draft integrations connect linear / claude-code", () => {
+describe("draft connections connect linear / claude-code", () => {
   let backend: ReturnType<typeof createMockBackend>;
   let home: string;
 
@@ -179,7 +179,7 @@ describe("draft integrations connect linear / claude-code", () => {
   afterEach(() => backend.stop());
 
   it("connects linear end-to-end through --credential-stdin", async () => {
-    const result = await runCli(["integrations", "connect", "linear", "--credential-stdin", "--json"], {
+    const result = await runCli(["connections", "connect", "linear", "--credential-stdin", "--json"], {
       home,
       apiUrl: backend.url,
       stdin: JSON.stringify({ api_key: "lin_api_e2e" }),
@@ -196,7 +196,7 @@ describe("draft integrations connect linear / claude-code", () => {
   });
 
   it("connects claude-code end-to-end through --credential-stdin", async () => {
-    const result = await runCli(["integrations", "connect", "claude-code", "--credential-stdin", "--json"], {
+    const result = await runCli(["connections", "connect", "claude-code", "--credential-stdin", "--json"], {
       home,
       apiUrl: backend.url,
       stdin: JSON.stringify({ setup_token: "setup_e2e" }),
@@ -217,7 +217,7 @@ describe("draft integrations connect linear / claude-code", () => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-    const result = await runCli(["integrations", "connect", "linear", "--credential-stdin", "--json"], {
+    const result = await runCli(["connections", "connect", "linear", "--credential-stdin", "--json"], {
       home,
       apiUrl: backend.url,
       stdin: JSON.stringify({ api_key: "canary-malformed-secret" }),
@@ -230,12 +230,12 @@ describe("draft integrations connect linear / claude-code", () => {
 
   it("rejects invalid grammar before any request", async () => {
     const cases = [
-      ["integrations", "connect", "linear", "extra"],
-      ["integrations", "connect", "linear", "--json", "--json"],
-      ["integrations", "connect", "linear", "--no-open"],
-      ["integrations", "connect", "linear", "--credential-stdin", "--credential-fd", "3"],
-      ["integrations", "connect", "claude-code", "extra"],
-      ["integrations", "connect", "claude-code", "--no-open"],
+      ["connections", "connect", "linear", "extra"],
+      ["connections", "connect", "linear", "--json", "--json"],
+      ["connections", "connect", "linear", "--no-open"],
+      ["connections", "connect", "linear", "--credential-stdin", "--credential-fd", "3"],
+      ["connections", "connect", "claude-code", "extra"],
+      ["connections", "connect", "claude-code", "--no-open"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });
@@ -245,7 +245,7 @@ describe("draft integrations connect linear / claude-code", () => {
   });
 
   it("disconnects claude-code deterministically as not_supported without a network call", async () => {
-    const result = await runCli(["integrations", "disconnect", "claude-code", "--json"], {
+    const result = await runCli(["connections", "disconnect", "claude-code", "--json"], {
       home,
       apiUrl: backend.url,
     });
