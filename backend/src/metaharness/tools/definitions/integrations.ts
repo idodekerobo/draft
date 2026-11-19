@@ -10,7 +10,7 @@ export function createIntegrationTools(client: SupabaseClient) {
     description: "The workspace's connections (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): whether each is connected, what it brings in, which routine triggers and abilities it unlocks, and how to connect it.",
     handler: async ({ caller }) => {
       const user = requireUser(caller, "connections.list");
-      return { status: "ok", output: { integrations: await listIntegrations(client, user.workspaceId, user.userId) } };
+      return { status: "ok", output: { connections: await listIntegrations(client, user.workspaceId, user.userId) } };
     },
   });
 

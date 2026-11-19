@@ -74,18 +74,18 @@ const SAMPLE_INTEGRATIONS = [
 
 describe("draft connections list", () => {
   it("passes the connections.list tool output through unchanged as JSON", async () => {
-    backend.state.toolOutputs["connections.list"] = () => ({ integrations: SAMPLE_INTEGRATIONS });
+    backend.state.toolOutputs["connections.list"] = () => ({ connections: SAMPLE_INTEGRATIONS });
 
     const result = await runCli(["connections", "list", "--json"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
-    expect(result.stdout).toBe(JSON.stringify({ integrations: SAMPLE_INTEGRATIONS }));
+    expect(result.stdout).toBe(JSON.stringify({ connections: SAMPLE_INTEGRATIONS }));
     expect(backend.state.requests.some((request) => new URL(request.url).pathname === "/workspaces/ws-1/tools/connections.list")).toBe(true);
   });
 
   it("prints one block per provider with status, what it unlocks, and the connect command", async () => {
-    backend.state.toolOutputs["connections.list"] = () => ({ integrations: SAMPLE_INTEGRATIONS });
+    backend.state.toolOutputs["connections.list"] = () => ({ connections: SAMPLE_INTEGRATIONS });
 
     const result = await runCli(["connections", "list"], { home, apiUrl: backend.url });
 
@@ -119,7 +119,7 @@ describe("draft connections list", () => {
   });
 
   it("reports a malformed tool output as malformed_response", async () => {
-    backend.state.toolOutputs["connections.list"] = () => ({ integrations: "malformed-canary" });
+    backend.state.toolOutputs["connections.list"] = () => ({ connections: "malformed-canary" });
 
     const result = await runCli(["connections", "list", "--json"], { home, apiUrl: backend.url });
 
@@ -224,14 +224,14 @@ describe("draft connections grammar and safe failures", () => {
   });
 });
 
-describe("integrations help and completion", () => {
+describe("connections help and completion", () => {
   it("lists only the exposed integrations commands in top-level help", async () => {
     const result = await runCli(["--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("integrations list");
-    expect(result.stdout).toContain("integrations connect <provider>");
-    expect(result.stdout).toContain("integrations disconnect <provider>");
-    expect(result.stdout).toContain("integrations slack channels list|set");
+    expect(result.stdout).toContain("connections list");
+    expect(result.stdout).toContain("connections connect <provider>");
+    expect(result.stdout).toContain("connections disconnect <provider>");
+    expect(result.stdout).toContain("connections slack channels list|set");
     expect(result.stdout).toContain("Connect github, slack, linear, fireflies, granola, or claude-code");
   });
 
@@ -270,17 +270,17 @@ describe("integrations help and completion", () => {
   it("includes current top-level commands and integrations choices in bash and zsh completion", async () => {
     const bash = await runCli(["completion"], { home, apiUrl: backend.url });
     expect(bash.exitCode).toBe(0);
-    expect(bash.stdout).toContain('commands="add auth context people routines activity sources sessions skills integrations update uninstall completion"');
+    expect(bash.stdout).toContain('commands="add auth context people routines activity sources sessions skills connections update uninstall completion"');
     expect(bash.stdout).toContain('compgen -W "list connect disconnect slack"');
     expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola claude-code"');
     expect(bash.stdout).toContain('compgen -W "list options create update delete run runs"');
-    expect(bash.stdout).toContain('integrations:connect) flags="--json --wait --no-open');
+    expect(bash.stdout).toContain('connections:connect) flags="--json --wait --no-open');
     expect(bash.stdout).toContain('routines:*) flags="--on --github --github-access');
     expect(bash.stdout).toContain('compgen -W "github fireflies linear slack granola"');
 
     const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
     expect(zsh.exitCode).toBe(0);
-    for (const command of ["add:", "auth:", "context:", "people:", "sources:", "sessions:", "skills:", "integrations:", "update:", "completion:"]) {
+    for (const command of ["add:", "auth:", "context:", "people:", "sources:", "sessions:", "skills:", "connections:", "update:", "completion:"]) {
       expect(zsh.stdout).toContain(`'${command}`);
     }
     expect(zsh.stdout).toContain("'list:Show each integration and what it unlocks'");

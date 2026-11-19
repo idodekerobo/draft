@@ -76,7 +76,7 @@ function readConnectOutput(output: unknown): ConnectOutput | null {
 }
 
 function isConnectedIn(output: unknown, backendProvider: string): boolean {
-  const list = (output as { integrations?: unknown } | null)?.integrations;
+  const list = (output as { connections?: unknown } | null)?.connections;
   return Array.isArray(list) && list.some((item) =>
     (item as { provider?: unknown; status?: unknown }).provider === backendProvider &&
     (item as { status?: unknown }).status === "connected"

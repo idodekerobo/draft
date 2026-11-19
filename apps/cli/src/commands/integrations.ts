@@ -217,7 +217,7 @@ const STATUS_TEXT: Record<ToolIntegration["status"], string> = {
 };
 
 function readToolIntegrations(output: unknown): ToolIntegration[] | null {
-  const list = (output as { integrations?: unknown } | null)?.integrations;
+  const list = (output as { connections?: unknown } | null)?.connections;
   return Array.isArray(list) ? (list as ToolIntegration[]) : null;
 }
 

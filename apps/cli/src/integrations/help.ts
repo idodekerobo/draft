@@ -6,7 +6,7 @@ export function integrationsGroupHelp(): string {
   return `Usage: draft connections <command> [options]
 
 Commands:
-  list                        Show each integration: status, what it brings in, what it unlocks
+  list                        Show each connection: status, what it brings in, what it unlocks
   connect <provider>          Connect a provider (prints a link with --json or without a terminal)
   disconnect <provider>       Disconnect a provider
   slack channels list|set     List or set the Slack channels Draft reads

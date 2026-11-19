@@ -26,7 +26,7 @@ function harness(options: {
     callTool: async (name, input) => {
       calls.push({ name, input });
       if (name === "connections.connect") return options.connect;
-      const next = lists.shift() ?? { integrations: [{ provider: "linear", status: "not_connected" }] };
+      const next = lists.shift() ?? { connections: [{ provider: "linear", status: "not_connected" }] };
       return { ok: true, output: next };
     },
     now: () => nowMs,
@@ -84,8 +84,8 @@ describe("runAgentConnect", () => {
     const h = harness({
       connect: linkResult,
       lists: [
-        { integrations: [{ provider: "linear", status: "not_connected" }] },
-        { integrations: [{ provider: "linear", status: "connected" }] },
+        { connections: [{ provider: "linear", status: "not_connected" }] },
+        { connections: [{ provider: "linear", status: "connected" }] },
       ],
     });
     const code = await runAgentConnect({ provider: "linear", json: true, wait: true }, h.deps);

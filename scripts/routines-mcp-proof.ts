@@ -61,10 +61,10 @@ check("activity.list returns the workspace's runs with a cursor for older ones",
 const badCursor = await call("activity.list", { cursor: "nope" });
 check("activity.list refuses a cursor it didn't hand out", !badCursor.ok && badCursor.text.includes("invalid_cursor"));
 
-const integrations = (await call<{ integrations: Integration[] }>("connections.list")).body.integrations ?? [];
-check("connections.list returns every provider", integrations.length === 6, integrations.map((item) => `${item.provider}:${item.status}`).join(" "));
-const missing = integrations.find((item) => item.status !== "connected" && item.triggers.length > 0);
-const connected = integrations.find((item) => item.status === "connected" && item.triggers.length > 0);
+const connections = (await call<{ connections: Integration[] }>("connections.list")).body.connections ?? [];
+check("connections.list returns every provider", connections.length === 6, connections.map((item) => `${item.provider}:${item.status}`).join(" "));
+const missing = connections.find((item) => item.status !== "connected" && item.triggers.length > 0);
+const connected = connections.find((item) => item.status === "connected" && item.triggers.length > 0);
 
 const options = await call<{ triggers: Array<{ event: string; connected: boolean }>; agents: Array<{ harness: string; status: string }> }>("routines.options");
 check("routines.options lists triggers and agents", options.ok && options.body.triggers.length > 0, `agents: ${options.body.agents?.map((agent) => `${agent.harness}:${agent.status}`).join(" ")}`);

@@ -56,7 +56,7 @@ The canonical company brain is the workspace in the Draft deployment, not a Git 
 1. Sign up at [draftai.us](https://draftai.us).
 2. Download the Draft desktop app for macOS Apple Silicon.
 3. Sign in and create or join a team workspace.
-4. Connect the connections your team uses.
+4. Connect the providers your team uses.
 5. Connect your coding agents through MCP, or use the CLI/plugin setup for project-local instructions and session capture.
 
 The hosted web app handles account creation, sign-in, desktop pairing, and team invitations. The desktop app is the primary workspace surface today; the CLI is useful for agents, scripts, and session access.
@@ -122,14 +122,14 @@ draft/
 │   └── cli/              # Bun CLI for hosted or self-hosted API access
 ├── shared-ui/            # Shared React onboarding and integration UI
 ├── core/                 # Shared auth, config, runtime, and sync primitives
-├── cli-agent-plugin/     # Current, evolving agent connection connections
+├── cli-agent-plugin/     # Current, evolving agent connection integrations
 ├── supabase/             # Database migrations and local Supabase configuration
 └── Makefile              # Local stack and release automation
 ~~~
 
 ## Current connections
 
-The backend currently supports connections for Slack, Fireflies, Linear, GitHub, and Claude Code session capture. GitHub is an integration and source of activity, and can also be used for source import. It is no longer the primary team-context synchronization layer.
+The backend currently supports connections for Slack, Fireflies, Linear, GitHub, and Claude Code session capture. GitHub is a connection and source of activity, and can also be used for source import. It is no longer the primary team-context synchronization layer.
 
 Connect or manage any of these from the desktop app, or from the CLI: `draft connections list` reports each provider's status, `draft connections connect <provider>` walks through that provider's setup (a browser handoff for github/slack, a hidden credential prompt for linear/claude-code/slack/fireflies, or both), and `draft connections disconnect <provider>` revokes it. Slack additionally supports `draft connections slack channels list`/`set` to manage which channels the bot has joined. See [docs/cli.md](./docs/cli.md#hosted-connections) for the full command reference, including automation flags (`--credential-stdin`/`--credential-fd`) and the JSON Lines event contract.
 

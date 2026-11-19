@@ -463,7 +463,7 @@ deploy.
 verify you actually finished pasting them into Fireflies. It opens (or
 prints, with `--no-open`) a local handoff page with the webhook URL and
 secret, and both the page and the terminal spell out the Fireflies webhook
-settings URL (`https://app.fireflies.ai/connections/api/webhook`) and the
+  settings URL (`https://app.fireflies.ai/integrations/api/webhook`) and the
 two events to enable — Meeting Transcribed and Meeting Summarized. Re-running
 `connect fireflies` on an existing connection always warns before rotating
 the secret (`y`/`N` at the terminal); declining exits `1` with `cancelled`
