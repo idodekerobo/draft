@@ -42,7 +42,7 @@ export interface CloudStartFailure {
 const GENERAL_FAILURE: CloudStartFailure = { field: "general", message: "The cloud session could not start. Try again." };
 
 const FAILURES: Record<string, CloudStartFailure> = {
-  invalid_seed: { field: "repo", message: "Draft cloud could not use this repository or branch. Check both." },
+  invalid_seed: { field: "repo", message: "Draft Cloud could not use this repository or branch. Check both." },
   invalid_network: { field: "network", message: "That network setting is not supported." },
   harness_not_supported: { field: "agent", message: "Cloud sessions run Claude Code only." },
   unknown_model: { field: "agent", message: "Choose a model from the list." },
@@ -61,15 +61,15 @@ export type CloudStartSource = "repo" | "snapshot";
 
 /** Snapshot failures all show under the form, since the repository fields are not on screen. */
 const SNAPSHOT_FAILURES: Record<string, CloudStartFailure> = {
-  invalid_seed: { field: "general", message: "Draft cloud could not use this folder. Try again." },
+  invalid_seed: { field: "general", message: "Draft Cloud could not use this folder. Try again." },
   seed_not_uploaded: { field: "general", message: "The folder did not finish uploading. Try again." },
   snapshot_empty: { field: "general", message: "There is nothing to copy in this folder. Add files, then try again." },
   not_a_folder: { field: "general", message: "Choose a folder to copy." },
   unknown_env_file: { field: "general", message: "The .env files changed. Check the list and try again." },
   snapshot_pack_failed: { field: "general", message: "Draft could not pack this folder. Try again." },
-  snapshot_too_large: { field: "general", message: "This folder is too large to copy to Draft cloud." },
+  snapshot_too_large: { field: "general", message: "This folder is too large to copy to Draft Cloud." },
   snapshot_upload_failed: { field: "general", message: "The folder could not be uploaded. Try again." },
-  seed_upload_url_failed: { field: "general", message: "Draft cloud could not prepare the upload. Try again." },
+  seed_upload_url_failed: { field: "general", message: "Draft Cloud could not prepare the upload. Try again." },
 };
 
 /** The message for an error code from a cloud start. Codes that are not listed get the general message. */

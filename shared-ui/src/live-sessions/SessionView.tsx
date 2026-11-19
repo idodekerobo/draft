@@ -42,6 +42,7 @@ import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type Live
 import { cloudStartFailure } from "./cloud-start";
 import { CloudStartNoticeView } from "./CloudStartNotice";
 import { hostWaitOf } from "./cloud-start-notice";
+import { displayHostName } from "./host-name";
 
 const SKIPPED_MESSAGE = "The user skipped this.";
 
@@ -139,7 +140,7 @@ function StatusText({ session }: { session: LiveSession }) {
 function CloudNote({ session }: { session: LiveSession }) {
   const now = useMinuteClock();
   const backup = session.raw_uploaded_at ? ` · Last backed up ${relativeTime(session.raw_uploaded_at, { now })}` : "";
-  return <span className="ui-muted ui-session__meta">{`Draft cloud${backup}`}</span>;
+  return <span className="ui-muted ui-session__meta">{`Draft Cloud${backup}`}</span>;
 }
 
 function LinkedSession({ link, onOpenSession, lead }: { link: LiveSessionLink; onOpenSession?: (id: string) => void; lead: string }) {
@@ -440,9 +441,9 @@ function SessionContents({
     finally { olderRequest.current = false; }
   };
   const agentRuntime = useMemo(() => ({ api, sessionId, cacheKey: stream.cacheKey, target: agentTarget, mounted: scrollToWanted,
-    linkFor: shareBaseUrl ? linkFor : undefined, harness: harnessId, ownerName, hostName: session.host_name,
+    linkFor: shareBaseUrl ? linkFor : undefined, harness: harnessId, ownerName, hostName: displayHostName(session.host_name),
     viewerId: viewer.id, viewerName, viewerIsOwner: session.mine ?? false,
-  }), [api, sessionId, stream.cacheKey, agentTarget, scrollToWanted, shareBaseUrl, linkFor, harnessId, ownerName, session.host_name, viewer.id, viewerName, session.mine]);
+  }), [api, sessionId, stream.cacheKey, agentTarget, scrollToWanted, shareBaseUrl, linkFor, harnessId, ownerName, displayHostName(session.host_name), viewer.id, viewerName, session.mine]);
 
   const stop = useCallback(async () => {
     setStopping(true);
@@ -651,7 +652,7 @@ function SessionContents({
               liveItems={items}
               separateLive={history?.focused}
               ownerName={session.owner_name ?? undefined}
-              hostName={session.host_name}
+              hostName={displayHostName(session.host_name)}
               viewerId={viewer.id}
               viewerName={viewer.name}
               viewerIsOwner={session.mine ?? false}
@@ -681,11 +682,11 @@ function SessionContents({
             {session.status !== "ended" &&
               approvals.map((approval) =>
                 approval.kind === "plan" && approval.plan ? (
-                  <PlanCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <PlanCard key={approval.requestId} approval={approval} hostName={displayHostName(session.host_name)} agent={agentName} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ) : approval.kind === "question" && approval.questions.length > 0 ? (
-                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} hasTerminal={hasTerminal} sleeping={sleeping} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
+                  <QuestionCard key={approval.requestId} approval={approval} hostName={displayHostName(session.host_name)} agent={agentName} hasTerminal={hasTerminal} sleeping={sleeping} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
                 ) : (
-                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={displayHostName(session.host_name)} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
             <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />

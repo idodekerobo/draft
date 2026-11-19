@@ -33,8 +33,8 @@ export function isBlocked(input: ComposerInput, hostWait: HostWait = false): boo
 export function inputStatusLine(input: ComposerInput, ownerName: string, now = Date.now(), hostWait: HostWait = false, harness = "claude"): string {
   switch (input.state) {
     case "queued": {
-      if (hostWait === "cloud") return "Queued, restarting Draft cloud";
-      if (hostWait === "cloud_starting") return "Queued, starting Draft cloud";
+      if (hostWait === "cloud") return "Queued, restarting Draft Cloud";
+      if (hostWait === "cloud_starting") return "Queued, starting Draft Cloud";
       if (hostWait === "cloud_waking") return "Queued, waking the session";
       if (hostWait) return `Queued, ${ownerName}'s computer is offline`;
       if (input.reason === "composer_busy") return harness === "claude" ? `Queued, ${ownerName} is typing in the terminal` : `Queued, ${shortName(harness)} is working`;

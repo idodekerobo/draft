@@ -19,7 +19,7 @@ describe("inputStatusLine", () => {
 
   it("says the computer is offline while the host is away, and why a cleared message failed", () => {
     expect(inputStatusLine(input({}), "Maya", NOW, "local")).toBe("Queued, Maya's computer is offline");
-    expect(inputStatusLine(input({}), "Maya", NOW, "cloud")).toBe("Queued, restarting Draft cloud");
+    expect(inputStatusLine(input({}), "Maya", NOW, "cloud")).toBe("Queued, restarting Draft Cloud");
     expect(inputStatusLine(input({ state: "failed", reason: "session_cleared" }), "Maya", NOW)).toBe("Not delivered: the conversation was cleared");
   });
 

@@ -40,7 +40,7 @@ export function cloudStartNotice(session: NoticeSession): CloudStartNotice | nul
   if (session.status === "starting") {
     if (isWaking(session)) return { tone: "progress", title: "Waking this session", detail: "Its machine is starting again with your files as you left them. Messages send when it is ready." };
     const what = session.folder_name ? `copying in ${session.folder_name}` : "getting ready";
-    return { tone: "progress", title: "Starting Draft cloud", detail: `Setting up a machine and ${what}. This usually takes under a minute. Your message sends when it is ready.` };
+    return { tone: "progress", title: "Starting Draft Cloud", detail: `Setting up a machine and ${what}. This usually takes under a minute. Your message sends when it is ready.` };
   }
   if (session.status === "ended" && !isWaking(session) && session.end_reason && START_FAILURES[session.end_reason]) {
     return { tone: "error", title: "This session could not start", detail: `${START_FAILURES[session.end_reason]} Start a new session to try again.` };

@@ -62,7 +62,7 @@ describe("cloudStartFailure", () => {
   });
 
   it("puts a snapshot's invalid seed under the form, since the repository field is not on screen", () => {
-    expect(cloudStartFailure("invalid_seed", "snapshot")).toEqual({ field: "general", message: "Draft cloud could not use this folder. Try again." });
+    expect(cloudStartFailure("invalid_seed", "snapshot")).toEqual({ field: "general", message: "Draft Cloud could not use this folder. Try again." });
     expect(cloudStartFailure("invalid_seed", "repo").field).toBe("repo");
   });
 

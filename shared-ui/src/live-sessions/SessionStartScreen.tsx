@@ -41,7 +41,7 @@ export interface LocalStartRequest extends StartFields {
   folderPath: string;
 }
 
-/** A session in Draft cloud that starts from a GitHub repository. Only Claude Code runs there. */
+/** A session in Draft Cloud that starts from a GitHub repository. Only Claude Code runs there. */
 export interface CloudStartRequest extends StartFields {
   runtime: "cloud";
   harness: "claude";
@@ -52,7 +52,7 @@ export interface CloudStartRequest extends StartFields {
   network: "restricted" | "open";
 }
 
-/** A session in Draft cloud that starts from a copy of a folder. Only the `.env` files in `includeEnvFiles` are copied. */
+/** A session in Draft Cloud that starts from a copy of a folder. Only the `.env` files in `includeEnvFiles` are copied. */
 export interface CloudSnapshotStartRequest extends StartFields {
   runtime: "cloud";
   harness: "claude";
@@ -82,7 +82,7 @@ function problemLine(label: string, problem: HarnessProblem | undefined, devOnly
 
 const RUNTIMES = [
   { value: "local", label: "This computer" },
-  { value: "cloud", label: "Draft cloud" },
+  { value: "cloud", label: "Draft Cloud" },
 ] as const;
 
 type Runtime = (typeof RUNTIMES)[number]["value"];
@@ -145,7 +145,7 @@ function Segmented<T extends string>({
 
 /**
  * Empty state of the Sessions area: pick where it runs and a folder or repository, type a first message, start.
- * `cloud` turns on Draft cloud. Its `folderRemote` reads a folder's git remote to fill in the repository, and its
+ * `cloud` turns on Draft Cloud. Its `folderRemote` reads a folder's git remote to fill in the repository, and its
  * `envFiles` lists the `.env` files a folder snapshot could include.
  */
 export function SessionStartScreen({
@@ -166,7 +166,7 @@ export function SessionStartScreen({
   agentDefaults?: AgentDefaultsLoader;
   /** Help to make a harness ready, shown in place of the problem line while it blocks Start. Null for a harness with none. */
   renderSetup?: (harness: HarnessId) => ReactNode;
-  /** Offers Draft cloud. Keep both functions stable: each runs again whenever its identity changes. */
+  /** Offers Draft Cloud. Keep both functions stable: each runs again whenever its identity changes. */
   cloud?: {
     folderRemote: (folderPath: string) => Promise<string | null>;
     /** How much a snapshot of the folder would copy. Rejects when the folder cannot be read. */
@@ -397,7 +397,7 @@ export function SessionStartScreen({
         <div className="ui-start__body ui-start__copying">
           <div className="ui-session__start ui-session__start--progress" role="status">
             <p className="ui-session__start-title">
-              {step === "Starting…" ? "Starting Draft cloud" : `Copying ${folderName(folder)} to Draft cloud`}
+              {step === "Starting…" ? "Starting Draft Cloud" : `Copying ${folderName(folder)} to Draft Cloud`}
               <span className="ui-muted ui-session__start-clock"> {elapsedLabel(copyStartedAt, now)}</span>
             </p>
             <p className="ui-muted">
@@ -528,7 +528,7 @@ export function SessionStartScreen({
           )}
           {snapshotOn && (
             <div className="ui-start__snapshot">
-              <p className="ui-muted">Copies this folder to Draft cloud. Files your .gitignore skips, .git and node_modules are left out.</p>
+              <p className="ui-muted">Copies this folder to Draft Cloud. Files your .gitignore skips, .git and node_modules are left out.</p>
               {size && !tooLarge && size.bytes <= SNAPSHOT_WARN_BYTES && <p className="ui-muted">{size.fileCount.toLocaleString()} files, {megabytes(size.bytes)}</p>}
               {size && !tooLarge && size.bytes > SNAPSHOT_WARN_BYTES && (
                 <p className="ui-start__warning" role="note">This folder holds {megabytes(size.bytes)} in {size.fileCount.toLocaleString()} files. Copying it may take a few minutes.</p>
@@ -567,7 +567,7 @@ export function SessionStartScreen({
                   value: { harness: activeHarness, model, effort },
                   defaults,
                   onChange: (next) => { setHarness(next.harness); setModel(next.model); setEffort(next.effort); },
-                  // Draft cloud runs Claude Code only for now; the others show as coming soon.
+                  // Draft Cloud runs Claude Code only for now; the others show as coming soon.
                   harnesses: HARNESSES.map((option) =>
                     cloudOn && option.id !== "claude"
                       ? { value: option.id, label: option.label, hint: "Coming soon", disabled: true }

@@ -194,7 +194,7 @@ describe("SessionStartScreen", () => {
   });
 });
 
-describe("SessionStartScreen in Draft cloud", () => {
+describe("SessionStartScreen in Draft Cloud", () => {
   const REMOTE = "https://github.com/acme/marigold";
   const cloudSetup = ({ remote = REMOTE as string | null, recent = ["/work/marigold", "/work/other"], onStart = mock(async (_request: StartRequest) => ({ ok: true }) as { ok: true } | { ok: false; error: string }), availability = {} as Partial<Record<string, "missing" | "signed_out" | "untested_version">> } = {}) => {
     const folderRemote = mock(async (_folder: string) => remote);
@@ -202,7 +202,7 @@ describe("SessionStartScreen in Draft cloud", () => {
     render(<SessionStartScreen recentFolders={recent} onBrowse={async () => null} onStart={onStart} cloud={{ folderRemote, envFiles }} availability={availability} />);
     return { onStart, folderRemote };
   };
-  const chooseCloud = () => fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+  const chooseCloud = () => fireEvent.click(screen.getByRole("radio", { name: "Draft Cloud" }));
   const type = (label: string, value: string) => fireEvent.change(screen.getByRole(label === "Repository" ? "combobox" : "textbox", { name: label }), { target: { value } });
   const message = (value: string) => fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value } });
 
@@ -326,7 +326,7 @@ describe("SessionStartScreen in Draft cloud", () => {
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Repository" }) as HTMLInputElement).value).toBe(REMOTE));
     message("go");
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
-    const alert = await screen.findByText("Draft cloud could not use this repository or branch. Check both.");
+    const alert = await screen.findByText("Draft Cloud could not use this repository or branch. Check both.");
     expect(alert.className).toContain("ui-error");
     expect(alert.parentElement?.querySelector("input")).toBe(screen.getByRole("combobox", { name: "Repository" }) as HTMLInputElement);
     expect((screen.getByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe("go");
@@ -377,9 +377,9 @@ describe("SessionStartScreen in Draft cloud", () => {
   });
 });
 
-describe("SessionStartScreen in Draft cloud from a folder snapshot", () => {
+describe("SessionStartScreen in Draft Cloud from a folder snapshot", () => {
   const WARNING = "Anyone in this session can ask the agent to read these.";
-  const chooseCloud = () => fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+  const chooseCloud = () => fireEvent.click(screen.getByRole("radio", { name: "Draft Cloud" }));
   const chooseSnapshot = () => fireEvent.click(screen.getByRole("radio", { name: "This folder (snapshot)" }));
   const message = (value: string) => fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value } });
   const startButton = () => screen.getByRole("button", { name: "Start" }) as HTMLButtonElement;
@@ -514,7 +514,7 @@ describe("SessionStartScreen in Draft cloud from a folder snapshot", () => {
     await screen.findByRole("checkbox", { name: ".env" });
     message("go");
     fireEvent.click(startButton());
-    expect((await screen.findByRole("alert")).textContent).toBe("Draft cloud could not use this folder. Try again.");
+    expect((await screen.findByRole("alert")).textContent).toBe("Draft Cloud could not use this folder. Try again.");
     expect((screen.getByRole("textbox", { name: "First message" }) as HTMLTextAreaElement).value).toBe("go");
   });
 
@@ -532,7 +532,7 @@ describe("SessionStartScreen GitHub connection", () => {
   it("lets a cloud start go ahead without GitHub, says what is missing, and opens the place to connect it", async () => {
     const onConnectGithub = mock(() => {});
     render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={async () => ({ ok: true })} cloud={{ folderRemote: async () => null, envFiles: async () => [], githubConnected: false, onConnectGithub }} />);
-    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Draft Cloud" }));
     expect(screen.getByText(/GitHub is not connected/)).toBeTruthy();
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "hi" } });
     expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
@@ -556,7 +556,7 @@ describe("SessionStartScreen branch list", () => {
   it("lists the repository's branches and takes its default branch until the person types one", async () => {
     const branches = mock(async (_repo: string) => ({ defaultBranch: "develop", branches: ["develop", "main", "feature/x"] }));
     render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={async () => ({ ok: true })} cloud={{ folderRemote: async () => "https://github.com/acme/marigold", envFiles: async () => [], branches }} />);
-    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Draft Cloud" }));
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Branch" }) as HTMLInputElement).value).toBe("develop"));
     expect(branches).toHaveBeenCalledWith("acme/marigold");
     expect(document.querySelectorAll("datalist option").length).toBeGreaterThanOrEqual(3);
@@ -567,7 +567,7 @@ describe("SessionStartScreen empty project", () => {
   it("starts with no repository and no branch when the repository is left empty", async () => {
     const onStart = mock(async (_request: StartRequest) => ({ ok: true }) as StartResult);
     render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} cloud={{ folderRemote: async () => null, envFiles: async () => [], githubConnected: true }} />);
-    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Draft Cloud" }));
     expect(screen.queryByRole("textbox", { name: "Branch" })).toBeNull();
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "start fresh" } });
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
@@ -578,7 +578,7 @@ describe("SessionStartScreen empty project", () => {
 describe("SessionStartScreen snapshot size", () => {
   const setup = (bytes: number) => {
     render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={async () => ({ ok: true })} cloud={{ folderRemote: async () => null, envFiles: async () => [], folderSize: async () => ({ bytes, fileCount: 1200 }), githubConnected: true }} />);
-    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Draft Cloud" }));
     fireEvent.click(screen.getByRole("radio", { name: "This folder (snapshot)" }));
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "hi" } });
   };
@@ -607,13 +607,13 @@ describe("SessionStartScreen while a folder copies", () => {
     let finish!: (result: StartResult) => void;
     const onStart = mock((_request: StartRequest) => new Promise<StartResult>((resolve) => (finish = resolve)));
     render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={onStart} cloud={{ folderRemote: async () => null, envFiles: async () => [], githubConnected: true }} />);
-    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Draft Cloud" }));
     fireEvent.click(screen.getByRole("radio", { name: "This folder (snapshot)" }));
     fireEvent.change(screen.getByRole("textbox", { name: "First message" }), { target: { value: "fix the tests" } });
     await waitFor(() => expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByRole("button", { name: "Start" }));
 
-    expect(await screen.findByText(/Copying marigold to Draft cloud/)).toBeTruthy();
+    expect(await screen.findByText(/Copying marigold to Draft Cloud/)).toBeTruthy();
     expect(screen.getByText("fix the tests")).toBeTruthy();
     expect(screen.getByText("Queued, waiting for the copy")).toBeTruthy();
 

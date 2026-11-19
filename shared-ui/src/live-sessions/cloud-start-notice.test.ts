@@ -5,7 +5,7 @@ const base = { status: "starting" as const, started_at: "2026-11-19T20:00:00Z", 
 
 describe("cloudStartNotice", () => {
   it("says the machine is starting, names the repository, and that the message waits", () => {
-    expect(cloudStartNotice(base)).toMatchObject({ tone: "progress", title: "Starting Draft cloud" });
+    expect(cloudStartNotice(base)).toMatchObject({ tone: "progress", title: "Starting Draft Cloud" });
     expect(cloudStartNotice(base)?.detail).toContain("copying in draft");
   });
 
