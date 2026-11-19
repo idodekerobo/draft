@@ -265,6 +265,12 @@ describe("createFlyProvider.destroy", () => {
     await expect(createFlyProvider(config, api).destroy(withVolume)).resolves.toBeUndefined();
   });
 
+  it("deletes only the volume when the machine is already gone", async () => {
+    const { api, calls } = fakeApi();
+    await createFlyProvider(config, api).destroy({ ...withVolume, machine: "" });
+    expect(calls).toEqual(["deleteVolume vol_1"]);
+  });
+
   it("keeps the volume when the machine delete fails", async () => {
     const deleted: string[] = [];
     const { api } = fakeApi({
@@ -296,6 +302,12 @@ describe("createFlyProvider.destroyMachine", () => {
     await expect(createFlyProvider(config, api).destroyMachine(withVolume)).resolves.toBeUndefined();
   });
 
+  it("does nothing when the machine is already gone", async () => {
+    const { api, calls } = fakeApi();
+    await createFlyProvider(config, api).destroyMachine({ ...withVolume, machine: "" });
+    expect(calls).toEqual([]);
+  });
+
   it("rethrows other delete failures", async () => {
     const { api } = fakeApi({
       forceDelete: async () => {
@@ -323,6 +335,12 @@ describe("createFlyProvider.status", () => {
       await expect(createFlyProvider(config, api).status(plain)).resolves.toBe(expected);
     });
   }
+
+  it("reports a sandbox with no machine as missing, without asking Fly", async () => {
+    const { api, calls } = fakeApi();
+    await expect(createFlyProvider(config, api).status({ ...plain, machine: "" })).resolves.toBe("missing");
+    expect(calls).toEqual([]);
+  });
 
   it("reports a machine Fly no longer has as missing", async () => {
     const { api } = fakeApi({

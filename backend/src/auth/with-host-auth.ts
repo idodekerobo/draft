@@ -60,6 +60,8 @@ async function cloudHostCaller(req: HostRequest, token: string): Promise<{ ok: t
     if (error instanceof AgentRunTokenError) return refuse(401, "invalid_run_token");
     return fail(error, { workspaceId, sessionId }, "host_token_check_failed", "A host request's run token could not be checked");
   }
+  // The agent's MCP token and a routine's token must not reach the host endpoints, so only a host token passes.
+  if (claims.scope !== "host") return refuse(403, "token_scope");
 
   const { data: run, error: runError } = await serviceClient
     .from("agent_runs")

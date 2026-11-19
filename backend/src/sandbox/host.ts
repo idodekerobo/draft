@@ -1,14 +1,16 @@
 // The session host of a cloud session. It runs in a sandbox on Bun, drives the harness, and sleeps the session when idle.
+import { join } from "node:path";
 import { DEFAULT_HARNESS_ID, isHarnessId, type HarnessId } from "draft-core/harnesses";
 import { registrationFor } from "draft-core/host/drivers/drivers";
 import { loadStates, type HostSessionState } from "draft-core/host/cursor-store";
 import { attachLiveSession, type AttachedSession } from "draft-core/host/live-session";
-import { installHostServices, type HostServices } from "draft-core/host/services";
+import { installHostServices, ServerError, type HostServices } from "draft-core/host/services";
 import type { LiveSession, LiveSessionEventsPage } from "draft-core/live-sessions";
 import { buildHostServices } from "./host/cloud-services";
-import { cloudHostId, isVolumeHome, parseHostConfig, seedSecrets, type HostConfig } from "./host/config";
+import { cloudHostId, isVolumeHome, parseHostConfig, scrubPaneSecrets, seedSecrets, type HostConfig } from "./host/config";
 import { canSleep } from "./host/idle";
 import { hostLog, messageOf, setRedactions } from "./host/log";
+import { writeDraftMcpConfig } from "./host/mcp-config";
 import { withStartupRetry } from "./host/retry";
 import { liveSeedDeps, prepareWorkspace } from "./host/seed";
 
@@ -37,10 +39,8 @@ export async function runHost(env: Record<string, string | undefined>): Promise<
     hostLog("error", "home_not_on_volume", { home: config.home, expected: "/data" });
     return 1;
   }
-  setRedactions([config.runToken, ...seedSecrets(config.seed)]);
-  // The agent's pane inherits this environment; it must not see the host's run token or the seed.
-  delete env.DRAFT_RUN_TOKEN;
-  delete env.DRAFT_SEED;
+  setRedactions([config.runToken, ...(config.mcp ? [config.mcp.token] : []), ...seedSecrets(config.seed)]);
+  scrubPaneSecrets(env);
   const services = buildHostServices(config);
   installHostServices(services);
   const hostId = cloudHostId(config.sessionId);
@@ -88,6 +88,19 @@ export async function runHost(env: Record<string, string | undefined>): Promise<
     return 1;
   }
 
+  // Written on every start, since each run has its own MCP URL. Claude reads the file when the pane launches it.
+  if (config.mcp) {
+    try {
+      writeDraftMcpConfig(join(config.home, ".claude.json"), config.mcp.url);
+    } catch (error) {
+      hostLog("error", "mcp_config_failed", { reason: messageOf(error) });
+      await endSession(services, base, hostId, "launch_failed");
+      return 1;
+    }
+  } else {
+    hostLog("info", "mcp_not_configured");
+  }
+
   const saved = loadStates().find((state) => state.sessionId === config.sessionId && !state.ended);
   const mode: "resume" | "launch" = saved ? "resume" : "launch";
   let attached: Awaited<ReturnType<typeof attachLiveSession>>;
@@ -105,29 +118,41 @@ export async function runHost(env: Record<string, string | undefined>): Promise<
   }
   hostLog("info", "session_attached", { mode, harness });
 
-  let outcome: Outcome;
-  try {
-    outcome = await waitForOutcome(attached.session, () => terminating);
-  } catch (error) {
-    hostLog("error", "host_loop_failed", { reason: messageOf(error) });
-    await endSession(services, base, hostId, "host_failed");
-    return 1;
-  }
-  if (outcome === "ended") {
-    hostLog("info", "session_stopped");
-    return 0;
-  }
+  for (;;) {
+    let outcome: Outcome;
+    try {
+      outcome = await waitForOutcome(attached.session, () => terminating);
+    } catch (error) {
+      hostLog("error", "host_loop_failed", { reason: messageOf(error) });
+      await endSession(services, base, hostId, "host_failed");
+      return 1;
+    }
+    if (outcome === "ended") {
+      hostLog("info", "session_stopped");
+      return 0;
+    }
 
-  let flushed: boolean;
-  try {
-    flushed = await attached.session.retire();
-    if (!flushed) hostLog("error", "flush_incomplete");
-  } catch (error) {
-    flushed = false;
-    hostLog("error", "flush_failed", { reason: messageOf(error) });
+    let flushed: boolean;
+    try {
+      flushed = await attached.session.retire();
+      if (!flushed) hostLog("error", "flush_incomplete");
+    } catch (error) {
+      flushed = false;
+      hostLog("error", "flush_failed", { reason: messageOf(error) });
+    }
+    const slept = await requestSleep(services, base, hostId, outcome);
+    if (slept !== "inputs_pending" || terminating) return flushed ? 0 : 1;
+    // A message arrived while the host was stopping: attach again and deliver it.
+    const resumeFrom = loadStates().find((state) => state.sessionId === config.sessionId && !state.ended);
+    const again = resumeFrom ? await attachLiveSession(resumeFrom, "resume").catch((error: unknown) => ({ ok: false as const, error: messageOf(error) })) : null;
+    if (!again || !again.ok) {
+      hostLog("error", "reattach_failed", { reason: again && !again.ok ? again.error : "no_saved_state" });
+      await endSession(services, base, hostId, "resume_failed");
+      return 1;
+    }
+    attached = again;
+    hostLog("info", "session_reattached", { reason: "inputs_pending" });
   }
-  await requestSleep(services, base, hostId, outcome);
-  return flushed ? 0 : 1;
 }
 
 /** A session that has never run here starts from its server row. */
@@ -157,12 +182,18 @@ async function waitForOutcome(session: AttachedSession, terminating: () => boole
   }
 }
 
-async function requestSleep(services: HostServices, base: string, hostId: string, outcome: Outcome): Promise<void> {
+async function requestSleep(services: HostServices, base: string, hostId: string, outcome: Outcome): Promise<"slept" | "inputs_pending" | "failed"> {
   try {
     await services.fetchServer(`${base}/host/sleep`, { method: "POST", body: JSON.stringify({ hostId }) });
     hostLog("info", "session_sleeping", { outcome });
+    return "slept";
   } catch (error) {
+    if (error instanceof ServerError && error.code === "inputs_pending") {
+      hostLog("info", "sleep_refused", { reason: "inputs_pending" });
+      return "inputs_pending";
+    }
     hostLog("error", "sleep_failed", { reason: messageOf(error) });
+    return "failed";
   }
 }
 

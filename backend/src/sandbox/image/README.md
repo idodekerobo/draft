@@ -56,7 +56,13 @@ Set by the backend for a host machine. `DRAFT_MODE=host` selects this mode.
 - `DRAFT_API_BASE_URL`: the backend API, an `https` URL on port 443. Its host is
   allowed through the egress policy.
 - `DRAFT_SESSION_ID`, `DRAFT_WORKSPACE_ID`: the session the host serves.
-- `DRAFT_RUN_TOKEN`: the bearer token for the host's calls to the backend.
+- `DRAFT_RUN_TOKEN`: the host's bearer token for the backend's host endpoints
+  (scope `host`). The host removes it from the pane's environment.
+- `DRAFT_MCP_URL`, `DRAFT_MCP_TOKEN`: Draft's tool server, and the agent's token
+  for it (scope `mcp`). The host writes `draft` into the user scope of
+  `$HOME/.claude.json` with `Authorization: Bearer ${DRAFT_MCP_TOKEN}`, so the
+  token stays in the environment. The pane keeps `DRAFT_MCP_TOKEN`. The URL must
+  be on the `DRAFT_API_BASE_URL` host.
 - `DRAFT_SEED`: JSON. Either `{"kind":"repo","gitRemote":"...","branch":"..."}`
   or `{"kind":"snapshot","url":"https://..."}`. The git or snapshot host is
   allowed through the egress policy.
@@ -66,6 +72,12 @@ Set by the backend for a host machine. `DRAFT_MODE=host` selects this mode.
 
 The entrypoint sets `HOME=/data` and `DISABLE_AUTOUPDATER=1`. The host refuses
 to start unless `HOME` is `/data` or under it.
+
+GitHub access for `git` and `gh` comes from `draft-github-token`. The system git
+config sends github.com credentials to `git-credential-draft`, which calls it.
+It asks the backend's `github.credential` tool with `DRAFT_MCP_TOKEN` (or
+`DRAFT_RUN_TOKEN` in a routine). The host's seed clone uses the same path, so a
+private seed repo clones.
 
 ## What the host branch does
 

@@ -316,7 +316,7 @@ describe("cloud host requests", () => {
     Object.assign(
       new Request("http://localhost/x", {
         method: "POST",
-        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n" }, SECRET)}` },
+        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n", scope: "host" }, SECRET)}` },
         body: JSON.stringify(body),
       }),
       { params: { id: CLOUD_WS, sessionId: SESSION } },

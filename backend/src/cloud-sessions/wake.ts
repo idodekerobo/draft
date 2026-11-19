@@ -13,6 +13,7 @@ import { parseGitHubRemote } from "./parse-start";
 
 /** A sleeping session whose last runs all failed is ended, so a broken sandbox cannot wake it forever. */
 export const RESTART_LIMIT = 3;
+const CLAUDE_NOT_CONNECTED = "claude_not_connected";
 
 export interface WakeCloudSessionInput {
   workspaceId: string;
@@ -78,11 +79,13 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
     return abandon({ operation: "session", code: "wake_session_lookup_failed", message: "Reading a sleeping cloud session failed", cause: sessionError });
   }
 
+  // A refused wake never made a machine and says nothing about the sandbox, so it does not count. A NULL code must still match.
   const { data: recent, error: recentError } = await client
     .from("agent_runs")
     .select("*")
     .eq("session_id", sessionId)
     .eq("workspace_id", workspaceId)
+    .or(`failure_code.is.null,failure_code.neq.${CLAUDE_NOT_CONNECTED}`)
     .order("created_at", { ascending: false })
     .limit(RESTART_LIMIT);
   if (recentError) return abandon({ operation: "session", code: "wake_run_lookup_failed", message: "Reading the runs of a sleeping cloud session failed", cause: recentError });
@@ -135,7 +138,7 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
     ({ secret: claudeToken } = await resolveCredential(client, workspaceId, claudeCredentialRules));
   } catch (cause) {
     if (cause instanceof CredentialError) {
-      return abandon({ operation: "session", code: "claude_not_connected", message: "The workspace has no usable Claude Code login", cause, refusal: true });
+      return abandon({ operation: "session", code: CLAUDE_NOT_CONNECTED, message: "The workspace has no usable Claude Code login", cause, refusal: true });
     }
     return abandon({ operation: "session", code: "claude_credential_failed", message: "Reading the workspace's Claude Code login failed", cause });
   }

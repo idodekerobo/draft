@@ -190,7 +190,8 @@ describe("wakeCloudSession", () => {
 
     const env = fly.created[0]!.env;
     expect(env).toMatchObject({ DRAFT_RUN_ID: NEW_RUN, DRAFT_SESSION_ID: SESSION, CLAUDE_CODE_OAUTH_TOKEN: CLAUDE_TOKEN, DRAFT_NETWORK: "restricted" });
-    expect(verifyAgentRunToken(env.DRAFT_RUN_TOKEN!, SECRET, { now: NOW })).toMatchObject({ runId: NEW_RUN, workspaceId: WS });
+    expect(verifyAgentRunToken(env.DRAFT_RUN_TOKEN!, SECRET, { now: NOW })).toMatchObject({ runId: NEW_RUN, workspaceId: WS, scope: "host" });
+    expect(verifyAgentRunToken(env.DRAFT_MCP_TOKEN!, SECRET, { now: NOW })).toMatchObject({ runId: NEW_RUN, workspaceId: WS, scope: "mcp" });
 
     expect(session()).toMatchObject({ status: "starting" });
     expect(runById(NEW_RUN)).toMatchObject({
@@ -286,6 +287,36 @@ describe("wakeCloudSession", () => {
     const outcome = await wakeCloudSession(INPUT, depsFor(fakeProvider({ status: "missing" }).provider));
 
     expect(outcome).toEqual({ status: "woken", runId: NEW_RUN });
+  });
+
+  it("keeps waking a session whose recent runs were refused, since refused wakes do not count", async () => {
+    db.tables.agent_runs = [
+      run({ id: RUN_OLDEST, status: "failed", created_at: "2026-11-18T06:00:00.000Z" }),
+      run({ id: RUN_MIDDLE, status: "failed", created_at: "2026-11-18T07:00:00.000Z" }),
+      run({ id: crypto.randomUUID(), status: "failed", failure_code: "claude_not_connected", created_at: "2026-11-18T08:00:00.000Z" }),
+      run({ id: crypto.randomUUID(), status: "failed", failure_code: "claude_not_connected", created_at: "2026-11-18T09:00:00.000Z" }),
+    ];
+    const fly = fakeProvider({ status: "missing" });
+    const outcome = await wakeCloudSession(INPUT, depsFor(fly.provider));
+
+    expect(outcome).toEqual({ status: "woken", runId: NEW_RUN });
+    expect(errorCodes()).toEqual([]);
+  });
+
+  it("ends the session when its last real failures sit behind refused wakes", async () => {
+    db.tables.agent_runs = [
+      run({ id: RUN_OLDEST, status: "failed", created_at: "2026-11-18T06:00:00.000Z" }),
+      run({ id: crypto.randomUUID(), status: "failed", failure_code: "claude_not_connected", created_at: "2026-11-18T07:00:00.000Z" }),
+      run({ id: RUN_MIDDLE, status: "failed", created_at: "2026-11-18T08:00:00.000Z" }),
+      run({ id: crypto.randomUUID(), status: "failed", failure_code: "claude_not_connected", created_at: "2026-11-18T09:00:00.000Z" }),
+      run({ id: RUN_LATEST, status: "failed", created_at: "2026-11-18T09:30:00.000Z" }),
+    ];
+    const fly = fakeProvider();
+    const outcome = await wakeCloudSession(INPUT, depsFor(fly.provider));
+
+    expect(outcome).toEqual({ status: "ended" });
+    expect(fly.calls).toEqual([]);
+    expect(errorCodes()).toEqual(["restart_limit_reached"]);
   });
 
   it("fails the run as a refusal when the workspace has no Claude login, and records no error", async () => {

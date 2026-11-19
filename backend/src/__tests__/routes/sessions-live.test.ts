@@ -536,6 +536,15 @@ describe("live session routes", () => {
     expect(inserted).toEqual([]);
   });
 
+  it("does not reopen an ended cloud session", async () => {
+    tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "start_failed", runtime: "cloud", host_id: "cloud:s1" })];
+    updates = [];
+    const res = await routes.REOPEN(post("/x", { hostId: "cloud:s1" }));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe("cloud_session_ended");
+    expect(updates).toEqual([]);
+  });
+
   it("does not reopen a session that was cleared, a routine run, or one that is not ended", async () => {
     tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "cleared" })];
     const cleared = await routes.REOPEN(post("/x", { hostId: "host-1" }));
@@ -666,7 +675,7 @@ describe("cloud host requests", () => {
     Object.assign(
       new Request("http://localhost/x", {
         method: "POST",
-        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n" }, SECRET)}` },
+        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n", scope: "host" }, SECRET)}` },
         body: JSON.stringify(body),
       }),
       { params: { id: CLOUD_WS, sessionId } },
@@ -781,6 +790,37 @@ describe("cloud host requests", () => {
       expect(sleeping.status).toBe(409);
       expect(await sleeping.json()).toEqual({ ok: false, error: "session_sleeping" });
       expect(updates).toEqual([]);
+    });
+
+    it("refuses to sleep while an input is queued or being pasted, and leaves the run active", async () => {
+      for (const state of ["queued", "delivering"]) {
+        tables.session_inputs = [{ id: `input-${state}`, session_id: SESSION, workspace_id: CLOUD_WS, kind: "message", state }];
+        const res = await routes.HOST_SLEEP(cloudPost({}));
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ ok: false, error: "inputs_pending" });
+      }
+      expect(updates).toEqual([]);
+    });
+
+    it("refuses for a waiting control input too, since the host counts every kind as pending", async () => {
+      tables.session_inputs = [{ id: "stop-1", session_id: SESSION, workspace_id: CLOUD_WS, kind: "stop", state: "queued" }];
+      const res = await routes.HOST_SLEEP(cloudPost({}));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ ok: false, error: "inputs_pending" });
+      expect(updates).toEqual([]);
+    });
+
+    it("sleeps when every input is already taken, failed, cancelled or uncertain", async () => {
+      tables.session_inputs = ["consumed", "failed", "cancelled", "uncertain"].map((state, index) => ({
+        id: `input-${index}`,
+        session_id: SESSION,
+        workspace_id: CLOUD_WS,
+        kind: "message",
+        state,
+      }));
+      const res = await routes.HOST_SLEEP(cloudPost({}));
+      expect(res.status).toBe(200);
+      expect(updates.map((u) => u.table)).toEqual(["agent_runs", "sessions"]);
     });
   });
 });

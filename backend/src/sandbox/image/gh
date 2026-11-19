@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-if [ -z "${DRAFT_RUN_TOKEN:-}" ]; then
+if [ -z "${DRAFT_RUN_TOKEN:-}" ] && [ -z "${DRAFT_MCP_TOKEN:-}" ]; then
   echo "GitHub credentials unavailable" >&2
   exit 1
 fi

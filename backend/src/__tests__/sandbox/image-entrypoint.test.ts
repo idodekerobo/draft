@@ -1,5 +1,6 @@
-import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const IMAGE = join(import.meta.dir, "..", "..", "sandbox", "image");
@@ -70,6 +71,10 @@ describe("entrypoint.sh", () => {
     expect(read("entrypoint.sh")).toContain(HOST_EXEC);
   });
 
+  it("does not clear the environment for the host, so DRAFT_MCP_TOKEN reaches the agent's pane", () => {
+    expect(read("entrypoint.sh")).not.toMatch(/\benv -i\b/);
+  });
+
   it("hands /data to the agent user and points the driver's tmux path at the system binary", () => {
     const entrypoint = read("entrypoint.sh");
     expect(entrypoint).toContain('chown "$agent_uid:$agent_gid" /data /data/.draft /data/.draft/bin');
@@ -132,5 +137,83 @@ describe("Dockerfile", () => {
     expect(dockerfile).toMatch(/^\s+tmux \\$/m);
     expect(dockerfile).toContain("COPY host.mjs /opt/draft/host.mjs");
     expect(dockerfile).toContain("COPY configure-open-egress.sh /usr/local/sbin/configure-open-egress.sh");
+  });
+
+  it("sets the GitHub credential helper at system level, so the host's clone and the pane's git both use it", () => {
+    const dockerfile = read("Dockerfile");
+    expect(dockerfile).toContain("git config --system credential.https://github.com.helper draft");
+    expect(dockerfile).toContain("COPY draft-github-token /usr/local/bin/draft-github-token");
+  });
+});
+
+describe("gh", () => {
+  it("runs with either the routine's run token or the cloud session's MCP token", () => {
+    expect(read("gh")).toContain('[ -z "${DRAFT_RUN_TOKEN:-}" ] && [ -z "${DRAFT_MCP_TOKEN:-}" ]');
+  });
+});
+
+describe("draft-github-token", () => {
+  const RUN = "11111111-2222-4333-8444-555555555555";
+  let dir: string;
+  let stub: string;
+  let record: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "draft-github-token-"));
+    stub = join(dir, "stub-fetch.cjs");
+    record = join(dir, "requests.jsonl");
+    // Stands in for the backend: records each request and answers with a token that expires in an hour.
+    writeFileSync(
+      stub,
+      `const { appendFileSync } = require("node:fs");
+globalThis.fetch = async (url, init) => {
+  appendFileSync(process.env.STUB_RECORD, JSON.stringify({ url: String(url), method: init.method, authorization: init.headers.Authorization }) + "\\n");
+  return new Response(JSON.stringify({ output: { token: "ghs_STUBTOKEN", expiresAt: new Date(Date.now() + 3600000).toISOString() } }), { status: 200, headers: { "content-type": "application/json" } });
+};
+`,
+    );
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Runs the helper with only the given variables, plus the stub. Returns what it printed and what it asked the backend. */
+  function runHelper(env: Record<string, string>) {
+    const result = Bun.spawnSync(["sh", join(IMAGE, "draft-github-token")], {
+      env: { PATH: process.env.PATH ?? "", NODE_OPTIONS: `--require ${stub}`, STUB_RECORD: record, ...env },
+    });
+    const requests = existsSync(record)
+      ? readFileSync(record, "utf8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, string>)
+      : [];
+    return { exitCode: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString(), requests };
+  }
+
+  it("asks the API for a GitHub token with the MCP token in a cloud session", () => {
+    const run = runHelper({ DRAFT_API_BASE_URL: "https://api.draft.test", DRAFT_RUN_ID: RUN, DRAFT_MCP_TOKEN: "mcp-secret-value" });
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toBe("ghs_STUBTOKEN");
+    expect(run.requests).toEqual([{ url: `https://api.draft.test/runs/${RUN}/tools/github.credential`, method: "POST", authorization: "Bearer mcp-secret-value" }]);
+    expect(run.stderr).not.toContain("mcp-secret-value");
+  });
+
+  it("keeps the routine path: the callback URL and the run token", () => {
+    const run = runHelper({ DRAFT_CALLBACK_URL: "https://callback.draft.test/sandbox/callback", DRAFT_RUN_ID: RUN, DRAFT_RUN_TOKEN: "run-secret-value" });
+    expect(run.exitCode).toBe(0);
+    expect(run.requests).toEqual([
+      { url: `https://callback.draft.test/runs/${RUN}/tools/github.credential`, method: "POST", authorization: "Bearer run-secret-value" },
+    ]);
+  });
+
+  it("fails without asking the backend when it has no token", () => {
+    const run = runHelper({ DRAFT_API_BASE_URL: "https://api.draft.test", DRAFT_RUN_ID: RUN });
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr).toContain("GitHub credentials unavailable");
+    expect(run.requests).toEqual([]);
+  });
+
+  it("fails without asking the backend when the run id could change the path", () => {
+    const run = runHelper({ DRAFT_API_BASE_URL: "https://api.draft.test", DRAFT_RUN_ID: "../other", DRAFT_MCP_TOKEN: "mcp-secret-value" });
+    expect(run.exitCode).toBe(1);
+    expect(run.requests).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordError } from "../errors/record-error";
-import type { SandboxProvider, VolumeRef } from "../metaharness/sandbox/providers";
+import type { SandboxProvider } from "../metaharness/sandbox/providers";
+import { latestMachineId, parseVolumeRef } from "./session-sandbox";
 
 /** A sleeping cloud session with no event for this long loses its sandbox volume. */
 export const CLOUD_SESSION_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000;
@@ -84,23 +85,12 @@ async function expireSession(deps: ExpireIdleCloudSessionsDeps, session: IdleSes
     return "failed";
   }
 
-  // The newest run that recorded a machine. Runs without one (a wake that failed before its sandbox) are skipped.
-  const { data: runData, error: runError } = await client
-    .from("agent_runs")
-    .select("sandbox_machine_id")
-    .eq("session_id", session.id)
-    .not("sandbox_machine_id", "is", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (runError) {
-    await fail("session", "expiry_machine_lookup_failed", "Reading the sandbox machine of an idle cloud session failed", runError);
-    return "failed";
-  }
-  const machine = (runData as { sandbox_machine_id: string } | null)?.sandbox_machine_id ?? null;
-  if (!machine) {
-    // The provider's destroy needs a machine id, so the volume is not deleted. The session stays asleep.
-    await fail("execution", "sandbox_machine_missing", "An idle cloud session has no sandbox machine, so its volume was not deleted");
+  // The newest machine any run recorded. A session with none still expires: its destroy deletes only the volume.
+  let machine: string;
+  try {
+    machine = (await latestMachineId(client, session.id)) ?? "";
+  } catch (cause) {
+    await fail("session", "expiry_machine_lookup_failed", "Reading the sandbox machine of an idle cloud session failed", cause);
     return "failed";
   }
 
@@ -136,14 +126,4 @@ async function expireSession(deps: ExpireIdleCloudSessionsDeps, session: IdleSes
     return "failed";
   }
   return "expired";
-}
-
-function parseVolumeRef(value: unknown): VolumeRef | null {
-  if (typeof value !== "object" || value === null) return null;
-  const { provider, id, region } = value as Record<string, unknown>;
-  return isNonEmptyString(provider) && isNonEmptyString(id) && isNonEmptyString(region) ? { provider, id, region } : null;
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0;
 }

@@ -5,8 +5,9 @@ import { recordError } from "../errors/record-error";
 import { productionStartDeps } from "../cloud-sessions/deps";
 import { parseCloudStart } from "../cloud-sessions/parse-start";
 import { startCloudSession } from "../cloud-sessions/start";
+import { SLEEPABLE_STATUSES, sleepCloudSession } from "../cloud-sessions/sleep";
+import { wakeCloudSession } from "../cloud-sessions/wake";
 import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
-import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { eventsForHarness } from "../ingestion/harness-lines";
@@ -397,11 +398,9 @@ export const END = withHostAuth<EndRequest>(async (req, caller) => {
   return Response.json({ ok: true });
 });
 
-const SLEEPABLE_STATUSES = ["starting", "live", "host_offline"];
-
 /**
- * The cloud host says its session is idle and it is stopping. Its run succeeds first, so no active run blocks the
- * next wake, then the session sleeps. The machine stops by itself; nothing here stops it.
+ * The cloud host says its session is idle and it is stopping. A waiting input refuses the sleep (409 inputs_pending),
+ * and the run stays active so the host can deliver it. Otherwise the run succeeds and the session sleeps.
  */
 export const HOST_SLEEP = withHostAuth<HostSleepRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
@@ -417,30 +416,20 @@ export const HOST_SLEEP = withHostAuth<HostSleepRequest>(async (req, caller) => 
   const status = owned.session.status;
   if (!SLEEPABLE_STATUSES.includes(status)) return errorResponse(status === "ended" ? "session_ended" : "session_sleeping", 409);
 
-  const { error: runError } = await serviceClient
-    .from("agent_runs")
-    .update({ status: "succeeded", completed_at: new Date().toISOString() })
-    .eq("id", caller.runId)
-    .in("status", ACTIVE_AGENT_RUN_STATUSES);
-  if (runError) {
-    await recordError({ workspaceId, sessionId, agentRunId: caller.runId, operation: "session", code: "session_sleep_failed", message: "Ending the run of a sleeping cloud session failed", error: runError });
-    return Response.json({ ok: false, error: "session_sleep_failed" }, { status: 500 });
+  const outcome = await sleepCloudSession(
+    { workspaceId, sessionId, runId: caller.runId },
+    { client: serviceClient, wake: (session) => wakeCloudSession(session, productionStartDeps()) },
+  );
+  switch (outcome) {
+    case "sleeping":
+      return Response.json({ ok: true, status: "sleeping" });
+    case "inputs_pending":
+      return errorResponse("inputs_pending", 409);
+    case "session_changed":
+      return errorResponse("session_changed", 409);
+    case "failed":
+      return Response.json({ ok: false, error: "session_sleep_failed" }, { status: 500 });
   }
-
-  const { data, error } = await serviceClient
-    .from("sessions")
-    .update({ status: "sleeping" })
-    .eq("id", sessionId)
-    .eq("workspace_id", workspaceId)
-    .in("status", SLEEPABLE_STATUSES)
-    .select("id")
-    .maybeSingle();
-  if (error) {
-    await recordError({ workspaceId, sessionId, agentRunId: caller.runId, operation: "session", code: "session_sleep_failed", message: "Sleeping a cloud session failed", error });
-    return Response.json({ ok: false, error: "session_sleep_failed" }, { status: 500 });
-  }
-  if (!data) return errorResponse("session_changed", 409);
-  return Response.json({ ok: true, status: "sleeping" });
 });
 
 /**
@@ -467,6 +456,9 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
+
+  // A cloud session's volume is removed once it ends, so it cannot be reopened.
+  if (owned.session.runtime === "cloud") return errorResponse("cloud_session_ended", 409);
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;

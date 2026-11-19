@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { HostConfigError, isVolumeHome, parseHostConfig, parseSeed } from "../../sandbox/host/config";
+import { HostConfigError, isVolumeHome, parseHostConfig, parseSeed, scrubPaneSecrets } from "../../sandbox/host/config";
 
 const env = {
   DRAFT_API_BASE_URL: "https://api.example.test/",
@@ -24,11 +24,37 @@ describe("parseHostConfig", () => {
     expect(parseHostConfig(env)).toEqual({
       apiBase: "https://api.example.test",
       runToken: "run-token-value",
+      mcp: null,
       sessionId: "sess_1",
       workspaceId: "ws-1",
       home: "/data",
       seed: { kind: "repo", gitRemote: "https://github.com/acme/app.git", branch: "main" },
     });
+  });
+
+  it("reads the agent's tool server when its URL and token are both set", () => {
+    const url = "https://api.example.test/runs/run-1/mcp";
+    expect(parseHostConfig({ ...env, DRAFT_MCP_URL: url, DRAFT_MCP_TOKEN: "mcp-token-value" }).mcp).toEqual({ url, token: "mcp-token-value" });
+  });
+
+  it("refuses a tool server URL without its token, or a token without its URL", () => {
+    const message = "DRAFT_MCP_URL and DRAFT_MCP_TOKEN must be set together";
+    expect(messageOf(() => parseHostConfig({ ...env, DRAFT_MCP_URL: "https://api.example.test/runs/r/mcp" }))).toBe(message);
+    expect(messageOf(() => parseHostConfig({ ...env, DRAFT_MCP_TOKEN: "mcp-token-value" }))).toBe(message);
+  });
+
+  it("refuses a tool server on another host, so the agent's token is never sent elsewhere", () => {
+    const message = "DRAFT_MCP_URL must be on the DRAFT_API_BASE_URL host";
+    expect(messageOf(() => parseHostConfig({ ...env, DRAFT_MCP_URL: "https://evil.example.test/runs/r/mcp", DRAFT_MCP_TOKEN: "t" }))).toBe(message);
+    expect(messageOf(() => parseHostConfig({ ...env, DRAFT_MCP_URL: "http://api.example.test/runs/r/mcp", DRAFT_MCP_TOKEN: "t" }))).toBe(message);
+    expect(messageOf(() => parseHostConfig({ ...env, DRAFT_MCP_URL: "not a url", DRAFT_MCP_TOKEN: "t" }))).toBe("DRAFT_MCP_URL is not a URL");
+  });
+
+  it("never echoes the agent's token in an error", () => {
+    const secret = "mcp_SECRET_VALUE_456";
+    const thrown = (run: () => unknown) => messageOf(run);
+    expect(thrown(() => parseHostConfig({ ...env, DRAFT_MCP_URL: "https://evil.example.test/x", DRAFT_MCP_TOKEN: secret }))).not.toContain(secret);
+    expect(thrown(() => parseHostConfig({ ...env, DRAFT_MCP_URL: "bad url", DRAFT_MCP_TOKEN: secret }))).not.toContain(secret);
   });
 
   it("names every missing variable in one message", () => {
@@ -105,5 +131,13 @@ describe("isVolumeHome", () => {
   it("refuses a path that only reaches /data through dot segments", () => {
     expect(isVolumeHome("/data/../etc")).toBe(false);
     expect(isVolumeHome("/data/..")).toBe(false);
+  });
+});
+
+describe("scrubPaneSecrets", () => {
+  it("removes the host's run token and the seed, and keeps the agent's tool token", () => {
+    const paneEnv: Record<string, string | undefined> = { DRAFT_RUN_TOKEN: "host", DRAFT_SEED: "{}", DRAFT_MCP_TOKEN: "agent", DRAFT_RUN_ID: "run-1", HOME: "/data" };
+    scrubPaneSecrets(paneEnv);
+    expect(paneEnv).toEqual({ DRAFT_MCP_TOKEN: "agent", DRAFT_RUN_ID: "run-1", HOME: "/data" });
   });
 });

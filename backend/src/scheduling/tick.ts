@@ -9,6 +9,9 @@ import { retryFailedSynthesisRuns } from "../synthesis/retry-failed-runs";
 import { failStaleRoutineSessions } from "../routines/fail-stale-routine-sessions";
 import { drainEventInbox } from "../events/drain";
 import { expireIdleCloudSessions } from "../cloud-sessions/expire";
+import { reconcileCloudSessions } from "../cloud-sessions/reconcile";
+import { wakeCloudSession } from "../cloud-sessions/wake";
+import { runTokenSecret } from "../metaharness/runs/run-token-secret";
 import { providerFor } from "../metaharness/sandbox/providers";
 
 export interface RunSchedulingTickOptions {
@@ -18,6 +21,7 @@ export interface RunSchedulingTickOptions {
   dispatch?: typeof dispatchScheduledTask; // injectable for tests
   drain?: typeof drainEventInbox; // injectable for tests
   expire?: typeof expireIdleCloudSessions; // injectable for tests
+  reconcile?: typeof reconcileCloudSessions; // injectable for tests
 }
 
 const TIMER_CLAIM_LIMIT = 100;
@@ -35,6 +39,7 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
   const dispatch = options.dispatch ?? dispatchScheduledTask;
   const drain = options.drain ?? drainEventInbox;
   const expire = options.expire ?? expireIdleCloudSessions;
+  const reconcile = options.reconcile ?? reconcileCloudSessions;
 
   const { data, error } = await options.client.rpc("claim_due_scheduled_tasks", {
     p_now: now.toISOString(),
@@ -121,6 +126,21 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     }
   } catch (expireError) {
     await recordTickStepError(options.client, "Idle cloud session expiry failed", expireError);
+  }
+  try {
+    if (options.config?.provider) {
+      const { client, config } = options;
+      const provider = providerFor(config.provider);
+      await reconcile({
+        client,
+        provider,
+        providerName: config.provider.kind,
+        now: () => now,
+        wake: (session) => wakeCloudSession(session, { client, provider, config, tokenSecret: runTokenSecret() }),
+      });
+    }
+  } catch (reconcileError) {
+    await recordTickStepError(options.client, "Cloud session reconcile failed", reconcileError);
   }
 }
 

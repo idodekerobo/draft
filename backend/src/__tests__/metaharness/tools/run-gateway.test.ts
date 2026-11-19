@@ -3,7 +3,7 @@ import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parse
 import { type AnyDraftToolPermission } from "draft-core/tools";
 import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
 import { createRunGateway } from "../../../metaharness/tools/run-gateway";
-import { createAgentRunToken } from "../../../metaharness/runs/run-token";
+import { createAgentRunToken, type AgentRunTokenScope } from "../../../metaharness/runs/run-token";
 import { createFakeContextDb } from "../context/fake-context-db";
 import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
 
@@ -31,13 +31,14 @@ async function setup(permissions: AnyDraftToolPermission[], status = "running") 
   };
   await createAgentRun(db.client, { spec, idempotencyKey: "k", status: status as never });
   const gateway = createRunGateway({ client: db.client, secret: () => SECRET, registry: createDraftToolRegistry(db.client) });
-  const token = (overrides: Partial<{ runId: string; workspaceId: string; expiresAt: number }> = {}) =>
+  const token = (overrides: Partial<{ runId: string; workspaceId: string; expiresAt: number; scope: AgentRunTokenScope }> = {}) =>
     createAgentRunToken(
       {
         runId: parseAgentRunId(overrides.runId ?? RUN_ID),
         workspaceId: parseWorkspaceId(overrides.workspaceId ?? WS),
         expiresAt: overrides.expiresAt ?? FAR_FUTURE,
         nonce: "n",
+        scope: overrides.scope,
       },
       SECRET,
     );
@@ -72,6 +73,25 @@ describe("run gateway authentication", () => {
   it("rejects the token of a run that has finished", async () => {
     const { gateway, request } = await setup([{ tool: "context.read" }], "succeeded");
     expect((await gateway.listTools(request("/x", { method: "GET" }), RUN_ID)).status).toBe(401);
+  });
+
+  it("accepts the agent's mcp token and a routine's unscoped token", async () => {
+    const { gateway, request, token } = await setup([{ tool: "context.read" }]);
+    expect((await gateway.listTools(request("/x", { method: "GET", token: token({ scope: "mcp" }) }), RUN_ID)).status).toBe(200);
+    expect((await gateway.listTools(request("/x", { method: "GET", token: token() }), RUN_ID)).status).toBe(200);
+    const call = await gateway.callTool(request("/x", { body: { paths: ["a.md"] }, token: token({ scope: "mcp" }) }), RUN_ID, "context.read");
+    expect(call.status).toBe(200);
+  });
+
+  it("refuses a host token on the tool list, the tool call and the MCP route, and runs nothing", async () => {
+    const { gateway, request, token, db } = await setup([{ tool: "context.read" }]);
+    const host = token({ scope: "host" });
+    const listed = await gateway.listTools(request("/x", { method: "GET", token: host }), RUN_ID);
+    expect(listed.status).toBe(403);
+    expect(await listed.json()).toEqual({ ok: false, error: "token_scope" });
+    expect((await gateway.callTool(request("/x", { body: { paths: ["a.md"] }, token: host }), RUN_ID, "context.read")).status).toBe(403);
+    expect((await mcpCall(gateway, request("/x", { token: host, body: { jsonrpc: "2.0", id: 1, method: "tools/list" } }))).status).toBe(403);
+    expect(db.toolCalls).toEqual([]);
   });
 });
 

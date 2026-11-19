@@ -1,12 +1,22 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { parseAgentRunId, parseWorkspaceId, type AgentRunId, type WorkspaceId } from "draft-core/run-spec";
 
-/** expiresAt is a Unix timestamp in milliseconds. */
+/** "host" authenticates a cloud session's host. "mcp" authenticates the agent's calls to Draft tools. */
+export type AgentRunTokenScope = "host" | "mcp";
+
+const SCOPES: ReadonlyArray<string> = ["host", "mcp"];
+const CLAIM_NAMES: ReadonlyArray<string> = ["runId", "workspaceId", "expiresAt", "nonce", "scope"];
+
+/**
+ * expiresAt is a Unix timestamp in milliseconds. A token with no scope is a routine run's token. The tool gateway
+ * accepts it, and host endpoints refuse it.
+ */
 export interface AgentRunTokenClaims {
   runId: AgentRunId;
   workspaceId: WorkspaceId;
   expiresAt: number;
   nonce: string;
+  scope?: AgentRunTokenScope;
 }
 
 export class AgentRunTokenError extends Error {
@@ -27,11 +37,13 @@ function sign(encodedPayload: string, secret: string): Buffer {
 }
 
 export function createAgentRunToken(claims: AgentRunTokenClaims, secret: string): string {
+  // JSON.stringify drops an absent scope, so an unscoped token has the payload it always had.
   const payload = JSON.stringify({
     runId: claims.runId,
     workspaceId: claims.workspaceId,
     expiresAt: claims.expiresAt,
     nonce: claims.nonce,
+    scope: claims.scope,
   });
   const encodedPayload = Buffer.from(payload).toString("base64url");
   return `${encodedPayload}.${sign(encodedPayload, secret).toString("base64url")}`;
@@ -42,23 +54,26 @@ function parseClaims(value: unknown): AgentRunTokenClaims {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw invalid();
   const claims = value as Record<string, unknown>;
   if (
-    Object.keys(claims).length !== 4 ||
+    Object.keys(claims).some((name) => !CLAIM_NAMES.includes(name)) ||
     typeof claims.runId !== "string" ||
     typeof claims.workspaceId !== "string" ||
     typeof claims.expiresAt !== "number" ||
     !Number.isSafeInteger(claims.expiresAt) ||
     claims.expiresAt <= 0 ||
     typeof claims.nonce !== "string" ||
-    claims.nonce.length === 0
+    claims.nonce.length === 0 ||
+    (claims.scope !== undefined && (typeof claims.scope !== "string" || !SCOPES.includes(claims.scope)))
   ) {
     throw invalid();
   }
+  const scope = claims.scope as AgentRunTokenScope | undefined;
   try {
     return {
       runId: parseAgentRunId(claims.runId),
       workspaceId: parseWorkspaceId(claims.workspaceId),
       expiresAt: claims.expiresAt,
       nonce: claims.nonce,
+      ...(scope === undefined ? {} : { scope }),
     };
   } catch {
     throw invalid();

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { parseAgentRunId, parseWorkspaceId } from "draft-core/run-spec";
 import type { HostCaller } from "../../auth/with-host-auth";
-import { createAgentRunToken } from "../../metaharness/runs/run-token";
+import { createAgentRunToken, type AgentRunTokenScope } from "../../metaharness/runs/run-token";
 
 // Live-binding hazard: restore the real modules after this file, so a later test file sees them.
 const realWithAuthModule = await import("../../auth/withAuth");
@@ -64,13 +64,15 @@ const route = withHostAuth((_req, caller) => {
   return Response.json({ ok: true });
 });
 
-function mint(overrides: { runId?: string; workspaceId?: string; expiresAt?: number; secret?: string } = {}): string {
+function mint(overrides: { runId?: string; workspaceId?: string; expiresAt?: number; secret?: string; scope?: AgentRunTokenScope | null } = {}): string {
+  const scope = overrides.scope === null ? undefined : (overrides.scope ?? "host");
   return createAgentRunToken(
     {
       runId: parseAgentRunId(overrides.runId ?? RUN),
       workspaceId: parseWorkspaceId(overrides.workspaceId ?? WS),
       expiresAt: overrides.expiresAt ?? Date.now() + 60_000,
       nonce: "nonce-1",
+      scope,
     },
     overrides.secret ?? SECRET,
   );
@@ -138,6 +140,24 @@ describe("a cloud run token", () => {
     tables.sessions = [cloudSession({ workspace_id: "66666666-6666-4666-8666-666666666666" })];
     expect((await call(mint(), SESSION, "66666666-6666-4666-8666-666666666666")).status).toBe(403);
     expect(seen).toEqual([]);
+  });
+
+  it("refuses a token with no scope, which is a routine run's token, before any lookup", async () => {
+    failingTables.add("agent_runs");
+    const res = await call(mint({ scope: null }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: "token_scope" });
+    expect(seen).toEqual([]);
+    expect(errorRows).toEqual([]);
+  });
+
+  it("refuses the agent's mcp token on a host endpoint, before any lookup", async () => {
+    failingTables.add("agent_runs");
+    const res = await call(mint({ scope: "mcp" }));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: "token_scope" });
+    expect(seen).toEqual([]);
+    expect(errorRows).toEqual([]);
   });
 
   it("refuses an expired token", async () => {

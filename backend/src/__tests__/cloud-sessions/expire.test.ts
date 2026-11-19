@@ -254,16 +254,29 @@ describe("expireIdleCloudSessions", () => {
     expect(db.tables.errors).toEqual([]);
   });
 
-  it("records a session with no machine on any run, and leaves it sleeping", async () => {
+  it("expires a session with no machine on any run, deleting only its volume", async () => {
     const db = state([session("s1")], [run("s1", null)]);
+    const { provider, destroyed } = fakeProvider();
+
+    const result = await expireIdleCloudSessions({ client: fakeSupabase(db), provider, now: () => NOW });
+
+    expect(result).toEqual({ expired: 1, skipped: 0, failed: 0 });
+    expect(destroyed).toEqual([{ provider: "fly", machine: "", volume: volumeOf("s1") }]);
+    expect(db.tables.sessions[0]).toMatchObject({ status: "ended", end_reason: "expired", sandbox_volume: null });
+    expect(db.tables.errors).toEqual([]);
+  });
+
+  it("records a failed machine lookup, and leaves the session sleeping with its volume", async () => {
+    const db = state([session("s1")], [run("s1", "machine-s1")]);
+    db.failWhen = (table, operation) => table === "agent_runs" && operation === "select";
     const { provider, destroyed } = fakeProvider();
 
     const result = await expireIdleCloudSessions({ client: fakeSupabase(db), provider, now: () => NOW });
 
     expect(result).toEqual({ expired: 0, skipped: 0, failed: 1 });
     expect(destroyed).toEqual([]);
-    expect(db.tables.sessions[0]).toMatchObject({ status: "sleeping" });
-    expect(db.tables.errors[0]!.detail_json).toMatchObject({ code: "sandbox_machine_missing" });
+    expect(db.tables.sessions[0]).toMatchObject({ status: "sleeping", sandbox_volume: volumeOf("s1") });
+    expect(db.tables.errors[0]!.detail_json).toMatchObject({ code: "expiry_machine_lookup_failed" });
   });
 
   it("records a session with no valid volume ref, and leaves it sleeping", async () => {

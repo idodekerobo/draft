@@ -170,6 +170,7 @@ describe("startCloudSession", () => {
         "CLAUDE_CODE_OAUTH_TOKEN",
         "DRAFT_API_BASE_URL",
         "DRAFT_EGRESS_HOSTS",
+        "DRAFT_MCP_TOKEN",
         "DRAFT_MCP_URL",
         "DRAFT_MODE",
         "DRAFT_NETWORK",
@@ -197,7 +198,18 @@ describe("startCloudSession", () => {
     }
 
     const claims = verifyAgentRunToken(env.DRAFT_RUN_TOKEN!, SECRET, { now: NOW });
-    expect(claims).toMatchObject({ runId: RUN, workspaceId: WS, expiresAt: NOW + 24 * 60 * 60 * 1_000 });
+    expect(claims).toMatchObject({ runId: RUN, workspaceId: WS, scope: "host", expiresAt: NOW + 24 * 60 * 60 * 1_000 });
+  });
+
+  it("gives the agent its own mcp-scoped token, which is not the host's", async () => {
+    const fly = fakeProvider();
+    await startCloudSession(input, deps({ provider: fly.provider }));
+
+    const env = fly.created[0]!.env;
+    expect(env.DRAFT_MCP_TOKEN).toBeTruthy();
+    expect(env.DRAFT_MCP_TOKEN).not.toBe(env.DRAFT_RUN_TOKEN);
+    const claims = verifyAgentRunToken(env.DRAFT_MCP_TOKEN!, SECRET, { now: NOW });
+    expect(claims).toMatchObject({ runId: RUN, workspaceId: WS, scope: "mcp", expiresAt: NOW + 24 * 60 * 60 * 1_000 });
   });
 
   it("passes an open network to the run and the sandbox", async () => {
@@ -212,9 +224,11 @@ describe("startCloudSession", () => {
     await startCloudSession(input, deps({ provider: fly.provider }));
 
     const runToken = fly.created[0]!.env.DRAFT_RUN_TOKEN!;
+    const mcpToken = fly.created[0]!.env.DRAFT_MCP_TOKEN!;
     const printed = JSON.stringify(logs);
     expect(printed).not.toContain(CLAUDE_TOKEN);
     expect(printed).not.toContain(runToken);
+    expect(printed).not.toContain(mcpToken);
     expect(JSON.stringify(db.tables.errors)).not.toContain(CLAUDE_TOKEN);
   });
 

@@ -55,6 +55,22 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
   neq(column: string, value: unknown) { this.filters.push((r) => r[column] !== value); return this; }
   in(column: string, values: unknown[]) { this.filters.push((r) => values.includes(r[column])); return this; }
   is(column: string, value: unknown) { this.filters.push((r) => (r[column] ?? null) === value); return this; }
+  not(column: string, operator: string, value: unknown) {
+    this.filters.push((r) => (operator === "is" ? (r[column] ?? null) !== value : r[column] !== value));
+    return this;
+  }
+  /** Supports the `col.is.null` and `col.neq.value` terms. A NULL column matches only the `is.null` term, as SQL does. */
+  or(expression: string) {
+    const terms = expression.split(",").map((term) => {
+      const [column = "", operator = "", ...rest] = term.split(".");
+      const value = rest.join(".");
+      if (operator === "is") return (r: Row) => (r[column] ?? null) === null;
+      if (operator === "neq") return (r: Row) => r[column] != null && r[column] !== value;
+      throw new Error(`fake-client cannot evaluate the or-term ${term}`);
+    });
+    this.filters.push((r) => terms.some((term) => term(r)));
+    return this;
+  }
   gt(column: string, value: string | number) { this.filters.push((r) => r[column] !== null && r[column] !== undefined && (r[column] as string | number) > value); return this; }
   lt(column: string, value: string) { this.filters.push((r) => typeof r[column] === "string" && (r[column] as string) < value); return this; }
   order(column: string, options?: { ascending?: boolean }) { this.sort = { column, ascending: options?.ascending ?? true }; return this; }
@@ -104,6 +120,18 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
     }
     return { data: matched, error: null, count: matched.length } as { data: unknown; error: unknown };
   }
+}
+
+/** A client whose queries on one table all fail with `message`. Every other table goes to the base client. */
+export function failingOn(base: SupabaseClient, table: string, message = "db down"): SupabaseClient {
+  const failing = () => {
+    const query: Record<string, unknown> = {};
+    for (const step of ["select", "eq", "neq", "in", "is", "not", "or", "order", "limit", "update", "insert"]) query[step] = () => query;
+    query.maybeSingle = async () => ({ data: null, error: new Error(message) });
+    query.then = (resolve: (value: unknown) => unknown) => resolve({ data: null, error: new Error(message) });
+    return query;
+  };
+  return { from: (name: string) => (name === table ? failing() : base.from(name)), rpc: base.rpc } as unknown as SupabaseClient;
 }
 
 export function fakeClient(db: FakeDb): SupabaseClient {

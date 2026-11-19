@@ -14,7 +14,10 @@ export interface CloudSandboxEnvInput {
   sessionId: string;
   workspaceId: string;
   runId: string;
+  /** The host's token. The host removes it from the agent's environment before the agent starts. */
   runToken: string;
+  /** The agent's token. It can call Draft tools but not the host endpoints, so the agent may keep it. */
+  mcpToken: string;
   claudeToken: string;
   seed: { kind: "repo"; gitRemote: string; branch: string };
   network: "restricted" | "open";
@@ -23,7 +26,7 @@ export interface CloudSandboxEnvInput {
   supabaseUrl: string;
 }
 
-/** The environment of a cloud session's sandbox. It holds two secrets, so callers must never log it. */
+/** The environment of a cloud session's sandbox. It holds the run's secrets, so callers must never log it. */
 export function cloudSandboxEnv(input: CloudSandboxEnvInput): Record<string, string> {
   const apiBase = new URL(input.callbackUrl).origin;
   const hosts = [...new Set([...CLOUD_EGRESS_HOSTS, new URL(apiBase).hostname, new URL(input.supabaseUrl).hostname])];
@@ -35,6 +38,7 @@ export function cloudSandboxEnv(input: CloudSandboxEnvInput): Record<string, str
     DRAFT_RUN_TOKEN: input.runToken,
     DRAFT_API_BASE_URL: apiBase,
     DRAFT_MCP_URL: new URL(`/runs/${input.runId}/mcp`, apiBase).toString(),
+    DRAFT_MCP_TOKEN: input.mcpToken,
     CLAUDE_CODE_OAUTH_TOKEN: input.claudeToken,
     DRAFT_SEED: JSON.stringify(input.seed),
     DRAFT_NETWORK: input.network,

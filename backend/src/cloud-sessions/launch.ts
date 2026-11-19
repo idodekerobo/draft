@@ -4,7 +4,7 @@ import { ACTIVE_AGENT_RUN_STATUSES, parseAgentRunId, parseWorkspaceId, type Agen
 import { recordError } from "../errors/record-error";
 import { resolveCredential as resolveHarnessCredential } from "../credentials/harness-credential";
 import { resolveBaseContextVersionId } from "../metaharness/runs/base-context";
-import { createAgentRunToken } from "../metaharness/runs/run-token";
+import { createAgentRunToken, type AgentRunTokenScope } from "../metaharness/runs/run-token";
 import type { SandboxDeploymentConfig } from "../metaharness/sandbox/config";
 import type { SandboxProvider } from "../metaharness/sandbox/providers";
 import { buildCloudRunSpec, type CloudRunSpecInput } from "./run-spec";
@@ -31,20 +31,31 @@ export async function cloudRunSpec(client: SupabaseClient, input: Omit<CloudRunS
   return buildCloudRunSpec({ ...input, contextVersionId });
 }
 
-type CloudEnvRun = Omit<CloudSandboxEnvInput, "runToken" | "callbackUrl" | "supabaseUrl">;
+type CloudEnvRun = Omit<CloudSandboxEnvInput, "runToken" | "mcpToken" | "callbackUrl" | "supabaseUrl">;
 
-/** The sandbox environment of one run. It mints the run's own token, so each run needs its own call. Never log it. */
+/**
+ * The sandbox environment of one run. It mints the run's two tokens, the host's and the agent's, so each run
+ * needs its own call. Never log it.
+ */
 export function cloudRunEnv(run: CloudEnvRun, deps: Pick<CloudSessionDeps, "config" | "tokenSecret" | "now" | "newId">): Record<string, string> {
-  const runToken = createAgentRunToken(
-    {
-      runId: parseAgentRunId(run.runId),
-      workspaceId: parseWorkspaceId(run.workspaceId),
-      expiresAt: (deps.now ?? Date.now)() + RUN_TOKEN_TTL_MS,
-      nonce: (deps.newId ?? randomUUID)(),
-    },
-    deps.tokenSecret,
-  );
-  return cloudSandboxEnv({ ...run, runToken, callbackUrl: deps.config.callbackUrl, supabaseUrl: deps.config.supabaseUrl });
+  const mint = (scope: AgentRunTokenScope) =>
+    createAgentRunToken(
+      {
+        runId: parseAgentRunId(run.runId),
+        workspaceId: parseWorkspaceId(run.workspaceId),
+        expiresAt: (deps.now ?? Date.now)() + RUN_TOKEN_TTL_MS,
+        nonce: (deps.newId ?? randomUUID)(),
+        scope,
+      },
+      deps.tokenSecret,
+    );
+  return cloudSandboxEnv({
+    ...run,
+    runToken: mint("host"),
+    mcpToken: mint("mcp"),
+    callbackUrl: deps.config.callbackUrl,
+    supabaseUrl: deps.config.supabaseUrl,
+  });
 }
 
 /** Marks a run that did not start as failed. Only a run that is still active changes. */

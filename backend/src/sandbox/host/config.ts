@@ -6,6 +6,8 @@ export type SeedSpec = { kind: "repo"; gitRemote: string; branch: string } | { k
 export interface HostConfig {
   apiBase: string;
   runToken: string;
+  /** The agent's Draft tool server and its token. Null on a machine made before the agent had Draft tools. */
+  mcp: { url: string; token: string } | null;
   sessionId: string;
   workspaceId: string;
   home: string;
@@ -33,14 +35,41 @@ export function parseHostConfig(env: Record<string, string | undefined>): HostCo
   const missing = REQUIRED.filter((name) => !env[name]);
   if (missing.length > 0) throw new HostConfigError(`missing required environment variables: ${missing.join(", ")}`);
   const get = (name: string) => env[name] ?? "";
+  const apiBase = parseApiBase(get("DRAFT_API_BASE_URL"));
   return {
-    apiBase: parseApiBase(get("DRAFT_API_BASE_URL")),
+    apiBase,
     runToken: get("DRAFT_RUN_TOKEN"),
+    mcp: parseMcp(env, apiBase),
     sessionId: parseId("DRAFT_SESSION_ID", get("DRAFT_SESSION_ID")),
     workspaceId: parseId("DRAFT_WORKSPACE_ID", get("DRAFT_WORKSPACE_ID")),
     home: get("HOME"),
     seed: parseSeed(get("DRAFT_SEED")),
   };
+}
+
+/** The URL and the token come together. The token is sent to the URL, so the URL must be on the API host. */
+function parseMcp(env: Record<string, string | undefined>, apiBase: string): HostConfig["mcp"] {
+  const url = env.DRAFT_MCP_URL ?? "";
+  const token = env.DRAFT_MCP_TOKEN ?? "";
+  if (url === "" && token === "") return null;
+  if (url === "" || token === "") throw new HostConfigError("DRAFT_MCP_URL and DRAFT_MCP_TOKEN must be set together");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch (error) {
+    throw new HostConfigError("DRAFT_MCP_URL is not a URL", { cause: error });
+  }
+  if (parsed.origin !== new URL(apiBase).origin) throw new HostConfigError("DRAFT_MCP_URL must be on the DRAFT_API_BASE_URL host");
+  return { url, token };
+}
+
+/**
+ * The agent's pane inherits the host's environment, so the host's run token and the seed are removed from it.
+ * DRAFT_MCP_TOKEN stays: the agent needs it for Draft tools, and it cannot call the host endpoints.
+ */
+export function scrubPaneSecrets(env: Record<string, string | undefined>): void {
+  delete env.DRAFT_RUN_TOKEN;
+  delete env.DRAFT_SEED;
 }
 
 /** Values the logs must hide: the seed holds a remote that may embed a token, or a signed URL. */

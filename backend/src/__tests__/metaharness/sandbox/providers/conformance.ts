@@ -63,5 +63,20 @@ export function runProviderConformance(
         await provider.destroy(replacement ?? first);
       }
     }, 300_000);
+
+    // A sandbox whose machine is gone keeps only its volume. Destroy with an empty machine id removes that volume.
+    it("destroys the volume of a sandbox whose machine is already gone", async () => {
+      const provider = await makeProvider();
+      const spec: SandboxSpec = { runId: `conformance-${crypto.randomUUID()}`, env: {}, metadata: { conformance: "true" }, volume: { sizeGb: 1 } };
+      const created = await provider.create(spec);
+      if (created.volume === null) throw new Error("The conformance sandbox has no volume");
+      await provider.destroyMachine(created);
+      const volumeOnly: SandboxRef = { ...created, machine: "" };
+
+      await provider.destroy(volumeOnly);
+
+      expect(await provider.status(volumeOnly)).toBe("missing");
+      await expect(provider.create({ ...spec, volume: { existing: created.volume } })).rejects.toThrow();
+    }, 300_000);
   });
 }

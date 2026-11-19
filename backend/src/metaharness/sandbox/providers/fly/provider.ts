@@ -93,15 +93,16 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
     },
 
     async destroy(ref) {
-      await deleteMachine(ref.machine);
+      if (ref.machine) await deleteMachine(ref.machine);
       if (ref.volume !== null) await ignoreNotFound(fly.deleteVolume(ref.volume.id));
     },
 
     async destroyMachine(ref) {
-      await deleteMachine(ref.machine);
+      if (ref.machine) await deleteMachine(ref.machine);
     },
 
     async status(ref) {
+      if (!ref.machine) return "missing";
       let machine: FlyMachine;
       try {
         machine = await fly.get(ref.machine);

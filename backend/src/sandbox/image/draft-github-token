@@ -4,9 +4,10 @@ set -eu
 node -e '
   const fail = () => { process.stderr.write("GitHub credentials unavailable\\n"); process.exit(1); };
   (async () => {
-    const base = process.env.DRAFT_CALLBACK_URL;
+    // A cloud-session host has no callback URL. Its pane has DRAFT_MCP_TOKEN, not the run token of the host.
+    const base = process.env.DRAFT_CALLBACK_URL || process.env.DRAFT_API_BASE_URL;
     const runId = process.env.DRAFT_RUN_ID;
-    const token = process.env.DRAFT_RUN_TOKEN;
+    const token = process.env.DRAFT_MCP_TOKEN || process.env.DRAFT_RUN_TOKEN;
     if (!base || !runId || !token) fail();
     let callback;
     try { callback = new URL(base); } catch { fail(); }
