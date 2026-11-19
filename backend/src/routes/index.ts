@@ -20,6 +20,7 @@ import * as sessionsLive from "./sessions-live";
 import { VIEW as sessionView } from "./sessions-view";
 import * as sessionsLiveApprovals from "./sessions-live-approvals";
 import * as sessionsLiveInputs from "./sessions-live-inputs";
+import * as sessionsLiveSeed from "./sessions-live-seed";
 import * as sessionsLiveTitle from "./sessions-live-title";
 import * as sessionsIngestErrors from "./sessions-ingest-errors";
 import * as sessionsSearch from "./sessions-search";
@@ -60,6 +61,7 @@ export const routes = {
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
   "/workspaces/:id/schedules": { GET: withCors(routines.GET), POST: withCors(routines.POST), OPTIONS },
   "/workspaces/:id/routine-repositories": { GET: withCors(routineOptions.GET), OPTIONS },
+  "/workspaces/:id/github-branches": { GET: withCors(routineOptions.BRANCHES), OPTIONS },
   "/workspaces/:id/schedules/:taskId": { PATCH: withCors(routines.PATCH), DELETE: withCors(routines.DELETE), OPTIONS },
   "/workspaces/:id/schedules/:taskId/runs": { GET: withCors(routines.RUNS), OPTIONS },
   "/workspaces/:id/schedules/:taskId/run": { POST: withCors(routines.RUN), OPTIONS },
@@ -75,12 +77,14 @@ export const routes = {
   "/workspaces/:id/sessions/:sessionId": { GET: sessions.READ },
   "/live-session-titles/:sessionId": { GET: withCors(sessionsLiveTitle.TITLE), OPTIONS },
   "/workspaces/:id/live-sessions": { GET: withCors(sessionsLive.LIST), POST: withCors(sessionsLive.CREATE), OPTIONS },
+  "/workspaces/:id/live-sessions/seed-upload": { POST: withCors(sessionsLiveSeed.SEED_UPLOAD), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId": { DELETE: withCors(sessionsLive.DELETE), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/view": { GET: withCors(sessionView), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/events": { GET: withCors(sessionsLive.EVENTS), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/lines": { POST: withCors(sessionsLive.LINES), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/heartbeat": { POST: withCors(sessionsLive.HEARTBEAT), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/end": { POST: withCors(sessionsLive.END), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/host/sleep": { POST: withCors(sessionsLive.HOST_SLEEP), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/reopen": { POST: withCors(sessionsLive.REOPEN), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/raw": { POST: withCors(sessionsLive.RAW_UPLOAD_URLS), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/raw/complete": { POST: withCors(sessionsLive.RAW_UPLOAD_COMPLETE), OPTIONS },

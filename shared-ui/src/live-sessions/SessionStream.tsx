@@ -31,12 +31,12 @@ function PendingBubble({ item, mine, harness, onSteer, onCancel, onShowRequest, 
     const timer = setInterval(() => setNow(Date.now()), SLOW_TICK_MS);
     return () => clearInterval(timer);
   }, []);
-  const showNote = isBlocked(input, item.hostOffline) || now - Date.parse(input.created_at) >= SLOW_SEND_MS;
+  const showNote = isBlocked(input, item.hostWait) || now - Date.parse(input.created_at) >= SLOW_SEND_MS;
   return (
     <>
       {!mine && <span className="ui-stream__who">{item.author}</span>}
       <p className="ui-stream__bubble">{input.text}</p>
-      {showNote && <span className="ui-muted ui-stream__pending-note" role="status">{inputStatusLine(input, item.ownerName, now, item.hostOffline, harness)}</span>}
+      {showNote && <span className="ui-muted ui-stream__pending-note" role="status">{inputStatusLine(input, item.ownerName, now, item.hostWait, harness)}</span>}
       {onSteer && input.mine && input.state === "queued" && input.reason === "composer_busy" && (
         <ActionLink onClick={() => onSteer(input.id)}>Send now</ActionLink>
       )}

@@ -35,6 +35,9 @@ function createFakeProvider(): SandboxProvider {
       machines.delete(ref.machine);
       if (ref.volume !== null) volumes.delete(ref.volume.id);
     },
+    async destroyMachine(ref) {
+      machines.delete(ref.machine);
+    },
     async status(ref) {
       const state = machines.get(ref.machine);
       if (state === undefined) return "missing";

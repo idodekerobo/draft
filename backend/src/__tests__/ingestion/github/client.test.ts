@@ -151,3 +151,22 @@ describe("GithubClient.verifyInstallation", () => {
     await expect(client.verifyInstallation("bogus")).rejects.toMatchObject({ kind: "gone" });
   });
 });
+
+describe("listRepoBranches", () => {
+  it("returns the default branch and every branch name", async () => {
+    const { fn } = fakeFetch((url) => {
+      if (url.includes("/access_tokens")) return jsonResponse(200, { token: "tok", expires_at: new Date(Date.now() + 3600_000).toISOString() });
+      if (url.endsWith("/repos/acme/app")) return jsonResponse(200, { default_branch: "main" });
+      return jsonResponse(200, [{ name: "main" }, { name: "feature/x" }]);
+    });
+    const client = new GithubClient({ appId: "1", privateKeyPem, fetch: fn });
+    expect(await client.listRepoBranches("install-1", "acme/app")).toEqual({ defaultBranch: "main", branches: ["main", "feature/x"] });
+  });
+
+  it("refuses a name that is not owner/repo before calling GitHub", async () => {
+    const { fn, callCount } = fakeFetch(() => jsonResponse(200, {}));
+    const client = new GithubClient({ appId: "1", privateKeyPem, fetch: fn });
+    await expect(client.listRepoBranches("install-1", "acme/app/../x")).rejects.toThrow("invalid repository name");
+    expect(callCount()).toBe(0);
+  });
+});

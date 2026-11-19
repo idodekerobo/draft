@@ -89,6 +89,7 @@ skill when you change any of these, or what the backend sends to or expects
 from the runner:
 
 - `backend/src/sandbox/runner.ts` and `backend/src/sandbox/runner/*`
+- `backend/src/sandbox/host.ts`, `backend/src/sandbox/host/*` and `core/src/host/*` (the cloud-session host bundle)
 - `backend/src/sandbox/image/*` (Dockerfile, entrypoint, egress script)
 - `core/src/harnesses/*/runner.ts`, `core/src/harnesses/failure.ts`
 - `core/src/run-manifest.ts` and `core/src/run-spec.ts`

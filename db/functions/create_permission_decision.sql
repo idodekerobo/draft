@@ -53,6 +53,9 @@ begin
   if v_status = 'ended' then
     raise exception 'session_ended';
   end if;
+  if v_status = 'sleeping' then
+    raise exception 'session_sleeping';
+  end if;
   if not exists (
     select 1 from session_events
     where session_id = p_session_id and source_id = 'perm:' || p_request_id

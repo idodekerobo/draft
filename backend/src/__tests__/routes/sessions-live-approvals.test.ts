@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { parseAgentRunId, parseWorkspaceId } from "draft-core/run-spec";
+import { createAgentRunToken } from "../../metaharness/runs/run-token";
 
 const caller = { userId: "user-2", accessToken: "token-2" };
 
@@ -92,6 +94,13 @@ describe("deciding a permission request", () => {
     expect((await decide({ decision: "allow" })).status).toBe(409);
   });
 
+  it("refuses a decision on a sleeping session with session_sleeping", async () => {
+    rpcResult = { data: null, error: { message: "session_sleeping" } };
+    const res = await decide({ decision: "allow" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
+  });
+
   it("passes the mode a plan approval switches to, and refuses any other", async () => {
     rpcResult = { data: { outcome: "created" }, error: null };
     expect((await decide({ decision: "allow", permissionMode: "auto" })).status).toBe(201);
@@ -178,6 +187,15 @@ describe("Stop", () => {
     const res = await routes.STOP(request("/x", {}));
     expect(((await res.json()) as { withdrawn: unknown[] }).withdrawn).toEqual([]);
   });
+
+  it("refuses a cloud session that is sleeping, and withdraws nothing", async () => {
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", runtime: "cloud", status: "sleeping" }];
+    tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
+    const res = await routes.STOP(request("/x", {}));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
+    expect(rpcCalls).toEqual([]);
+  });
 });
 
 describe("switching the mode", () => {
@@ -237,6 +255,14 @@ describe("switching the mode", () => {
     expect((await mode({ permissionMode: "plan" })).status).toBe(409);
     expect(rpcCalls).toEqual([]);
   });
+
+  it("refuses a cloud session that is sleeping, since no run is there to switch", async () => {
+    setHarness("claude", { runtime: "cloud", status: "sleeping" });
+    const res = await mode({ permissionMode: "plan" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
+    expect(rpcCalls).toEqual([]);
+  });
 });
 
 describe("host events", () => {
@@ -266,5 +292,57 @@ describe("host events", () => {
     tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", host_id: "host-1" }];
     rpcResult = { data: null, error: { message: "foreign_host" } };
     expect((await routes.HOST_EVENTS(request("/x", { hostId: "host-9", events: [event] }))).status).toBe(403);
+  });
+});
+
+describe("cloud host requests", () => {
+  const CLOUD_WS = "11111111-1111-4111-8111-111111111111";
+  const RUN = "22222222-2222-4222-8222-222222222222";
+  const CLOUD_HOST = `cloud:${SESSION}`;
+  const SECRET = "live-approvals-cloud-test-secret";
+  const permission = { sourceId: "perm:r1", kind: "permission_request", payload: { requestId: "r1" } };
+  let savedSecret: string | undefined;
+
+  beforeAll(() => {
+    savedSecret = process.env.SANDBOX_CALLBACK_SECRET;
+    process.env.SANDBOX_CALLBACK_SECRET = SECRET;
+  });
+  afterAll(() => {
+    if (savedSecret === undefined) delete process.env.SANDBOX_CALLBACK_SECRET;
+    else process.env.SANDBOX_CALLBACK_SECRET = savedSecret;
+  });
+
+  const cloudRequest = (body: unknown) =>
+    Object.assign(
+      new Request("http://localhost/x", {
+        method: "POST",
+        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n", scope: "host" }, SECRET)}` },
+        body: JSON.stringify(body),
+      }),
+      { params: { id: CLOUD_WS, sessionId: SESSION } },
+    ) as never;
+
+  beforeEach(() => {
+    tables.sessions = [{ id: SESSION, workspace_id: CLOUD_WS, owner_user_id: "user-2", runtime: "cloud", host_id: CLOUD_HOST, status: "live", last_seq: 0 }];
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
+  });
+
+  it("appends the sandbox's permission events under its cloud host id, and refuses another host", async () => {
+    rpcResult = { data: { last_seq: 4, inserted: 1 }, error: null };
+    const res = await routes.HOST_EVENTS(cloudRequest({ events: [permission] }));
+    expect(res.status).toBe(200);
+    expect(rpcCalls[0]).toMatchObject({ fn: "append_session_events", args: { p_session_id: SESSION, p_workspace_id: CLOUD_WS, p_host_id: CLOUD_HOST } });
+
+    rpcCalls = [];
+    const foreign = await routes.HOST_EVENTS(cloudRequest({ hostId: "host-1", events: [permission] }));
+    expect(foreign.status).toBe(403);
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("refuses a late append to a sleeping session with session_sleeping, so it cannot set the session live", async () => {
+    rpcResult = { data: null, error: { message: "session_sleeping" } };
+    const res = await routes.HOST_EVENTS(cloudRequest({ events: [permission] }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
   });
 });

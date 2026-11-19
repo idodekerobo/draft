@@ -54,6 +54,7 @@ export function QuestionCard({
   onSkip,
   agent = "Claude",
   hasTerminal = true,
+  sleeping = false,
 }: {
   approval: OpenApproval;
   hostName: string | null;
@@ -62,10 +63,13 @@ export function QuestionCard({
   agent?: string;
   /** Whether the question also shows in a terminal the owner can answer in. */
   hasTerminal?: boolean;
+  /** The session is asleep, so no answer can reach it yet. */
+  sleeping?: boolean;
 }) {
   const id = useId();
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   const { phase, run, busy, sendingWhat } = useSend();
+  const locked = busy || sleeping;
   const answers = collectAnswers(approval.questions, choices);
 
   const update = (key: string, change: (current: Choice) => Choice) => setChoices((all) => ({ ...all, [key]: change(all[key] ?? EMPTY) }));
@@ -88,7 +92,7 @@ export function QuestionCard({
         const name = `${id}-${index}`;
         const type = question.multiSelect ? "checkbox" : "radio";
         return (
-          <fieldset key={question.key} className="ui-question__item" disabled={busy}>
+          <fieldset key={question.key} className="ui-question__item" disabled={locked}>
             <legend className="ui-question__legend">
               {question.header && <span className="ui-question__header">{question.header}</span>}
               <span className="ui-question__text">{question.question}</span>
@@ -137,15 +141,15 @@ export function QuestionCard({
         <p className="ui-approval__status" role="status">{phase.message}</p>
       ) : (
         <div className="ui-approval__actions">
-          <button type="button" className="ui-btn ui-btn--primary" disabled={busy || !answers} onClick={() => void submit()}>
+          <button type="button" className="ui-btn ui-btn--primary" disabled={locked || !answers} onClick={() => void submit()}>
             {sendingWhat("answer") ? "Sending…" : "Send answer"}
           </button>
           {onSkip && (
-            <button type="button" className="ui-btn" disabled={busy} onClick={() => void onSkip(approval.requestId)}>
+            <button type="button" className="ui-btn" disabled={locked} onClick={() => void onSkip(approval.requestId)}>
               Skip <kbd className="ui-kbd">Esc</kbd>
             </button>
           )}
-          <SendStatus phase={phase} hostName={hostName} />
+          <SendStatus phase={phase} hostName={hostName} sleeping={sleeping} />
         </div>
       )}
     </section>

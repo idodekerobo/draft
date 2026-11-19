@@ -45,6 +45,8 @@ export interface HarnessDriver {
   serve(inputs: HostInput[]): Promise<void>;
   /** Milliseconds to wait before the next pass. A driver without it uses the runner's default. */
   pollMs?(): number;
+  /** True while a turn runs. The sandbox host waits for it before it sleeps. A driver without it omits it. */
+  turnRunning?(): Promise<boolean>;
   /** The native session id the pane moved to after /clear or /fork, or null. A driver that cannot rotate omits it. */
   rotationTarget?(): string | null;
   clearRotation?(): void;

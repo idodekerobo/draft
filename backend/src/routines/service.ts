@@ -1,7 +1,9 @@
 import { captureProductEvent, type RoutineAttribution } from "../observability/product-analytics";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ROUTINE_EVENT_NAMES, describeRoutineTriggers, routineProviders, type RoutineEventName, type RoutineListFilter, type RoutineWhen } from "draft-core/routines";
+import { describeRoutineTriggers, routineProviders, type RoutineEventName, type RoutineListFilter, type RoutineWhen } from "draft-core/routines";
+import { routineRunStartOf, type RoutineRunStart } from "./run-start";
+import { routineVisibleTo } from "./visibility";
 import { recordError } from "../errors/record-error";
 import { recordRouteError } from "../errors/route-error";
 import { drainEventInbox } from "../events/drain";
@@ -46,7 +48,7 @@ export interface RoutineLastRun {
 
 export type RoutineRunStatus = "running" | "completed" | "failed" | "skipped";
 
-export type RoutineRunStart = { type: "schedule" } | { type: "manual" } | { type: "event"; event: RoutineEventName };
+export type { RoutineRunStart } from "./run-start";
 
 export interface RoutineRun {
   id: string;
@@ -192,18 +194,10 @@ const RUN_COLUMNS = "id, status, end_reason, started_at, ended_at, scheduled_tas
 
 type RunRow = Pick<SessionRow, "id" | "status" | "end_reason" | "started_at" | "ended_at" | "idempotency_key"> & { scheduled_task_id: string };
 
-/** Read from the run's idempotency key, which dispatch writes as "<task>:<occurrence>", "<task>:manual:<id>" or "<task>:<event>:<id>". */
-function startedBy(row: RunRow): RoutineRunStart {
-  const rest = row.idempotency_key?.slice(row.scheduled_task_id.length + 1) ?? "";
-  if (rest.startsWith("manual:")) return { type: "manual" };
-  const event = ROUTINE_EVENT_NAMES.find((name) => rest.startsWith(`${name}:`));
-  return event ? { type: "event", event } : { type: "schedule" };
-}
-
 function toRoutineRun(row: RunRow): RoutineRun {
   const status: RoutineRunStatus =
     row.status !== "ended" ? "running" : row.end_reason === "completed" ? "completed" : row.end_reason === "skipped" ? "skipped" : "failed";
-  return { id: row.id, status, startedBy: startedBy(row), startedAt: row.started_at, endedAt: row.ended_at, result: null };
+  return { id: row.id, status, startedBy: routineRunStartOf(row), startedAt: row.started_at, endedAt: row.ended_at, result: null };
 }
 
 /** Adds the note each skipped run ended with, which says why it was skipped. */
@@ -402,9 +396,7 @@ export interface RoutineTask {
   connection: ConnectionInfo | undefined;
 }
 
-/** A private routine is visible only to the person who made it. A null viewer sees shared routines only. */
-export const routineVisibleTo = (task: Pick<ScheduledTaskRow, "visibility" | "created_by_user_id">, viewerId: string | null) =>
-  task.visibility !== "private" || (viewerId !== null && task.created_by_user_id === viewerId);
+export { routineVisibleTo } from "./visibility";
 
 /** Pass viewerId to hide another person's private routine, as if it did not exist. */
 export async function getRoutineTask(workspaceId: string, taskId: string, client: SupabaseClient = serviceClient, viewerId?: string | null): Promise<RoutineTask | null> {

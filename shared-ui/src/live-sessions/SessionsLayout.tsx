@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { COLUMN_DEFAULT_PX, clampColumnWidth, readColumnState, writeColumnState } from "./column-state";
 import { relativeTime } from "../relative-time";
 import { displayStatus } from "./display-status";
+import { displayHostName } from "./host-name";
 import { groupSessionsByDay, lastActivityAt } from "./session-groups";
 import { sessionTitle } from "./sessions-list";
 import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
@@ -43,6 +44,7 @@ export function ColumnToggleButton({ where }: { where: "column" | "main" }) {
 
 function SessionRow({ session, selected, now, onSelect, menuItems, onMenuSelect }: { session: LiveSession; selected: boolean; now: number; onSelect: (id: string) => void; menuItems: SessionMenuItem[]; onMenuSelect: (item: SessionMenuItem) => void }) {
   const status = displayStatus(session, now);
+  const host = displayHostName(session);
   return (
     <li data-session-id={session.id}>
       <button type="button" className="ui-sessions__row" aria-current={selected ? "true" : undefined} onClick={() => onSelect(session.id)}>
@@ -51,6 +53,7 @@ function SessionRow({ session, selected, now, onSelect, menuItems, onMenuSelect 
           <span className="ui-muted ui-sessions__row-time">{relativeTime(lastActivityAt(session), { now, compact: true })}</span>
         </span>
         {session.folder_name && <span className="ui-muted ui-sessions__row-sub ui-sessions__row-folder">{session.folder_name}</span>}
+        {host && <span className="ui-muted ui-sessions__row-sub ui-sessions__row-folder">{host}</span>}
         <span className="ui-muted ui-sessions__row-sub">
           <span className="ui-sessions__row-owner">{session.owner_name ?? "Someone"}</span>
           <span aria-hidden="true" className="ui-sessions__row-fixed">·</span>

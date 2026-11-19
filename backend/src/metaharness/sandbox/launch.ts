@@ -6,6 +6,7 @@ import { uploadRunBundle, type UploadedBundle } from "./bundle-storage";
 import { type SandboxDeploymentConfig, validateSandboxDeploymentConfig } from "./config";
 import { providerFor, type SandboxProvider, type SandboxSpec } from "./providers";
 import { buildRunnerManifest, needsDraftToolServer, type PromptSource } from "./run-manifest";
+import type { RunnerManifest } from "draft-core/run-manifest";
 
 const PROMPT_PATH = "input/prompt.md";
 const OUTPUT_SCHEMA_PATH = "input/output-schema.json";
@@ -35,6 +36,8 @@ export interface LaunchSandboxRunInput {
   config: SandboxDeploymentConfig;
   /** Runner wall-clock limit. Defaults to the shared sandbox timeout. */
   timeoutSeconds?: number;
+  /** Signed links for the harness's session file. Only a routine run keeps one. */
+  sessionUpload?: RunnerManifest["sessionUpload"];
 }
 
 function serializeJsonSchema(schema: Record<string, unknown>): string {
@@ -124,6 +127,7 @@ export async function buildSandboxSpec(
     prompt: input.prompt,
     timeoutSeconds,
     draftMcpUrl,
+    ...(input.sessionUpload ? { sessionUpload: input.sessionUpload } : {}),
   });
 
   const filesForUpload = Object.fromEntries(

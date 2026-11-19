@@ -47,9 +47,12 @@ import {
   getLiveSessionEvents,
   getLiveSessionView,
   listLiveSessions,
+  listLiveSessionEnvFiles, liveSessionSnapshotSize,
   sendLiveSessionMessage,
   setLiveSessionMode,
   stopLiveSession,
+  startLiveSessionRequest,
+  uploadLiveSessionSnapshot,
 } from "./main/live-session-api";
 import {
   endLiveSession,
@@ -61,6 +64,7 @@ import {
   resumeLiveSessions,
   startLiveSession,
 } from "draft-core/host/live-session";
+import { gitRemote } from "draft-core/host/git-remote";
 import { readAgentDefaults } from "draft-core/host/agent-defaults";
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
@@ -488,6 +492,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
         return (await fetchServerJSON<{ repos: string[] }>(`workspaces/${workspaceId}/routine-repositories`)).repos;
       },
+      listGithubBranches: async ({ repo }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        return fetchServerJSON<{ defaultBranch: string | null; branches: string[] | null }>(`workspaces/${workspaceId}/github-branches?repo=${encodeURIComponent(repo)}`);
+      },
       listRoutineRuns: async ({ id, before }) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
@@ -825,7 +834,14 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startLiveSession: ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort }),
+      startLiveSession: (params) => startLiveSessionRequest(params, ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort })),
+
+      listSessionEnvFiles: ({ folderPath }) => listLiveSessionEnvFiles(folderPath),
+      snapshotFolderSize: ({ folderPath }) => liveSessionSnapshotSize(folderPath),
+
+      uploadSessionSnapshot: (params) => uploadLiveSessionSnapshot(params),
+
+      folderGitRemote: async ({ folderPath }) => ({ gitRemote: await gitRemote(folderPath) }),
 
       setSignalTopics: ({ topics }) => realtime.setWindowTopics(topics),
 

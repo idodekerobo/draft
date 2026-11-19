@@ -15,13 +15,17 @@ export function PlanCard({
   hostName,
   onDecide,
   agent = "Claude",
+  sleeping = false,
 }: {
   approval: OpenApproval;
   hostName: string | null;
   onDecide(requestId: string, response: ApprovalResponse): Promise<ApprovalResult>;
   agent?: string;
+  /** The session is asleep, so no answer can reach it yet. */
+  sleeping?: boolean;
 }) {
   const { phase, run, busy, sendingWhat } = useSend();
+  const locked = busy || sleeping;
   const [feedback, setFeedback] = useState("");
   const canAuto = !AUTO_ALREADY.has(approval.permissionMode ?? "");
   const change = feedback.trim();
@@ -40,21 +44,21 @@ export function PlanCard({
       ) : (
         <div className="ui-plan__choices">
           {canAuto && (
-            <button type="button" className="ui-btn ui-btn--primary" disabled={busy} onClick={() => void send("auto", { decision: "allow", permissionMode: "auto" })}>
+            <button type="button" className="ui-btn ui-btn--primary" disabled={locked} onClick={() => void send("auto", { decision: "allow", permissionMode: "auto" })}>
               {sendingWhat("auto") ? "Sending…" : "Yes, and use auto mode"}
             </button>
           )}
-          <button type="button" className={`ui-btn${canAuto ? "" : " ui-btn--primary"}`} disabled={busy} onClick={() => void send("manual", { decision: "allow", permissionMode: "default" })}>
+          <button type="button" className={`ui-btn${canAuto ? "" : " ui-btn--primary"}`} disabled={locked} onClick={() => void send("manual", { decision: "allow", permissionMode: "default" })}>
             {sendingWhat("manual") ? "Sending…" : "Yes, manually approve edits"}
           </button>
           <label className="ui-plan__feedback">
             <span className="ui-muted">Tell {agent} what to change</span>
-            <textarea className="ui-question__other" rows={1} value={feedback} disabled={busy} onChange={(e) => setFeedback(e.target.value)} />
+            <textarea className="ui-question__other" rows={1} value={feedback} disabled={locked} onChange={(e) => setFeedback(e.target.value)} />
           </label>
-          <button type="button" className="ui-btn" disabled={busy || !change} onClick={() => void send("change", { decision: "deny", message: change })}>
+          <button type="button" className="ui-btn" disabled={locked || !change} onClick={() => void send("change", { decision: "deny", message: change })}>
             {sendingWhat("change") ? "Sending…" : "Send changes"}
           </button>
-          <SendStatus phase={phase} hostName={hostName} />
+          <SendStatus phase={phase} hostName={hostName} sleeping={sleeping} />
         </div>
       )}
     </section>

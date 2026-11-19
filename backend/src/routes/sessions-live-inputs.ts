@@ -1,11 +1,14 @@
+import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { productionStartDeps } from "../cloud-sessions/deps";
+import { wakeCloudSession } from "../cloud-sessions/wake";
 import { getHarness } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
-import { authorize, authorizeOwned, errorResponse, knownDbError, optionalString, readBody } from "./sessions-live-shared";
+import { authorize, authorizeHostMember, authorizeHostSession, errorResponse, hostIdFor, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type InputsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs">;
 type PendingRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs/pending">;
@@ -46,6 +49,47 @@ function publicInput(row: SessionInputRow): PublicInput {
   };
 }
 
+/**
+ * A message sent to a sleeping cloud session wakes it. The message is stored first, so a failed wake never fails
+ * the send: the message waits for the next wake. Returns true when a wake was attempted.
+ */
+async function wakeIfSleeping(workspaceId: string, sessionId: string): Promise<boolean> {
+  const { data, error } = await serviceClient
+    .from("sessions")
+    .select("runtime, status")
+    .eq("id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .maybeSingle<{ runtime: string; status: string }>();
+  if (error) {
+    await recordError({ workspaceId, sessionId, operation: "session", code: "wake_lookup_failed", message: "Reading a session before a wake failed", error });
+    return false;
+  }
+  if (data?.runtime !== "cloud" || data.status !== "sleeping") return false;
+  try {
+    await wakeCloudSession({ workspaceId, sessionId }, productionStartDeps());
+  } catch (error) {
+    await recordError({ workspaceId, sessionId, operation: "session", code: "wake_failed", message: "Waking a sleeping cloud session failed", error });
+  }
+  return true;
+}
+
+/** The input as it stands after a wake, which can end the session and fail the message. A failed read keeps the stored copy. */
+async function inputAfterWake(workspaceId: string, sessionId: string, stored: SessionInputRow): Promise<SessionInputRow> {
+  const { data, error } = await serviceClient
+    .from("session_inputs")
+    .select(INPUT_COLUMNS)
+    .eq("id", stored.id)
+    .eq("session_id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle<SessionInputRow>();
+  if (error) {
+    await recordError({ workspaceId, sessionId, operation: "session", code: "input_lookup_failed", message: "Reading a message after a wake failed", error });
+    return stored;
+  }
+  return data ?? stored;
+}
+
 async function createInput(workspaceId: string, sessionId: string, userId: string, text: string): Promise<Response> {
   const { data, error } = await serviceClient.rpc("create_session_input", {
     p_session_id: sessionId,
@@ -58,7 +102,9 @@ async function createInput(workspaceId: string, sessionId: string, userId: strin
   if (error) {
     return knownDbError(error.message) ?? errorResponse("input_create_failed", 500, error, workspaceId, sessionId);
   }
-  return Response.json({ ok: true, input: publicInput(data as SessionInputRow) }, { status: 201 });
+  const stored = data as SessionInputRow;
+  const input = (await wakeIfSleeping(workspaceId, sessionId)) ? await inputAfterWake(workspaceId, sessionId, stored) : stored;
+  return Response.json({ ok: true, input: publicInput(input) }, { status: 201 });
 }
 
 export type ViewerInputs = { ok: true; inputs: Array<ReturnType<typeof publicInput> & { mine: boolean }> } | { ok: false; error: unknown };
@@ -196,7 +242,7 @@ export const INPUT_ACTION = withAuth<InputRequest>(async (req, caller) => {
   return created;
 });
 
-export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
+export const INPUTS_PENDING = withHostAuth<PendingRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const params = new URL(req.url).searchParams;
   let query = serviceClient
@@ -210,9 +256,11 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
   if (params.get("kinds") !== "all") query = query.eq("kind", "message");
 
   // The read runs beside the access check, and its rows are used only after that check passes.
-  const [owned, { data, error }] = await Promise.all([authorizeOwned(workspaceId, sessionId, caller.userId), query]);
+  const [owned, { data, error }] = await Promise.all([authorizeHostSession(workspaceId, sessionId, caller), query]);
   if (!owned.ok) return owned.response;
-  if (params.get("hostId") !== owned.session.host_id) return errorResponse("foreign_host", 403);
+  const target = hostIdFor(caller, params.get("hostId"));
+  if (!target.ok) return target.response;
+  if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
   if (error) return errorResponse("inputs_lookup_failed", 500, error, workspaceId, sessionId);
 
   const inputs = ((data ?? []) as SessionInputRow[]).map((row) => ({
@@ -225,14 +273,16 @@ export const INPUTS_PENDING = withAuth<PendingRequest>(async (req, caller) => {
 
 const HOST_TRANSITION_ERRORS: Record<string, number> = { not_session_owner: 403, invalid_state: 400, invalid_transition: 409 };
 
-export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
+export const INPUT_STATE = withHostAuth<InputStateRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, inputId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
+  const member = await authorizeHostMember(workspaceId, caller);
+  if (!member.ok) return member.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
+  const target = hostIdFor(caller, optionalString(body.hostId, 200));
+  if (!target.ok) return target.response;
 
   const to = body.to as SessionInputState;
   const from = body.from;
@@ -245,8 +295,8 @@ export const INPUT_STATE = withAuth<InputStateRequest>(async (req, caller) => {
     p_input_id: inputId,
     p_session_id: sessionId,
     p_workspace_id: workspaceId,
-    p_owner_user_id: caller.userId,
-    p_host_id: optionalString(body.hostId, 200),
+    p_owner_user_id: member.ownerUserId,
+    p_host_id: target.hostId,
     p_from: from,
     p_to: to,
     p_reason: optionalString(body.reason, REASON_MAX_CHARS),

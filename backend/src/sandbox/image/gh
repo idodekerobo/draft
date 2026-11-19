@@ -1,8 +1,6 @@
 #!/bin/sh
 set -eu
 
-if [ -z "${DRAFT_RUN_TOKEN:-}" ]; then
-  echo "GitHub credentials unavailable" >&2
-  exit 1
-fi
-GH_TOKEN="$(/usr/local/bin/draft-github-token)" exec /usr/local/lib/gh/gh "$@"
+# gh gets a short-lived token from Draft for each call. Without one it stops, so gh never falls back to asking for a login.
+token="$(/usr/local/bin/draft-github-token)" || exit 1
+GH_TOKEN="$token" exec /usr/local/lib/gh/gh "$@"

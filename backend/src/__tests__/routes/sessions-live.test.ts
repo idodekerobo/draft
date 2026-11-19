@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { parseAgentRunId, parseWorkspaceId } from "draft-core/run-spec";
+import { createAgentRunToken } from "../../metaharness/runs/run-token";
 
 const caller = { userId: "user-1", accessToken: "token-1" };
 let accessResult: Response | null = null;
@@ -6,6 +8,7 @@ let rpcResult: { data: unknown; error: { message: string } | null } = { data: { 
 const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
 let storageObjects: Array<{ name: string }> = [];
 const signedPaths: string[] = [];
+const removedObjects: string[] = [];
 const queriedTables: string[] = [];
 
 type Row = Record<string, unknown>;
@@ -94,6 +97,10 @@ mock.module("../../db/client", () => ({
           return { data: { signedUrl: `https://storage.test/${path}?token=t` }, error: null };
         },
         list: async () => ({ data: storageObjects, error: null }),
+        remove: async (keys: string[]) => {
+          removedObjects.push(...keys);
+          return { data: keys, error: null };
+        },
       }),
     },
   },
@@ -135,6 +142,7 @@ beforeEach(() => {
   rpcCalls.length = 0;
   storageObjects = [];
   signedPaths.length = 0;
+  removedObjects.length = 0;
   queriedTables.length = 0;
   inserted = [];
   updates = [];
@@ -167,6 +175,29 @@ describe("live session routes", () => {
   it("requires a host machine id to create a session", async () => {
     const res = await routes.CREATE(post("/x", { folderName: "app" }, { id: WS }));
     expect(res.status).toBe(400);
+  });
+
+  it("creates a local session when the body says runtime local", async () => {
+    const res = await routes.CREATE(post("/x", { runtime: "local", hostId: "host-1" }, { id: WS }));
+    expect(res.status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ host_id: "host-1", workspace_id: WS });
+  });
+
+  it("refuses an unknown runtime and an invalid cloud body before it writes anything", async () => {
+    const sessionsBefore = tables.sessions!.length;
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ runtime: "gcp", hostId: "host-1" }, "unknown_runtime"],
+      [{ runtime: "cloud", harness: "codex", seed: { kind: "repo", gitRemote: "https://github.com/acme/app", branch: "main" } }, "harness_not_supported"],
+      [{ runtime: "cloud", seed: { kind: "repo", gitRemote: "http://github.com/acme/app", branch: "main" } }, "invalid_seed"],
+      [{ runtime: "cloud", seed: { kind: "snapshot", storageKey: `${WS}/snap.tgz` } }, "invalid_seed"],
+    ];
+    for (const [body, error] of cases) {
+      const res = await routes.CREATE(post("/x", body, { id: WS }));
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ ok: false, error });
+    }
+    expect(inserted).toEqual([]);
+    expect(tables.sessions).toHaveLength(sessionsBefore);
   });
 
   it("refuses lines for a session the caller does not own", async () => {
@@ -468,6 +499,19 @@ describe("live session routes", () => {
       expect(updates.find((u) => u.table === "session_inputs")?.payload).toMatchObject({ state: "failed", reason: "session_ended" });
     });
 
+    it("deletes the folder snapshot a cloud session started from, and no other object", async () => {
+      const key = `${WS}/${SESSION}/seed.tar.gz`;
+      tables.sessions = [session({ session_type: "interactive", status: "sleeping", runtime: "cloud", seed: { kind: "snapshot", storageKey: key } })];
+      expect((await del()).status).toBe(200);
+      expect(removedObjects).toEqual([key]);
+    });
+
+    it("leaves the snapshot alone for a session that started from a repository", async () => {
+      tables.sessions = [session({ session_type: "interactive", status: "sleeping", runtime: "cloud", seed: { kind: "repo", branch: "main" } })];
+      expect((await del()).status).toBe(200);
+      expect(removedObjects).toEqual([]);
+    });
+
     it("keeps the end details of a session that already ended", async () => {
       tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "exited" })];
       expect((await del()).status).toBe(200);
@@ -509,6 +553,15 @@ describe("live session routes", () => {
     expect(ok.status).toBe(200);
     expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "live", ended_at: null, end_reason: null });
     expect(inserted).toEqual([]);
+  });
+
+  it("does not reopen an ended cloud session", async () => {
+    tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "start_failed", runtime: "cloud", host_id: "cloud:s1" })];
+    updates = [];
+    const res = await routes.REOPEN(post("/x", { hostId: "cloud:s1" }));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe("cloud_session_ended");
+    expect(updates).toEqual([]);
   });
 
   it("does not reopen a session that was cleared, a routine run, or one that is not ended", async () => {
@@ -617,5 +670,194 @@ describe("session view route", () => {
     expect(await response.json()).toEqual({page});
     expect(rpcCalls[0]).toMatchObject({fn:"read_session_view",args:{p_session_id:SESSION,p_workspace_id:WS,p_after:10,p_state:false}});
     expect(queriedTables).toEqual([]);
+  });
+});
+
+describe("cloud host requests", () => {
+  const CLOUD_WS = "11111111-1111-4111-8111-111111111111";
+  const RUN = "22222222-2222-4222-8222-222222222222";
+  const CLOUD_HOST = `cloud:${SESSION}`;
+  const SECRET = "live-sessions-cloud-test-secret";
+  let savedSecret: string | undefined;
+
+  beforeAll(() => {
+    savedSecret = process.env.SANDBOX_CALLBACK_SECRET;
+    process.env.SANDBOX_CALLBACK_SECRET = SECRET;
+  });
+  afterAll(() => {
+    if (savedSecret === undefined) delete process.env.SANDBOX_CALLBACK_SECRET;
+    else process.env.SANDBOX_CALLBACK_SECRET = savedSecret;
+  });
+
+  /** A sandbox host calls with its run token, which names the run, the workspace and the session. */
+  const cloudPost = (body: unknown, sessionId = SESSION) =>
+    Object.assign(
+      new Request("http://localhost/x", {
+        method: "POST",
+        headers: { authorization: `Bearer ${createAgentRunToken({ runId: parseAgentRunId(RUN), workspaceId: parseWorkspaceId(CLOUD_WS), expiresAt: Date.now() + 60_000, nonce: "n", scope: "host" }, SECRET)}` },
+        body: JSON.stringify(body),
+      }),
+      { params: { id: CLOUD_WS, sessionId } },
+    ) as never;
+
+  beforeEach(() => {
+    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST })];
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
+  });
+
+  it("posts lines under the cloud host id, and refuses a body that names a desktop host", async () => {
+    expect((await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }))).status).toBe(200);
+    expect(rpcCalls[0]).toMatchObject({ fn: "append_session_events", args: { p_session_id: SESSION, p_workspace_id: CLOUD_WS, p_host_id: CLOUD_HOST } });
+
+    rpcCalls.length = 0;
+    const foreign = await routes.LINES(cloudPost({ hostId: "host-1", lines: [userLine("u2", "hi")] }));
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toEqual({ ok: false, error: "foreign_host" });
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("heartbeats under the cloud host id, and refuses another host", async () => {
+    rpcResult = { data: "live", error: null };
+    expect((await routes.HEARTBEAT(cloudPost({}))).status).toBe(200);
+    expect(rpcCalls[0]).toMatchObject({ fn: "heartbeat_session", args: { p_session_id: SESSION, p_workspace_id: CLOUD_WS, p_host_id: CLOUD_HOST } });
+
+    rpcCalls.length = 0;
+    expect((await routes.HEARTBEAT(cloudPost({ hostId: "host-1" }))).status).toBe(403);
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("ends its own session, and refuses an end from another host", async () => {
+    expect((await routes.END(cloudPost({ hostId: "host-1", reason: "user_exit" }))).status).toBe(403);
+    expect(updates).toEqual([]);
+
+    expect((await routes.END(cloudPost({ reason: "user_exit" }))).status).toBe(200);
+    expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
+  });
+
+  it("closes its run as succeeded on a normal end, and as failed when the host failed", async () => {
+    expect((await routes.END(cloudPost({ reason: "user_exit" }))).status).toBe(200);
+    expect(updates.find((u) => u.table === "agent_runs")?.payload).toMatchObject({ status: "succeeded" });
+
+    updates = [];
+    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST })];
+    expect((await routes.END(cloudPost({ reason: "host_failed" }))).status).toBe(200);
+    expect(updates.find((u) => u.table === "agent_runs")?.payload).toMatchObject({ status: "failed", failure_code: "host_failed" });
+  });
+
+  it("reads its own session with its run token, as the owner and without a membership check", async () => {
+    accessResult = Response.json({ error: "forbidden" }, { status: 403 });
+    const read = Object.assign(new Request("http://localhost/x?after=0&limit=1", { headers: (cloudPost({}) as unknown as Request).headers }), { params: { id: CLOUD_WS, sessionId: SESSION } }) as never;
+    const response = await routes.EVENTS(read);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { session: unknown }).session).toMatchObject({ id: SESSION, mine: true });
+  });
+
+  it("uploads raw files under its own session folder", async () => {
+    expect((await routes.RAW_UPLOAD_URLS(cloudPost({ files: ["root.jsonl"] }))).status).toBe(200);
+    expect(signedPaths).toEqual([`${CLOUD_WS}/${SESSION}/root.jsonl.gz`]);
+
+    storageObjects = [{ name: "root.jsonl.gz" }];
+    expect((await routes.RAW_UPLOAD_COMPLETE(cloudPost({ hostId: "host-1" }))).status).toBe(403);
+    expect((await routes.RAW_UPLOAD_COMPLETE(cloudPost({}))).status).toBe(200);
+  });
+
+  it("refuses a run that names another session", async () => {
+    tables.sessions.push(session({ id: "session-2", workspace_id: CLOUD_WS, runtime: "cloud", host_id: "cloud:session-2" }));
+    const res = await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }, "session-2"));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ ok: false, error: "run_not_for_session" });
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("refuses a finished run, and a run on a local session", async () => {
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "succeeded", session_id: SESSION }];
+    const finished = await routes.HEARTBEAT(cloudPost({}));
+    expect(finished.status).toBe(403);
+    expect(await finished.json()).toEqual({ ok: false, error: "run_not_active" });
+
+    tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
+    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "local", host_id: "host-1" })];
+    const local = await routes.HEARTBEAT(cloudPost({}));
+    expect(local.status).toBe(403);
+    expect(await local.json()).toEqual({ ok: false, error: "session_not_cloud" });
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("does not need team membership, since its token binds it to the session", async () => {
+    accessResult = Response.json({ error: "forbidden" }, { status: 403 });
+    expect((await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }))).status).toBe(200);
+  });
+
+  describe("sleep", () => {
+    it("ends the run as succeeded and then sleeps the session when the cloud host asks", async () => {
+      const res = await routes.HOST_SLEEP(cloudPost({ hostId: CLOUD_HOST }));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, status: "sleeping" });
+      expect(updates.map((u) => u.table)).toEqual(["agent_runs", "sessions"]);
+      expect(updates[0].payload).toMatchObject({ status: "succeeded", completed_at: expect.any(String) });
+      expect(updates[1].payload).toEqual({ status: "sleeping" });
+    });
+
+    it("sleeps a session that is starting, live or offline", async () => {
+      for (const status of ["starting", "live", "host_offline"]) {
+        tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status })];
+        updates = [];
+        expect((await routes.HOST_SLEEP(cloudPost({}))).status).toBe(200);
+      }
+    });
+
+    it("refuses a user caller, since only a cloud host sleeps its session", async () => {
+      const res = await routes.HOST_SLEEP(post("/x", {}, { id: CLOUD_WS, sessionId: SESSION }));
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ ok: false, error: "cloud_host_only" });
+      expect(updates).toEqual([]);
+    });
+
+    it("refuses a host that names another host, and a session that is already sleeping or ended", async () => {
+      expect((await routes.HOST_SLEEP(cloudPost({ hostId: "host-1" }))).status).toBe(403);
+      expect(updates).toEqual([]);
+
+      tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status: "ended" })];
+      const ended = await routes.HOST_SLEEP(cloudPost({}));
+      expect(ended.status).toBe(409);
+      expect(await ended.json()).toEqual({ ok: false, error: "session_ended" });
+
+      tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status: "sleeping" })];
+      const sleeping = await routes.HOST_SLEEP(cloudPost({}));
+      expect(sleeping.status).toBe(409);
+      expect(await sleeping.json()).toEqual({ ok: false, error: "session_sleeping" });
+      expect(updates).toEqual([]);
+    });
+
+    it("refuses to sleep while an input is queued or being pasted, and leaves the run active", async () => {
+      for (const state of ["queued", "delivering"]) {
+        tables.session_inputs = [{ id: `input-${state}`, session_id: SESSION, workspace_id: CLOUD_WS, kind: "message", state }];
+        const res = await routes.HOST_SLEEP(cloudPost({}));
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({ ok: false, error: "inputs_pending" });
+      }
+      expect(updates).toEqual([]);
+    });
+
+    it("refuses for a waiting control input too, since the host counts every kind as pending", async () => {
+      tables.session_inputs = [{ id: "stop-1", session_id: SESSION, workspace_id: CLOUD_WS, kind: "stop", state: "queued" }];
+      const res = await routes.HOST_SLEEP(cloudPost({}));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ ok: false, error: "inputs_pending" });
+      expect(updates).toEqual([]);
+    });
+
+    it("sleeps when every input is already taken, failed, cancelled or uncertain", async () => {
+      tables.session_inputs = ["consumed", "failed", "cancelled", "uncertain"].map((state, index) => ({
+        id: `input-${index}`,
+        session_id: SESSION,
+        workspace_id: CLOUD_WS,
+        kind: "message",
+        state,
+      }));
+      const res = await routes.HOST_SLEEP(cloudPost({}));
+      expect(res.status).toBe(200);
+      expect(updates.map((u) => u.table)).toEqual(["agent_runs", "sessions"]);
+    });
   });
 });

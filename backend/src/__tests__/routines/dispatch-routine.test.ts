@@ -70,6 +70,7 @@ describe("dispatchAgentRoutine", () => {
     expect(db.tables.sessions).toHaveLength(1);
     expect(db.tables.sessions![0]).toMatchObject({
       session_type: "routine",
+      runtime: "cloud",
       owner_user_id: OWNER_ID,
       scheduled_task_id: TASK_ID,
       status: "starting",

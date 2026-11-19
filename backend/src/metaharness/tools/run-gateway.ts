@@ -45,6 +45,8 @@ export function createRunGateway(deps: RunGatewayDeps) {
     try {
       const claims = verifyAgentRunToken(header.slice("Bearer ".length), deps.secret(), { now: deps.now?.() });
       if (claims.runId !== runId) return unauthorized();
+      // A host token runs the session host, not the agent, so it is not a tool credential.
+      if (claims.scope === "host") return { ok: false, response: Response.json({ ok: false, error: "token_scope" }, { status: 403 }) };
       const run = await loadActiveAgentRunSpec(deps.client, runId);
       if (!run || run.workspaceId !== claims.workspaceId) return unauthorized();
       return { ok: true, run };

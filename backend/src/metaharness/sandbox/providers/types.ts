@@ -13,6 +13,7 @@ export interface SandboxSpec {
 /** A sandbox that exists but may not be running. */
 export interface SandboxRef {
   provider: string;
+  /** Empty once the machine is deleted. Then only the volume is left. */
   machine: string;
   volume: VolumeRef | null;
 }
@@ -25,7 +26,9 @@ export interface SandboxProvider {
   start(ref: SandboxRef): Promise<void>;
   /** Stops the machine and keeps its volume. Returns when the machine is stopped. */
   stop(ref: SandboxRef): Promise<void>;
-  /** Deletes the machine and its volume. A machine or volume that is already gone counts as deleted. */
+  /** Deletes the machine and its volume. A machine or volume that is already gone counts as deleted, and an empty machine id skips the machine. */
   destroy(ref: SandboxRef): Promise<void>;
+  /** Deletes only the machine, so its volume can mount a new machine. A machine that is already gone counts as deleted. */
+  destroyMachine(ref: SandboxRef): Promise<void>;
   status(ref: SandboxRef): Promise<"running" | "stopped" | "missing">;
 }

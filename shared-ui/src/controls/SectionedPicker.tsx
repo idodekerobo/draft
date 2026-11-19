@@ -8,6 +8,8 @@ export interface PickerOption {
   label: string;
   /** Small text at the end of the row. */
   hint?: string;
+  /** Shown but not choosable, such as a harness that is coming soon. */
+  disabled?: boolean;
 }
 
 export interface PickerSection {
@@ -56,9 +58,10 @@ function SectionOptions({ section, showTitle, autoFocusSelected, onChoose }: {
               type="button"
               role="menuitemradio"
               aria-checked={selected}
-              className="ui-picker__option"
+              aria-disabled={option.disabled || undefined}
+              className={`ui-picker__option${option.disabled ? " ui-picker__option--disabled" : ""}`}
               autoFocus={selected && autoFocusSelected && !section.searchable}
-              onClick={() => onChoose(option.value)}
+              onClick={() => { if (!option.disabled) onChoose(option.value); }}
             >
               <span>{option.label}</span>
               {option.hint && <span className="ui-muted ui-picker__hint">{option.hint}</span>}

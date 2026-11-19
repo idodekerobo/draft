@@ -2,24 +2,33 @@
 set -eu
 
 node -e '
-  const fail = () => { process.stderr.write("GitHub credentials unavailable\\n"); process.exit(1); };
+  const fail = (why) => { process.stderr.write(`GitHub credentials unavailable: ${why}\n`); process.exit(1); };
+  const REASONS = {
+    github_not_connected: "GitHub is not connected to this Draft workspace. Ask a workspace owner to connect it in Draft, under Connections > GitHub. Logging in with gh auth login does not work here.",
+    repository_not_installed: "Draft'"'"'s GitHub app cannot reach this repository. Add the repository to the app in Draft, under Connections > GitHub.",
+    invalid_permission: "This session has no GitHub repository access.",
+  };
   (async () => {
-    const base = process.env.DRAFT_CALLBACK_URL;
+    // A cloud-session host has no callback URL. Its pane has DRAFT_MCP_TOKEN, not the run token of the host.
+    const base = process.env.DRAFT_CALLBACK_URL || process.env.DRAFT_API_BASE_URL;
     const runId = process.env.DRAFT_RUN_ID;
-    const token = process.env.DRAFT_RUN_TOKEN;
-    if (!base || !runId || !token) fail();
+    const token = process.env.DRAFT_MCP_TOKEN || process.env.DRAFT_RUN_TOKEN;
+    if (!base || !runId || !token) fail("this machine was not given a Draft token.");
     let callback;
-    try { callback = new URL(base); } catch { fail(); }
-    if (callback.protocol !== "https:" || callback.username || callback.password || callback.port && callback.port !== "443") fail();
-    if (!/^[0-9a-f-]{36}$/i.test(runId)) fail();
+    try { callback = new URL(base); } catch { fail("the Draft address is not valid."); }
+    if (callback.protocol !== "https:" || callback.username || callback.password || callback.port && callback.port !== "443") fail("the Draft address is not valid.");
+    if (!/^[0-9a-f-]{36}$/i.test(runId)) fail("the run id is not valid.");
     const endpoint = new URL(`/runs/${encodeURIComponent(runId)}/tools/github.credential`, callback.origin);
-    if (endpoint.protocol !== "https:" || endpoint.host !== callback.host) fail();
+    if (endpoint.protocol !== "https:" || endpoint.host !== callback.host) fail("the Draft address is not valid.");
+    let response;
     try {
-      const response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" });
-      if (!response.ok) fail();
-      const body = await response.json();
-      if (typeof body.output?.token !== "string" || !body.output.token || typeof body.output?.expiresAt !== "string" || Date.parse(body.output.expiresAt) <= Date.now()) fail();
-      process.stdout.write(body.output.token);
-    } catch { fail(); }
+      response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: "{}" });
+    } catch { fail("Draft could not be reached."); }
+    let body = null;
+    try { body = await response.json(); } catch {}
+    if (body && body.status === "refused") fail(REASONS[body.code] || (typeof body.message === "string" ? body.message : "Draft refused the request."));
+    if (!response.ok) fail(`Draft answered ${response.status}.`);
+    if (typeof body?.output?.token !== "string" || !body.output.token || typeof body?.output?.expiresAt !== "string" || Date.parse(body.output.expiresAt) <= Date.now()) fail("Draft returned no usable token.");
+    process.stdout.write(body.output.token);
   })();
 '

@@ -1,17 +1,33 @@
 // SessionsView.tsx — live Claude Code sessions of the workspace
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { isTestedVersion } from "draft-core/harnesses";
-import { SessionStartScreen, SessionView, SessionsLayout, type LiveSession, type SessionMenuItem, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
+import { SessionStartScreen, SessionView, SessionsLayout, type CloudSnapshotStartRequest, type CloudStartRequest, type LiveSession, type SessionMenuItem, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { CodexSetupPanel } from "../connections/CodexSetupPanel";
 import { liveSessionsApi } from "../../liveSessionsApi";
 import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
+import { useConnectedApps } from "../../hooks/useConnectedApps";
 import { appVersionQueryOptions } from "../../queries";
 import { rpc } from "../../rpc";
 
 const loadAgentDefaults = (harness: string) => rpc.request.getAgentDefaults({ harness });
+// Module-level so the start screen's effect does not run again on every render.
+const cloudStart = {
+  folderRemote: (folderPath: string) => rpc.request.folderGitRemote({ folderPath }).then(({ gitRemote }) => gitRemote),
+  branches: (repo: string) => rpc.request.listGithubBranches({ repo }).then((found) => (found.branches && found.defaultBranch ? { defaultBranch: found.defaultBranch, branches: found.branches } : null)),
+  folderSize: (folderPath: string) =>
+    rpc.request.snapshotFolderSize({ folderPath }).then((size) => {
+      if (!size.ok) throw new Error(size.error);
+      return { bytes: size.bytes, fileCount: size.fileCount };
+    }),
+  envFiles: (folderPath: string) =>
+    rpc.request.listSessionEnvFiles({ folderPath }).then((listing) => {
+      if (!listing.ok) throw new Error(listing.error);
+      return listing.files;
+    }),
+};
 const REVEAL_LABEL = /Windows/i.test(navigator.userAgent) ? "Open in Explorer" : "Reveal in Finder";
 
 /** The webview has no process.env, so a dev build is read from the app channel. */
@@ -67,8 +83,11 @@ function useHostedSessionIds(): Set<string> {
   return ids;
 }
 
-export function SessionsView() {
+export function SessionsView({ onOpenConnections }: { onOpenConnections?: () => void } = {}) {
   const devOnlyVersionWarnings = useDevOnlyVersionWarnings();
+  const { apps } = useConnectedApps();
+  const githubConnected = apps ? apps.integrations.github.connected : null;
+  const cloud = useMemo(() => ({ ...cloudStart, githubConnected, onConnectGithub: onOpenConnections }), [githubConnected, onOpenConnections]);
   const workspaceKey = useWorkspaceKey();
   const { track } = useAnalytics();
   const { sessions, refetch, isPending, isError } = useLiveSessions(liveSessionsApi, workspaceKey);
@@ -120,11 +139,31 @@ export function SessionsView() {
     return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
-  async function start({ harness, folderPath, text, model, effort }: StartRequest): Promise<StartResult> {
-    const result = await rpc.request.startLiveSession({ harness, folderPath, model, effort });
+  /** A repository is sent as it is. A folder is packed and uploaded first, and the start names the upload it made. */
+  async function startCloud(request: CloudStartRequest | CloudSnapshotStartRequest, progress?: (step: string) => void): Promise<{ ok: true; sessionId: string } | { ok: false; error: string; detail?: string }> {
+    const common = { runtime: "cloud" as const, model: request.model, effort: request.effort, network: request.network };
+    if (request.source === "repo") {
+      if (!request.gitRemote) return rpc.request.startLiveSession({ ...common, seed: { kind: "empty" as const } });
+      return rpc.request.startLiveSession({ ...common, seed: { kind: "repo" as const, gitRemote: request.gitRemote, branch: request.branch } });
+    }
+    progress?.("Copying folder…");
+    const upload = await rpc.request.uploadSessionSnapshot({ folderPath: request.folderPath, includeEnvFiles: request.includeEnvFiles });
+    if (!upload.ok) return { ok: false, error: upload.error, ...(upload.detail ? { detail: upload.detail } : {}) };
+    progress?.("Starting…");
+    return rpc.request.startLiveSession({
+      ...common,
+      seed: { kind: "snapshot" as const, sessionId: upload.sessionId, storageKey: upload.storageKey, folderName: upload.folderName },
+    });
+  }
+
+  async function start(request: StartRequest, progress?: (step: string) => void): Promise<StartResult> {
+    const { harness, text, model, effort } = request;
+    const result = request.runtime === "cloud"
+      ? await startCloud(request, progress)
+      : await rpc.request.startLiveSession({ harness, folderPath: request.folderPath, model, effort });
     if (!result.ok) return result;
-    track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default", effort: effort ?? "default" });
-    setRecentFolders(rememberFolder(window.localStorage, folderPath));
+    track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default", effort: effort ?? "default", runtime: request.runtime ?? "local" });
+    if (request.runtime !== "cloud") setRecentFolders(rememberFolder(window.localStorage, request.folderPath));
     // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
     await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));
     await refetch();
@@ -146,7 +185,7 @@ export function SessionsView() {
       onDeleted={onDeleted}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} menuItems={menuItems} notice={notice} onDeleted={() => onDeleted(selectedId)} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} menuItems={menuItems} notice={notice} onDeleted={() => onDeleted(selectedId)} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} cloud={cloud} />}
     </SessionsLayout>
   );
 }

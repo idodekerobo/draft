@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { pendingItems } from "./pending-items";
 import type { ComposerInput, LiveSessionEvent } from "./types";
 
-const context = { viewerName: "Priya", ownerName: "Maya", hostOffline: false };
+const context = { viewerName: "Priya", ownerName: "Maya", hostWait: false as const };
 const NOW = Date.parse("2026-10-27T12:00:00Z");
 const input = (patch: Partial<ComposerInput>): ComposerInput => ({
   id: "i1", author_user_id: "u1", author_name: "Priya", text: "run the tests", state: "queued", reason: null,

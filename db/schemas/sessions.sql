@@ -13,8 +13,9 @@ create table sessions (
   title              text,
   folder_name        text,
   git_remote         text,
+  -- sleeping: a cloud session with no run in progress. A new run wakes it.
   status             text not null default 'starting'
-                       check (status in ('starting', 'live', 'host_offline', 'ended')),
+                       check (status in ('starting', 'live', 'host_offline', 'sleeping', 'ended')),
   started_at         timestamptz not null default now(),
   ended_at           timestamptz,
   end_reason         text,
@@ -31,6 +32,12 @@ create table sessions (
   -- Codex only.
   approval_mode      text
                        check (approval_mode in ('ask-for-approval', 'approve-for-me', 'full-access')),
+  -- Local: the owner's computer. Cloud: a Draft sandbox. Routine sessions are cloud.
+  runtime            text not null default 'local'
+                       check (runtime in ('local', 'cloud')),
+  -- Cloud only: the sandbox volume's provider reference, and the seed the sandbox starts from.
+  sandbox_volume     jsonb,
+  seed               jsonb,
   raw_storage_path   text,
   raw_uploaded_at    timestamptz,
   -- Routine sessions only. idempotency_key is '<task>:<kind>:<agent_event id>', kind = timer, manual or an event name.
@@ -42,9 +49,11 @@ create table sessions (
   concurrency_key    text,
 
   unique (id, workspace_id),
-  foreign key (scheduled_task_id, workspace_id)
+  constraint sessions_scheduled_task_fkey
+    foreign key (scheduled_task_id, workspace_id)
     references scheduled_tasks(id, workspace_id),
-  check ((session_type = 'routine') = (scheduled_task_id is not null))
+  constraint sessions_routine_link_check
+    check ((session_type = 'routine') = (scheduled_task_id is not null))
 );
 
 create index sessions_workspace_started_idx on sessions (workspace_id, started_at desc);

@@ -107,6 +107,25 @@ describe("completeRoutineRunCallback", () => {
     expect(db.tables.errors).toHaveLength(0);
   });
 
+  it("records the session file on the session when the runner says it reached storage", async () => {
+    const db = seed({ status: "live" });
+    const response = await completeRoutineRunCallback(post({ kind: "end", ok: true, raw_uploaded: true }), SECRET, fakeClient(db));
+
+    expect(response.status).toBe(204);
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "completed", raw_storage_path: `${WORKSPACE_ID}/${SESSION_ID}/` });
+    expect(db.tables.sessions![0]!.raw_uploaded_at).toBeString();
+  });
+
+  it("leaves the session file unrecorded when the runner kept none, and a failed run keeps the file it did keep", async () => {
+    const none = seed({ status: "live" });
+    await completeRoutineRunCallback(post({ kind: "end", ok: true, raw_uploaded: false }), SECRET, fakeClient(none));
+    expect(none.tables.sessions![0]!.raw_storage_path).toBeUndefined();
+
+    const failed = seed({ status: "live" });
+    await completeRoutineRunCallback(post({ kind: "end", ok: false, error: "timeout", raw_uploaded: true }), SECRET, fakeClient(failed));
+    expect(failed.tables.sessions![0]).toMatchObject({ status: "ended", raw_storage_path: `${WORKSPACE_ID}/${SESSION_ID}/` });
+  });
+
   it("ends a failed run as failed with exactly one error row", async () => {
     const db = seed({ status: "live" });
     await completeRoutineRunCallback(post({ kind: "end", ok: false, error: "claude_error", diagnostics: { exit_code: 1 } }), SECRET, fakeClient(db));

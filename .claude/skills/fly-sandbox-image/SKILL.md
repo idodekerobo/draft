@@ -25,7 +25,10 @@ Covers:
   - `core/src/harnesses/*/runner.ts` and `core/src/harnesses/failure.ts`
   - `core/src/run-manifest.ts` and `core/src/run-spec.ts`
   - `backend/src/sandbox/image/*` (`Dockerfile`, `entrypoint.sh`,
-    `configure-egress.sh`)
+    `configure-egress.sh`, `configure-open-egress.sh`)
+  - The cloud-session host: `backend/src/sandbox/host.ts`,
+    `backend/src/sandbox/host/*`, and the `core/src/host/*` modules they import.
+    The host bundle (`host.mjs`) holds all of them.
 - Bumping `CLAUDE_CODE_VERSION` or `CODEX_VERSION` in the Dockerfile.
 - Any change to what the backend sends to the runner or expects back: env vars
   or the manifest in `backend/src/metaharness/sandbox/launch.ts` and
@@ -72,21 +75,22 @@ New environment: pick a name and confirm it with the user before
 
 ```bash
 cd backend && bun test src/__tests__/sandbox src/__tests__/metaharness/sandbox src/__tests__/summarization src/__tests__/synthesis
-sh -n src/sandbox/image/entrypoint.sh src/sandbox/image/configure-egress.sh
+sh -n src/sandbox/image/entrypoint.sh src/sandbox/image/configure-egress.sh src/sandbox/image/configure-open-egress.sh
 ```
 
-### 1b. Build the runner bundle
+### 1b. Build the bundles
 
-The Dockerfile only copies `runner.mjs`. It does not build it, and the file is
-not in git. Build it fresh every time, from the code you are about to ship:
+The Dockerfile copies `runner.mjs` and `host.mjs`. It does not build them, and
+neither file is in git. Build both fresh every time, from the code you are about
+to ship:
 
 ```bash
-cd backend && bun run build:runner
+cd backend && bun run build:runner && bun run build:host
 ```
 
-This writes `backend/src/sandbox/image/runner.mjs`. If you skip this step, the
-build fails (no file) or ships an old runner (a stale file from an earlier
-build).
+This writes `backend/src/sandbox/image/runner.mjs` and
+`backend/src/sandbox/image/host.mjs`. If you skip this step, the build fails (no
+file) or ships an old bundle (a stale file from an earlier build).
 
 ### 2. (New app only) Create the Fly app
 
@@ -175,6 +179,12 @@ Set the variable back to the previous digest the same way. Old digests stay in
 the registry.
 
 ## Gotchas (from `research/spikes/spike-2-fly-machines/results.md`)
+
+- One image runs two modes. `DRAFT_MODE=host` selects the cloud-session host.
+  Without it, the image runs the routine runner, which needs
+  `DRAFT_CALLBACK_URL`. A host machine on an old image therefore fails at once.
+  The backend sets `DRAFT_MODE`, so check its launch code when you change the
+  host env.
 
 - Fly's remote builder is more reliable than local `docker build` +
   `docker push`. Always use `--push` with the remote builder. Do not build

@@ -17,10 +17,19 @@ When you add a concept, add it here first.
 - **Start reason**: why a run started: `schedule`, `event` or `manual`. Stored `agent_runs.trigger.type` values
   `cron` and `system` mean a schedule start and a system start; they are not rewritten.
 - **Runtime**: where a session or run executes: `local` or `cloud`.
+- **Sleeping**: a cloud session's status (`sessions.status`) while no run is in progress. A new run wakes it.
 - **Host**: the process that drives a session's harness and relays its events. The desktop host runs on a person's
   computer; the sandbox host runs in a cloud machine. Column `sessions.host_id`.
 - **Machine**: one computer or VM. A host runs on a machine. Fly VM IDs are `sandbox_machine_id`.
 - **Sandbox**: an isolated cloud machine Draft starts through a `SandboxProvider`. It may have a volume.
+- **Seed**: what a cloud session's workspace starts from. A GitHub repository (`repo`, cloned), a folder snapshot
+  (`snapshot`, a `tar.gz` in the `session-seeds` bucket that the person packed from their folder), or nothing
+  (`routine_run`, an empty git repository for a chat that continues a finished routine run). Column `sessions.seed`.
+  Not a run's context or a routine's input.
+- **Continue in chat**: a new cloud session started from a finished routine run. Its first message names the run, and
+  the agent reads the run's history with `routines.runs`. The routine run keeps its own session.
+- **Session file**: the harness's own transcript file for one run (Claude's `.jsonl` under `~/.claude/projects/`, a
+  Codex rollout). A routine run uploads it, gzipped, to the session's raw folder (`sessions.raw_storage_path`).
 - **Environment**: staging or production. Only that.
 
 ## Agents

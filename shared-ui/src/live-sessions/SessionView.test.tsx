@@ -131,6 +131,45 @@ describe("SessionView", () => {
     expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
   });
 
+  it("offers Continue in chat on a finished routine run, opens the new chat, and shows why a start was refused", async () => {
+    const run: LiveSession = { ...session, session_type: "routine", status: "ended", mine: false };
+    const continueInChat = mock(async (_id: string) => "new-chat");
+    const onOpenSession = mock((_id: string) => {});
+    const withRun = (live: LiveSession, extra: Partial<LiveSessionsApi> = {}) => ({ ...api, ...extra, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [] }) });
+
+    render(<SessionView api={withRun(run, { continueInChat })} sessionId="s1" onOpenSession={onOpenSession} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue in chat" }));
+    await waitFor(() => expect(onOpenSession).toHaveBeenCalledWith("new-chat"));
+    expect(continueInChat).toHaveBeenCalledWith("s1");
+    cleanup();
+
+    const refused = mock(async (_id: string) => { throw new Error("routine_run_not_finished"); });
+    render(<SessionView api={withRun(run, { continueInChat: refused })} sessionId="s1" onOpenSession={onOpenSession} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue in chat" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Wait for this run to finish");
+    expect(onOpenSession).toHaveBeenCalledTimes(1);
+    cleanup();
+
+    render(<SessionView api={withRun({ ...run, status: "live" }, { continueInChat })} sessionId="s1" />);
+    await screen.findByText(/This run follows its routine/);
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withRun({ ...run, session_type: "interactive" }, { continueInChat })} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withRun(run)} sessionId="s1" />);
+    await screen.findByText(/This run follows its routine/);
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+    cleanup();
+
+    render(<SessionView api={withRun({ ...run, end_reason: "skipped" }, { continueInChat })} sessionId="s1" />);
+    await screen.findByText(/This run follows its routine/);
+    expect(screen.queryByRole("button", { name: "Continue in chat" })).toBeNull();
+  });
+
   it("puts menu actions behind a menu button and closes it on Escape", async () => {
     let opened = 0;
     render(<SessionView api={api} sessionId="s1" back={<a href="/sessions">Sessions</a>} menuItems={() => [{ label: "Open in Terminal", onSelect: () => opened++ }]} />);
@@ -513,8 +552,8 @@ describe("SessionView", () => {
     const offline: LiveSession = { ...session, status: "host_offline" };
     const queued = { id: "i1", author_user_id: "u2", author_name: "Dev", text: "hi", state: "queued" as const, reason: null, created_at: new Date().toISOString(), updated_at: "", mine: false };
     render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: offline, events: [], inputs: [queued] }) }} sessionId="s1" />);
-    expect((await screen.findByText(/computer is offline/)).textContent).toBe("Maya's computer is offline. Messages wait until it is back.");
-    expect(screen.getByText("Queued, Maya's laptop is offline")).toBeTruthy();
+    expect(await screen.findByText("Maya's computer is offline. Messages wait until it is back.")).toBeTruthy();
+    expect(screen.getByText("Queued, Maya's computer is offline")).toBeTruthy();
     expect(screen.getByText(/· Host offline/)).toBeTruthy();
   });
 
@@ -844,4 +883,99 @@ it("keeps a missing linked target pending until its events arrive", async () => 
     await waitFor(() => expect(scrolled).toEqual(["m-3"]));
     expect(screen.getByText("private tool output")).toBeTruthy();
   } finally { Element.prototype.scrollIntoView = original; }
+});
+
+describe("SessionView for a cloud session", () => {
+  const cloud = (extra: Partial<LiveSession> = {}): LiveSession => ({ ...session, runtime: "cloud", host_name: "Draft Cloud", mine: true, ...extra });
+  const withSession = (live: LiveSession, extra: Partial<LiveSessionsApi> = {}): LiveSessionsApi => ({ ...api, ...extra, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [] }) });
+  const resume = mock(async (_id: string) => {});
+
+  it("says it runs in Draft Cloud, with when its files were last backed up", async () => {
+    const backedUp = new Date(Date.now() - 5 * 60_000).toISOString();
+    render(<SessionView api={withSession(cloud({ raw_uploaded_at: backedUp }))} sessionId="s1" />);
+    expect(await screen.findByText("Draft Cloud · Last backed up 5m ago")).toBeTruthy();
+  });
+
+  it("says only that it runs in Draft Cloud before the first backup", async () => {
+    render(<SessionView api={withSession(cloud({ raw_uploaded_at: null }))} sessionId="s1" />);
+    expect(await screen.findByText("Draft Cloud")).toBeTruthy();
+    expect(screen.queryByText(/Last backed up/)).toBeNull();
+  });
+
+  it("shows no cloud note for a computer session", async () => {
+    render(<SessionView api={withSession({ ...session, mine: true, runtime: "local" })} sessionId="s1" />);
+    await screen.findByRole("heading", { name: "fix login" });
+    expect(screen.queryByText(/Draft Cloud/)).toBeNull();
+  });
+
+  it("names a waking session Waking up, and keeps Stop for it", async () => {
+    render(<SessionView api={withSession(cloud({ status: "starting", last_seq: 9 }))} sessionId="s1" />);
+    expect(await screen.findByText(/Waking up/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  });
+
+  it("never offers Resume for a cloud session, even one that ended on its own", async () => {
+    render(<SessionView api={withSession(cloud({ status: "ended", end_reason: "exited" }), { resume })} sessionId="s1" />);
+    await screen.findByText(/This session has ended/);
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+
+  it("hides Resume for a session that failed to start or expired", async () => {
+    for (const end_reason of ["start_failed", "expired"]) {
+      const view = render(<SessionView api={withSession({ ...session, status: "ended", mine: true, end_reason }, { resume })} sessionId="s1" />);
+      await screen.findByText(/This session has ended/);
+      expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("keeps Resume for a computer session that exited", async () => {
+    render(<SessionView api={withSession({ ...session, status: "ended", mine: true, end_reason: "exited" }, { resume })} sessionId="s1" />);
+    expect(await screen.findByRole("button", { name: "Resume" })).toBeTruthy();
+  });
+});
+
+describe("SessionView while a cloud session sleeps", () => {
+  // last_seq matches the one event the fixtures return: the stream pages until it reaches last_seq.
+  const sleeping: LiveSession = { ...session, status: "sleeping", runtime: "cloud", host_name: "Draft Cloud", mine: true, last_seq: 1 };
+  const request = { seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "r1", name: "Bash", input: { command: "ls" } }, created_at: "2026-10-27T10:00:00Z" };
+  const sleepingApi = (events: LiveSessionEvent[] = [], extra: Partial<LiveSessionsApi> = {}): LiveSessionsApi => ({
+    ...api,
+    ...extra,
+    fetchEvents: async () => ({ viewer, session: sleeping, events, inputs: [] }),
+  });
+
+  it("shows Sleeping, and a composer that wakes the session instead of saying the host is offline", async () => {
+    render(<SessionView api={sleepingApi()} sessionId="s1" />);
+    expect(await screen.findByText(/Sleeping/)).toBeTruthy();
+    const box = screen.getByPlaceholderText("Send a message to wake this session.");
+    expect(box).toBeTruthy();
+    expect(screen.queryByText(/offline/)).toBeNull();
+    expect(screen.queryByText(/not responding/)).toBeNull();
+  });
+
+  it("hides Stop, the mode menu and the model picker", async () => {
+    render(<SessionView api={sleepingApi()} sessionId="s1" />);
+    await screen.findByText(/Sleeping/);
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mode:/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Model and reasoning effort" })).toBeNull();
+  });
+
+  it("disables the approve buttons and says it is waking the session to ask again", async () => {
+    const decideApproval = mock(async () => ({ ok: true as const }));
+    render(<SessionView api={sleepingApi([request], { decideApproval })} sessionId="s1" />);
+    expect(await screen.findByText("Waking the session to ask again")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /^Deny/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(decideApproval).not.toHaveBeenCalled();
+  });
+
+  it("keeps the approve buttons for a session that is awake", async () => {
+    render(<SessionView api={{ ...sleepingApi([request]), fetchEvents: async () => ({ viewer, session: { ...sleeping, status: "live" }, events: [request], inputs: [] }) }} sessionId="s1" />);
+    const allow = (await screen.findByRole("button", { name: "Allow" })) as HTMLButtonElement;
+    expect(allow.disabled).toBe(false);
+    expect(screen.queryByText("Waking the session to ask again")).toBeNull();
+  });
 });

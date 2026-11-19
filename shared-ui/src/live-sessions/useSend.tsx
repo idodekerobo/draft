@@ -30,8 +30,9 @@ export function useSend() {
   };
 }
 
-/** The line next to the buttons once a decision is sent, or could not be. */
-export function SendStatus({ phase, hostName }: { phase: SendPhase; hostName: string | null }) {
+/** The line next to the buttons once a decision is sent, or could not be. A sleeping session cannot take one, so the card says so. */
+export function SendStatus({ phase, hostName, sleeping = false }: { phase: SendPhase; hostName: string | null; sleeping?: boolean }) {
+  if (sleeping && phase.name === "idle") return <span className="ui-muted ui-approval__status" role="status">Waking the session to ask again</span>;
   if (phase.name === "sent") return <span className="ui-muted ui-approval__status" role="status">Sent. Waiting for {hostName ?? "the owner's computer"}…</span>;
   if (phase.name === "failed") return <span className="ui-error ui-approval__status" role="alert">Could not send. Try again.</span>;
   return null;

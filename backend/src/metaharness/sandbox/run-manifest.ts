@@ -12,6 +12,8 @@ export interface BuildRunnerManifestInput {
   timeoutSeconds: number;
   /** The tool server's URL, or null for a run with no Draft tools. */
   draftMcpUrl: string | null;
+  /** Signed links the runner uploads the harness's session file to. Only a routine run has them. */
+  sessionUpload?: RunnerManifest["sessionUpload"];
 }
 
 /** True when the run needs Draft's tool server: it holds a Draft tool or a connection. */
@@ -41,6 +43,7 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
     output: spec.output.type === "text" ? { kind: "stream" } : { kind: "structured", schemaPath: OUTPUT_SCHEMA_FILE },
     timeoutSeconds: input.timeoutSeconds,
     network: spec.network ?? "restricted",
+    ...(input.sessionUpload ? { sessionUpload: input.sessionUpload } : {}),
   };
   return validateRunnerManifest(manifest, { callbackUrl: input.callbackUrl });
 }

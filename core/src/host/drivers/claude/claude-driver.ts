@@ -168,6 +168,11 @@ export class ClaudeDriver implements HarnessDriver {
     return this.waiting ? QUEUED_POLL_MS : IDLE_POLL_MS;
   }
 
+  /** Claude shows its interrupt hint while a turn runs. */
+  async turnRunning(): Promise<boolean> {
+    return (await paneIsAlive(this.tmux)) && isTurnRunning(await capturePane(this.tmux));
+  }
+
   async serve(inputs: HostInput[]): Promise<void> {
     this.waiting = inputs.some((i) => i.kind === "message" && i.state === "queued");
     await restorePaneSize(this.tmux).catch(() => {});

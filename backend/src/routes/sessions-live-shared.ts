@@ -1,3 +1,4 @@
+import type { HostCaller } from "../auth/with-host-auth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import type { LiveSessionErrorCode } from "draft-core/live-sessions";
 import { serviceClient } from "../db/client";
@@ -8,7 +9,7 @@ import { loadDisplayNames } from "./session-display-names";
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export const SESSION_COLUMNS =
-  "id, workspace_id, owner_user_id, session_type, harness, model, reasoning_effort, native_session_id, previous_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seen, last_seq, open_approval_count, host_id, host_name, harness_version, raw_storage_path, raw_uploaded_at, permission_mode, approval_mode";
+  "id, workspace_id, owner_user_id, session_type, harness, model, reasoning_effort, native_session_id, previous_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seen, last_seq, open_approval_count, host_id, host_name, harness_version, raw_storage_path, raw_uploaded_at, permission_mode, approval_mode, runtime, seed";
 
 export function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string, sessionId?: string): Response {
   if (status >= 500) {
@@ -25,6 +26,7 @@ export async function authorize(workspaceId: string, userId: string): Promise<Re
 const DB_ERROR_STATUS: Partial<Record<LiveSessionErrorCode, number>> = {
   session_not_found: 404,
   session_ended: 409,
+  session_sleeping: 409,
   request_not_found: 404,
   queue_full: 429,
   foreign_host: 403,
@@ -70,7 +72,7 @@ export function optionalString(value: unknown, max = 500): string | null {
 
 export type OwnedSession = { ok: true; session: SessionRow } | { ok: false; response: Response };
 
-export async function loadOwnedSession(workspaceId: string, sessionId: string, userId: string): Promise<OwnedSession> {
+async function loadSession(workspaceId: string, sessionId: string): Promise<OwnedSession> {
   const { data, error } = await serviceClient
     .from("sessions")
     .select(SESSION_COLUMNS)
@@ -80,12 +82,54 @@ export async function loadOwnedSession(workspaceId: string, sessionId: string, u
     .maybeSingle<SessionRow>();
   if (error) return { ok: false, response: errorResponse("session_lookup_failed", 500, error, workspaceId, sessionId) };
   if (!data) return { ok: false, response: errorResponse("session_not_found", 404) };
-  if (data.owner_user_id !== userId) return { ok: false, response: errorResponse("not_session_owner", 403) };
   return { ok: true, session: data };
+}
+
+export async function loadOwnedSession(workspaceId: string, sessionId: string, userId: string): Promise<OwnedSession> {
+  const loaded = await loadSession(workspaceId, sessionId);
+  if (!loaded.ok) return loaded;
+  if (loaded.session.owner_user_id !== userId) return { ok: false, response: errorResponse("not_session_owner", 403) };
+  return loaded;
 }
 
 /** Checks access and loads the owner's session together. The access answer comes first. */
 export async function authorizeOwned(workspaceId: string, sessionId: string, userId: string): Promise<OwnedSession> {
   const [denied, owned] = await Promise.all([authorize(workspaceId, userId), loadOwnedSession(workspaceId, sessionId, userId)]);
   return denied ? { ok: false, response: denied } : owned;
+}
+
+export type HostSession = { ok: true; caller: HostCaller; session: SessionRow; ownerUserId: string } | { ok: false; response: Response };
+
+/**
+ * Access for a host route that reads the session. A person must own it. A cloud run's token already binds it
+ * to its session, so only the session is loaded for it.
+ */
+export async function authorizeHostSession(workspaceId: string, sessionId: string, caller: HostCaller): Promise<HostSession> {
+  if (caller.kind === "user") {
+    const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+    if (!owned.ok) return owned;
+    return { ok: true, caller, session: owned.session, ownerUserId: caller.userId };
+  }
+  const loaded = await loadSession(workspaceId, sessionId);
+  if (!loaded.ok) return loaded;
+  return { ok: true, caller, session: loaded.session, ownerUserId: caller.ownerUserId };
+}
+
+export type HostMember = { ok: true; ownerUserId: string } | { ok: false; response: Response };
+
+/** Access for a host route that checks only team membership. The database checks the owner and the host. */
+export async function authorizeHostMember(workspaceId: string, caller: HostCaller): Promise<HostMember> {
+  if (caller.kind === "cloud_host") return { ok: true, ownerUserId: caller.ownerUserId };
+  const denied = await authorize(workspaceId, caller.userId);
+  return denied ? { ok: false, response: denied } : { ok: true, ownerUserId: caller.userId };
+}
+
+/**
+ * The host id a host request acts for. A cloud run acts only for its own host, so a body that names
+ * another host is refused. A person's request keeps the host it names.
+ */
+export function hostIdFor(caller: HostCaller, given: string | null): { ok: true; hostId: string | null } | { ok: false; response: Response } {
+  if (caller.kind === "user") return { ok: true, hostId: given };
+  if (given !== null && given !== caller.hostId) return { ok: false, response: errorResponse("foreign_host", 403) };
+  return { ok: true, hostId: caller.hostId };
 }

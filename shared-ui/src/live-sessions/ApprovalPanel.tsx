@@ -18,6 +18,7 @@ export function ApprovalPanel({
   onDecide,
   agent = "Claude",
   explainsDenial = true,
+  sleeping = false,
 }: {
   approval: OpenApproval;
   hostName: string | null;
@@ -26,8 +27,11 @@ export function ApprovalPanel({
   agent?: string;
   /** Whether the agent reads a reason for a denial. Codex has no field for one. */
   explainsDenial?: boolean;
+  /** The session is asleep, so no answer can reach it yet. */
+  sleeping?: boolean;
 }) {
   const { phase, run, busy, sendingWhat } = useSend();
+  const locked = busy || sleeping;
   const [expanded, setExpanded] = useState(false);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -63,22 +67,22 @@ export function ApprovalPanel({
         {reasonOpen && (
           <label className="ui-approval__reason">
             <span className="ui-muted">Tell {agent} why (optional)</span>
-            <input className="ui-input" value={reason} maxLength={500} disabled={busy} autoFocus onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !busy && void decide("deny")} />
+            <input className="ui-input" value={reason} maxLength={500} disabled={locked} autoFocus onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !locked && void decide("deny")} />
           </label>
         )}
         <div className="ui-approval__actions">
-          <button type="button" className="ui-btn ui-btn--primary" disabled={busy} onClick={() => void decide("allow")}>
+          <button type="button" className="ui-btn ui-btn--primary" disabled={locked} onClick={() => void decide("allow")}>
             {sendingWhat("allow") ? "Sending…" : "Allow"}
           </button>
           {approval.allowSession && (
-            <button type="button" className="ui-btn" disabled={busy} onClick={() => void decide("allow", "session")}>
+            <button type="button" className="ui-btn" disabled={locked} onClick={() => void decide("allow", "session")}>
               Allow for session
             </button>
           )}
-          <button type="button" className="ui-btn" disabled={busy} aria-expanded={reasonOpen} onClick={() => (reasonOpen || !explainsDenial ? void decide("deny") : setReasonOpen(true))}>
+          <button type="button" className="ui-btn" disabled={locked} aria-expanded={reasonOpen} onClick={() => (reasonOpen || !explainsDenial ? void decide("deny") : setReasonOpen(true))}>
             {sendingWhat("deny") ? "Sending…" : <>Deny <kbd className="ui-kbd">Esc</kbd></>}
           </button>
-          <SendStatus phase={phase} hostName={hostName} />
+          <SendStatus phase={phase} hostName={hostName} sleeping={sleeping} />
         </div>
         </>
       )}

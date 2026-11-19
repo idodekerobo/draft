@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { SessionStream } from "./SessionStream";
 import { buildStreamItems } from "./stream-items";
 import type { ComposerInput, LiveSessionEvent, LiveSessionEventKind, LiveSessionEventPayload } from "./types";
+import type { HostWait } from "./input-status";
 
 afterEach(cleanup);
 
@@ -199,20 +200,20 @@ describe("SessionStream", () => {
 
   it("shows a pending message as a bubble with no note, then a note when it is blocked", () => {
     const base: ComposerInput = { id: "i1", author_user_id: "u1", author_name: "Priya", text: "run tests", state: "queued", reason: null, created_at: new Date().toISOString(), updated_at: "", mine: true };
-    const pending = (input: ComposerInput, hostOffline = false) =>
-      ({ type: "pending", key: "i1", input, author: "Priya", ownerName: "Maya", hostOffline }) as const;
+    const pending = (input: ComposerInput, hostWait: HostWait = false) =>
+      ({ type: "pending", key: "i1", input, author: "Priya", ownerName: "Maya", hostWait }) as const;
     const view = render(<SessionStream items={[pending(base)]} />);
     expect(screen.getByText("run tests")).toBeTruthy();
     expect(screen.queryByRole("status")).toBeNull();
     view.rerender(<SessionStream items={[pending({ ...base, reason: "composer_busy" })]} />);
     expect(screen.getByRole("status").textContent).toBe("Queued, Maya is typing in the terminal");
-    view.rerender(<SessionStream items={[pending(base, true)]} />);
-    expect(screen.getByRole("status").textContent).toBe("Queued, Maya's laptop is offline");
+    view.rerender(<SessionStream items={[pending(base, "local")]} />);
+    expect(screen.getByRole("status").textContent).toBe("Queued, Maya's computer is offline");
   });
 
   it("lets the sender cancel a queued message, and points a blocked one at the open request", () => {
     const base: ComposerInput = { id: "i1", author_user_id: "u1", author_name: "Priya", text: "run tests", state: "queued", reason: "question_prompt", created_at: new Date().toISOString(), updated_at: "", mine: true };
-    const pending = (input: ComposerInput) => ({ type: "pending", key: "i1", input, author: "Priya", ownerName: "Maya", hostOffline: false }) as const;
+    const pending = (input: ComposerInput) => ({ type: "pending", key: "i1", input, author: "Priya", ownerName: "Maya", hostWait: false }) as const;
     const onCancel = mock((_id: string) => {});
     const onShowRequest = mock(() => {});
     const onSkipQuestions = mock(() => {});
@@ -233,7 +234,7 @@ describe("SessionStream", () => {
 
   it("offers the owner a way to dismiss a prompt that blocks a queued message", () => {
     const base: ComposerInput = { id: "i1", author_user_id: "u1", author_name: "Priya", text: "run tests", state: "queued", reason: "dialog", created_at: new Date().toISOString(), updated_at: "", mine: true };
-    const item = { type: "pending", key: "i1", input: base, author: "Priya", ownerName: "Maya", hostOffline: false } as const;
+    const item = { type: "pending", key: "i1", input: base, author: "Priya", ownerName: "Maya", hostWait: false } as const;
     const onDismissPrompt = mock(() => {});
     const view = render(<SessionStream items={[item]} onDismissPrompt={onDismissPrompt} />);
     fireEvent.click(screen.getByRole("button", { name: /Dismiss in terminal/ }));

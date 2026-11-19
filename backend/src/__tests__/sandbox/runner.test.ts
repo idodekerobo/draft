@@ -745,3 +745,34 @@ test("the harness commands pass a reasoning effort only when one is set", () => 
   expect(codex).toEqual(expect.arrayContaining(["-c", 'model_reasoning_effort="xhigh"']));
   expect(codexArgs(manifestOf({ harness: "codex" })).join(" ")).not.toContain("model_reasoning_effort");
 });
+
+describe("a routine run that keeps its session file", () => {
+  const upload = { fileUrl: "https://storage.example.test/root.jsonl.gz?token=file", metadataUrl: "https://storage.example.test/metadata.json?token=meta" };
+
+  test("Claude writes its session file, so the flag that turns persistence off is left out", () => {
+    const args = claudeArgs(manifestOf({ sessionUpload: upload }), "go", null);
+    expect(args).not.toContain("--no-session-persistence");
+    expect(args).toEqual(claudeArgs(manifestOf(), "go", null).filter((arg) => arg !== "--no-session-persistence"));
+  });
+
+  test("Codex keeps its rollout file, so --ephemeral is left out", () => {
+    const codex = (sessionUpload?: RunnerManifest["sessionUpload"]) => manifestOf({ harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, sessionUpload });
+    expect(codexArgs(codex(upload))).not.toContain("--ephemeral");
+    expect(codexArgs(codex(upload))).toEqual(codexArgs(codex()).filter((arg) => arg !== "--ephemeral"));
+  });
+
+  test("the manifest takes an HTTPS upload pair on a stream run, and refuses anything else", () => {
+    const check = (value: unknown) => validateRunnerManifest(value, { callbackUrl: CALLBACK });
+    expect(check({ ...manifestOf(), sessionUpload: upload })).toMatchObject({ sessionUpload: { fileUrl: upload.fileUrl } });
+    expect(() => check({ ...manifestOf(), sessionUpload: { fileUrl: "http://storage.example.test/a" } })).toThrow("sessionUpload");
+    expect(() => check({ ...manifestOf(), sessionUpload: { fileUrl: "https://user:pw@storage.example.test/a", metadataUrl: upload.metadataUrl } })).toThrow("no login");
+    expect(() => check({ ...manifestOf(), sessionUpload: { fileUrl: upload.fileUrl } })).toThrow("sessionUpload");
+    expect(() => check({ ...manifestOf(), sessionUpload: { ...upload, extra: 1 } })).toThrow("unknown key in sessionUpload");
+    expect(() => check({ ...manifestOf({ output: structured }), sessionUpload: upload })).toThrow("only a stream run keeps a session file");
+    expect(() => check({ ...manifestOf(), harness: "pi", sessionUpload: upload })).toThrow();
+  });
+
+  test("a manifest without the key stays as it was, with no upload", () => {
+    expect(validateRunnerManifest(manifestOf(), { callbackUrl: CALLBACK })).not.toHaveProperty("sessionUpload");
+  });
+});

@@ -3,7 +3,7 @@
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { clearDraft, hasDraft, useDraft } from "./drafts";
-import { inputStatusLine } from "./input-status";
+import { inputStatusLine, type HostWait } from "./input-status";
 import { submitOnEnter, useAutoGrow } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
 import { useTypeToFocus } from "./useTypeToFocus";
@@ -57,14 +57,15 @@ export function SessionComposer({
   act,
   ownerName,
   ended,
-  hostOffline = false,
+  hostWait = false,
   autoFocus = false,
   onEmptyEscape,
   onResume,
   modeControl,
   agentControl,
   onCycleMode,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
+  sleeping = false,
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostWait?: HostWait; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -104,7 +105,7 @@ export function SessionComposer({
             <li key={input.id} className="ui-composer__pending-item">
               <span className="ui-composer__author">{input.mine ? "You" : input.author_name}</span>
               <span className="ui-composer__text">{input.text}</span>
-              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now, hostOffline)}</span>
+              <span className={input.state === "failed" ? "ui-error" : "ui-muted"}>{inputStatusLine(input, ownerName, now, hostWait)}</span>
               {input.mine && (input.state === "uncertain" || input.state === "failed") && (
                 <span className="ui-composer__actions">
                   <button type="button" className="ui-link" onClick={() => void act(input.id, "resend")}>Resend</button>
@@ -129,7 +130,7 @@ export function SessionComposer({
             rows={2}
             autoFocus={autoFocus}
             maxLength={MAX_INPUT_CHARS}
-            placeholder={`Message ${ownerName}'s session`}
+            placeholder={sleeping ? "Send a message to wake this session." : `Message ${ownerName}'s session`}
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {

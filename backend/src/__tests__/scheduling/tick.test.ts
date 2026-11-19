@@ -1,6 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runSchedulingTick } from "../../scheduling/tick";
+import type { expireIdleCloudSessions } from "../../cloud-sessions/expire";
+import type { reconcileCloudSessions } from "../../cloud-sessions/reconcile";
+import type { SandboxDeploymentConfig } from "../../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../../types/tables";
 import { createFakeRunsClient, fakeRun } from "../synthesis/fake-runs-client";
 
@@ -8,6 +11,13 @@ const NOW = "2026-08-05T10:00:30.000Z";
 const OCCURRENCE = "2026-08-05T10:00:00.000Z";
 // What claim_due_scheduled_tasks writes into next_due_at for a recurring row: now + 5 minutes.
 const LEASE = "2026-08-05T10:05:30.000Z";
+
+const SANDBOX: SandboxDeploymentConfig = {
+  callbackUrl: "https://api.draft.test/sandbox/callback",
+  callbackSecret: "callback-secret",
+  supabaseUrl: "https://project.supabase.co",
+  provider: { kind: "fly", apiToken: "fly-token", appName: "draft-sandbox", image: `registry.fly.io/draft-sandbox@sha256:${"a".repeat(64)}`, region: "iad" },
+};
 
 function task(overrides: Partial<ScheduledTaskRow>): ScheduledTaskRow {
   return {
@@ -118,6 +128,10 @@ function fakeClient(options: FakeClientOptions = {}) {
 
 const fakeConfig = {} as never;
 const now = new Date(NOW);
+
+/** A reconcile that does nothing, so a test with sandbox settings does not reach the real sweep. */
+const idleReconcile = () =>
+  mock(async (_options: Parameters<typeof reconcileCloudSessions>[0]) => ({ hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 0 }));
 
 describe("runSchedulingTick", () => {
   it("claims due timers with the tick's clock and the lease length", async () => {
@@ -349,6 +363,86 @@ describe("runSchedulingTick", () => {
   it("still advances tasks when the session sweep fails", async () => {
     const { client, updates } = fakeClient({ claimed: [claimed({ id: "task-a" })], failSweep: true });
     await runSchedulingTick({ client, config: fakeConfig, now, dispatch: mock(async () => null), drain: mock(async () => {}) });
+    expect(updates).toHaveLength(1);
+  });
+
+  it("expires idle cloud sessions on every tick, with the provider from its sandbox config", async () => {
+    const expire = mock(async (_options: Parameters<typeof expireIdleCloudSessions>[0]) => ({ expired: 0, skipped: 0, failed: 0 }));
+    const { client } = fakeClient();
+
+    await runSchedulingTick({ client, config: SANDBOX, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire, reconcile: idleReconcile() });
+
+    expect(expire).toHaveBeenCalledTimes(1);
+    const options = expire.mock.calls[0]![0];
+    expect(options.client).toBe(client);
+    expect(options.provider).toEqual(expect.objectContaining({ destroy: expect.any(Function) }));
+    expect(options.now?.()).toEqual(now);
+  });
+
+  it("skips the expiry when no sandbox settings are passed", async () => {
+    const expire = mock(async (_options: Parameters<typeof expireIdleCloudSessions>[0]) => ({ expired: 0, skipped: 0, failed: 0 }));
+    const { client, errorInserts } = fakeClient();
+
+    await runSchedulingTick({ client, config: fakeConfig, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire });
+
+    expect(expire).not.toHaveBeenCalled();
+    expect(errorInserts).toHaveLength(0);
+  });
+
+  it("keeps the rest of the tick running when the expiry throws", async () => {
+    const expire = mock(async (_options: Parameters<typeof expireIdleCloudSessions>[0]): Promise<never> => {
+      throw new Error("expiry down");
+    });
+    const { client, updates } = fakeClient({ claimed: [claimed({ id: "task-a" })] });
+
+    await runSchedulingTick({ client, config: SANDBOX, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire, reconcile: idleReconcile() });
+
+    expect(expire).toHaveBeenCalledTimes(1);
+    expect(updates).toHaveLength(1);
+  });
+
+  it("reconciles cloud sessions after expiry, with the provider and its name from the sandbox config", async () => {
+    const order: string[] = [];
+    const expire = mock(async (): Promise<{ expired: number; skipped: number; failed: number }> => {
+      order.push("expire");
+      return { expired: 0, skipped: 0, failed: 0 };
+    });
+    const reconcile = mock(async (_options: Parameters<typeof reconcileCloudSessions>[0]) => {
+      order.push("reconcile");
+      return { hostsLost: 0, volumesDestroyed: 0, seedsRemoved: 0, failed: 0 };
+    });
+    const { client } = fakeClient();
+
+    await runSchedulingTick({ client, config: SANDBOX, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire, reconcile });
+
+    expect(order).toEqual(["expire", "reconcile"]);
+    const options = reconcile.mock.calls[0]![0];
+    expect(options.client).toBe(client);
+    expect(options.providerName).toBe("fly");
+    expect(options.provider).toEqual(expect.objectContaining({ destroy: expect.any(Function) }));
+    expect(options.wake).toEqual(expect.any(Function));
+    expect(options.now?.()).toEqual(now);
+  });
+
+  it("skips the reconcile when no sandbox settings are passed", async () => {
+    const reconcile = idleReconcile();
+    const { client, errorInserts } = fakeClient();
+
+    await runSchedulingTick({ client, config: fakeConfig, now, dispatch: mock(async () => null), drain: mock(async () => {}), reconcile });
+
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(errorInserts).toHaveLength(0);
+  });
+
+  it("keeps the rest of the tick running when the reconcile throws", async () => {
+    const reconcile = mock(async (_options: Parameters<typeof reconcileCloudSessions>[0]): Promise<never> => {
+      throw new Error("reconcile down");
+    });
+    const { client, updates } = fakeClient({ claimed: [claimed({ id: "task-a" })] });
+
+    await runSchedulingTick({ client, config: SANDBOX, now, dispatch: mock(async () => null), drain: mock(async () => {}), expire: mock(async () => ({ expired: 0, skipped: 0, failed: 0 })), reconcile });
+
+    expect(reconcile).toHaveBeenCalledTimes(1);
     expect(updates).toHaveLength(1);
   });
 });

@@ -17,17 +17,26 @@ const FAILED: Partial<Record<InputFailReason, string>> = {
   pane_unavailable: "the session was not reachable",
 };
 
+/**
+ * Why messages wait for the host, or false when it can take them. A computer's owner must bring a local host back.
+ * A cloud host comes back on its own: it is starting, waking, or restarting after it went offline.
+ */
+export type HostWait = false | "local" | "cloud" | "cloud_starting" | "cloud_waking";
+
 /** True when a queued message waits for a reason a person can act on, not just for the host to pick it up. */
-export function isBlocked(input: ComposerInput, hostOffline = false): boolean {
+export function isBlocked(input: ComposerInput, hostWait: HostWait = false): boolean {
   if (input.state !== "queued") return false;
-  return hostOffline || input.reason === "composer_busy" || BLOCKED[input.reason as InputBlockReason] !== undefined;
+  return hostWait !== false || input.reason === "composer_busy" || BLOCKED[input.reason as InputBlockReason] !== undefined;
 }
 
 /** Text to show the sender of an unfinished message. */
-export function inputStatusLine(input: ComposerInput, ownerName: string, now = Date.now(), hostOffline = false, harness = "claude"): string {
+export function inputStatusLine(input: ComposerInput, ownerName: string, now = Date.now(), hostWait: HostWait = false, harness = "claude"): string {
   switch (input.state) {
     case "queued": {
-      if (hostOffline) return `Queued, ${ownerName}'s laptop is offline`;
+      if (hostWait === "cloud") return "Queued, restarting Draft Cloud";
+      if (hostWait === "cloud_starting") return "Queued, starting Draft Cloud";
+      if (hostWait === "cloud_waking") return "Queued, waking the session";
+      if (hostWait) return `Queued, ${ownerName}'s computer is offline`;
       if (input.reason === "composer_busy") return harness === "claude" ? `Queued, ${ownerName} is typing in the terminal` : `Queued, ${shortName(harness)} is working`;
       const blocked = BLOCKED[input.reason as InputBlockReason];
       if (blocked) return `Queued, ${shortName(harness)} ${blocked}`;

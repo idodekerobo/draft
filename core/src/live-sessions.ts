@@ -18,6 +18,7 @@ export const EVENTS_PAGE_SIZE = 500;
 export type LiveSessionErrorCode =
   | "session_not_found"
   | "session_ended"
+  | "session_sleeping"
   | "not_session_owner"
   | "foreign_host"
   | "routine_read_only"
@@ -153,7 +154,7 @@ export function presenceNames(state: Record<string, PresenceMeta[]>, selfId: str
   return names.sort((a, b) => a.localeCompare(b));
 }
 
-export type LiveSessionStatus = "starting" | "live" | "host_offline" | "ended";
+export type LiveSessionStatus = "starting" | "live" | "host_offline" | "sleeping" | "ended";
 
 export interface LiveSession {
   id: string;
@@ -161,6 +162,10 @@ export interface LiveSession {
   owner_name: string | null;
   /** A routine run is read-only: nobody can message it. */
   session_type?: "interactive" | "routine";
+  /** Where it runs: the owner's computer (local) or a Draft sandbox (cloud). */
+  runtime?: "local" | "cloud";
+  /** When the session's files were last backed up. Cloud sessions only; null until the first backup. */
+  raw_uploaded_at?: string | null;
   title: string | null;
   folder_name: string | null;
   host_name: string | null;

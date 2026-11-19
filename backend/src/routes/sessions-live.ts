@@ -1,15 +1,23 @@
+import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { productionStartDeps } from "../cloud-sessions/deps";
+import { parseCloudStart } from "../cloud-sessions/parse-start";
+import { beginCloudSession } from "../cloud-sessions/start";
+import { SLEEPABLE_STATUSES, sleepCloudSession } from "../cloud-sessions/sleep";
+import { discardSnapshot, snapshotKeyOf, storageSnapshotStore } from "../cloud-sessions/snapshot-seed";
+import { wakeCloudSession } from "../cloud-sessions/wake";
 import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
+import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { eventsForHarness } from "../ingestion/harness-lines";
 import { latestNativeTitle } from "draft-core/harnesses/claude/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
-import { SESSION_COLUMNS, authorize, authorizeOwned, errorResponse, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { SESSION_COLUMNS, authorize, authorizeHostMember, authorizeHostSession, authorizeOwned, errorResponse, hostIdFor, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
@@ -21,6 +29,7 @@ type DeleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
 type ReopenRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/reopen">;
 type RawRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw">;
 type RawCompleteRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/raw/complete">;
+type HostSleepRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/host/sleep">;
 
 const MAX_LINES_PER_POST = 2000;
 const MAX_EVENTS_PAGE = 1000;
@@ -58,6 +67,31 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
   return Response.json({ sessions: named.sessions });
 });
 
+/** A cloud session starts its first run in a sandbox now. A failure ends the session, and the response says why. */
+async function createCloudSession(workspaceId: string, ownerUserId: string, body: Record<string, unknown>): Promise<Response> {
+  const parsed = parseCloudStart(body, { workspaceId, ownerUserId });
+  if (!parsed.ok) return Response.json({ ok: false, error: parsed.error }, { status: 400 });
+
+  let deps: ReturnType<typeof productionStartDeps>;
+  try {
+    deps = productionStartDeps();
+  } catch (error) {
+    await recordError({ workspaceId, operation: "session", code: "sandbox_config_invalid", message: "The sandbox settings for cloud sessions are missing or invalid", error });
+    return Response.json({ ok: false, error: "sandbox_not_configured" }, { status: 500 });
+  }
+
+  // The client opens the session as soon as the row exists. The sandbox boots behind it, and a failure ends the session.
+  const started = await beginCloudSession(parsed.input, deps);
+  if (!started.ok) return Response.json({ ok: false, error: started.error }, { status: started.status });
+  started.launch.catch((error) =>
+    recordError({ workspaceId, sessionId: started.sessionId, operation: "session", code: "cloud_launch_unhandled", message: "Launching a cloud session failed outside its own error handling", error }),
+  );
+
+  const { data, error } = await serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", started.sessionId).maybeSingle<SessionRow>();
+  if (error || !data) return errorResponse("session_lookup_failed", 500, error, workspaceId, started.sessionId);
+  return Response.json({ ok: true, session: data }, { status: 201 });
+}
+
 export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   const denied = await authorize(req.params.id, caller.userId);
   if (denied) return denied;
@@ -65,6 +99,11 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
+
+  if (body.runtime !== undefined && body.runtime !== "local") {
+    if (body.runtime === "cloud") return createCloudSession(req.params.id, caller.userId, body);
+    return errorResponse("unknown_runtime", 400);
+  }
 
   const hostId = optionalString(body.hostId, 200);
   if (!hostId) return errorResponse("missing_host_id", 400);
@@ -124,14 +163,17 @@ export async function loadSessionLinks(workspaceId: string, session: SessionRow)
   return { previous_session: previousResult?.data ?? null, next_session: nextResult?.data ?? null };
 }
 
-export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
+// A cloud host reads its own session at startup. Its run token binds it to this session,
+// so it skips the membership check and reads as the owner.
+export const EVENTS = withHostAuth<EventsRequest>(async (req, caller) => {
+  const viewerId = caller.kind === "user" ? caller.userId : caller.ownerUserId;
   const { id: workspaceId, sessionId } = req.params;
   const params = new URL(req.url).searchParams;
   const after = Math.max(0, Number(params.get("after")) || 0);
   const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || EVENTS_PAGE_SIZE));
 
   const [denied, { data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
-    authorize(workspaceId, caller.userId),
+    caller.kind === "user" ? authorize(workspaceId, caller.userId) : null,
     serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<SessionRow>(),
     serviceClient
       .from("session_events")
@@ -141,7 +183,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
       .gt("seq", after)
       .order("seq", { ascending: true })
       .limit(limit),
-    loadViewerInputs(workspaceId, sessionId, caller.userId),
+    loadViewerInputs(workspaceId, sessionId, viewerId),
   ]);
   if (denied) return denied;
   if (sessionError) return errorResponse("session_lookup_failed", 500, sessionError, workspaceId, sessionId);
@@ -161,7 +203,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
 
   const authorIds = [
     ...new Set([
-      caller.userId,
+      viewerId,
       session.owner_user_id,
       ...authors.bySeq.values(),
       ...recent.rows.map((r) => r.author_user_id),
@@ -179,8 +221,8 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   const inputs = viewerInputs.inputs.map((i) => ({ ...i, author_name: names.users.get(i.author_user_id) ?? i.author_name }));
   const authorList = recent.rows.map((r) => ({ seq: r.consumed_seq, author_user_id: r.author_user_id, author_name: names.users.get(r.author_user_id) ?? null }));
   return Response.json({
-    session: { ...session, owner_name: names.users.get(session.owner_user_id) ?? null, mine: session.owner_user_id === caller.userId, ...links },
-    viewer: { id: caller.userId, name: names.users.get(caller.userId) ?? "A teammate" },
+    session: { ...session, owner_name: names.users.get(session.owner_user_id) ?? null, mine: session.owner_user_id === viewerId, ...links },
+    viewer: { id: viewerId, name: names.users.get(viewerId) ?? "A teammate" },
     events: withAuthors,
     inputs,
     authors: authorList,
@@ -225,16 +267,18 @@ function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim())?.trim().slice(0, TITLE_MAX_CHARS) ?? "";
 }
 
-export const LINES = withAuth<LinesRequest>(async (req, caller) => {
+export const LINES = withHostAuth<LinesRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
   const { body } = parsed;
 
-  const hostId = optionalString(body.hostId, 200);
+  const target = hostIdFor(caller, optionalString(body.hostId, 200));
+  if (!target.ok) return target.response;
+  const hostId = target.hostId;
   if (!hostId) return errorResponse("missing_host_id", 400);
   if (!Array.isArray(body.lines) || body.lines.length > MAX_LINES_PER_POST || !body.lines.every(isIncomingLine)) {
     return errorResponse("invalid_lines", 400);
@@ -312,14 +356,16 @@ async function reportedAgent(sessionId: string, workspaceId: string, hostId: str
 }
 
 /** The host says it is alive. A session marked host_offline returns to live. */
-export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
+export const HEARTBEAT = withHostAuth<HeartbeatRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const denied = await authorize(workspaceId, caller.userId);
-  if (denied) return denied;
+  const member = await authorizeHostMember(workspaceId, caller);
+  if (!member.ok) return member.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostId = optionalString(parsed.body.hostId, 200);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  const hostId = target.hostId;
   if (!hostId) return errorResponse("missing_host_id", 400);
 
   const { data, error } = await serviceClient.rpc("heartbeat_session", {
@@ -338,15 +384,16 @@ export const HEARTBEAT = withAuth<HeartbeatRequest>(async (req, caller) => {
   return Response.json({ ok: true, status: data });
 });
 
-export const END = withAuth<EndRequest>(async (req, caller) => {
+export const END = withHostAuth<EndRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  const hostId = optionalString(parsed.body.hostId, 200);
-  if (hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const reason = optionalString(parsed.body.reason, 100) ?? "ended";
   const { error } = await serviceClient
@@ -356,8 +403,59 @@ export const END = withAuth<EndRequest>(async (req, caller) => {
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);
   await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
+  if (caller.kind === "cloud_host") {
+    const closed = await closeCloudRun(caller.runId, reason);
+    if (!closed.ok) return errorResponse("run_close_failed", 500, closed.error, workspaceId, sessionId);
+  }
 
   return Response.json({ ok: true });
+});
+
+const FAILED_END_REASONS = new Set(["host_failed", "launch_failed", "seed_failed", "resume_failed"]);
+
+/** Closes the run of a cloud host that ended its session, so no run stays active after its machine exits. */
+async function closeCloudRun(runId: string, reason: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  const failed = FAILED_END_REASONS.has(reason);
+  const { error } = await serviceClient
+    .from("agent_runs")
+    .update({ status: failed ? "failed" : "succeeded", completed_at: new Date().toISOString(), ...(failed ? { failure_code: reason, failure_detail: "The cloud host ended its session" } : {}) })
+    .eq("id", runId)
+    .in("status", ACTIVE_AGENT_RUN_STATUSES as unknown as string[]);
+  return error ? { ok: false, error } : { ok: true };
+}
+
+/**
+ * The cloud host says its session is idle and it is stopping. A waiting input refuses the sleep (409 inputs_pending),
+ * and the run stays active so the host can deliver it. Otherwise the run succeeds and the session sleeps.
+ */
+export const HOST_SLEEP = withHostAuth<HostSleepRequest>(async (req, caller) => {
+  const { id: workspaceId, sessionId } = req.params;
+  if (caller.kind !== "cloud_host") return errorResponse("cloud_host_only", 403);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
+  if (!owned.ok) return owned.response;
+
+  const parsed = await readBody(req);
+  if (!parsed.ok) return parsed.response;
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+
+  const status = owned.session.status;
+  if (!SLEEPABLE_STATUSES.includes(status)) return errorResponse(status === "ended" ? "session_ended" : "session_sleeping", 409);
+
+  const outcome = await sleepCloudSession(
+    { workspaceId, sessionId, runId: caller.runId },
+    { client: serviceClient, wake: (session) => wakeCloudSession(session, productionStartDeps()) },
+  );
+  switch (outcome) {
+    case "sleeping":
+      return Response.json({ ok: true, status: "sleeping" });
+    case "inputs_pending":
+      return errorResponse("inputs_pending", 409);
+    case "session_changed":
+      return errorResponse("session_changed", 409);
+    case "failed":
+      return Response.json({ ok: false, error: "session_sleep_failed" }, { status: 500 });
+  }
 });
 
 /**
@@ -375,6 +473,8 @@ export const DELETE = withAuth<DeleteRequest>(async (req, caller) => {
   const { error } = await serviceClient.from("sessions").update({ ...ending, deleted_at: now }).eq("id", sessionId).is("deleted_at", null);
   if (error) return errorResponse("session_delete_failed", 500, error, workspaceId, sessionId);
   await failQueuedInputs(sessionId, "session_ended");
+  const snapshotKey = snapshotKeyOf(owned.session.seed);
+  if (snapshotKey) await discardSnapshot(storageSnapshotStore(serviceClient), snapshotKey, { client: serviceClient, workspaceId, sessionId });
 
   return Response.json({ ok: true });
 });
@@ -384,6 +484,9 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
   if (!owned.ok) return owned.response;
+
+  // A cloud session's volume is removed once it ends, so it cannot be reopened.
+  if (owned.session.runtime === "cloud") return errorResponse("cloud_session_ended", 409);
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
@@ -405,14 +508,16 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   return Response.json({ ok: true, session: data ?? { ...session, status: "live" } });
 });
 
-export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
+export const RAW_UPLOAD_URLS = withHostAuth<RawRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const files = parsed.body.files;
   if (!Array.isArray(files) || files.length === 0 || files.length > 200 || !files.every((f) => typeof f === "string" && RAW_FILE.test(f))) {
@@ -429,14 +534,16 @@ export const RAW_UPLOAD_URLS = withAuth<RawRequest>(async (req, caller) => {
   return Response.json({ ok: true, uploads });
 });
 
-export const RAW_UPLOAD_COMPLETE = withAuth<RawCompleteRequest>(async (req, caller) => {
+export const RAW_UPLOAD_COMPLETE = withHostAuth<RawCompleteRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
-  const owned = await authorizeOwned(workspaceId, sessionId, caller.userId);
+  const owned = await authorizeHostSession(workspaceId, sessionId, caller);
   if (!owned.ok) return owned.response;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
-  if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
+  const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
+  if (!target.ok) return target.response;
+  if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
   const prefix = `${workspaceId}/${sessionId}`;
   const { data: objects, error: listError } = await serviceClient.storage.from(RAW_BUCKET).list(prefix);

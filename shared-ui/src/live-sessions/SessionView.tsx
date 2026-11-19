@@ -25,6 +25,7 @@ import { CheckIcon, LinkIcon } from "./MessageActions";
 import { sessionBanner } from "./session-banner";
 import { useMinuteClock } from "./useMinuteClock";
 import { sessionTitle } from "./sessions-list";
+import { relativeTime } from "../relative-time";
 import { pendingItems } from "./pending-items";
 import { buildStreamItems, openApprovals, type StreamItem } from "./stream-items";
 import { presenceLine } from "./presence-line";
@@ -38,6 +39,10 @@ import { useLiveText } from "./useLiveText";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
 import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
+import { cloudStartFailure } from "./cloud-start";
+import { CloudStartNoticeView } from "./CloudStartNotice";
+import { hostWaitOf } from "./cloud-start-notice";
+import { displayHostName } from "./host-name";
 
 const SKIPPED_MESSAGE = "The user skipped this.";
 
@@ -129,6 +134,13 @@ function Crumbs({ back, children }: { back?: ReactNode; children: ReactNode }) {
 /** Its own component, so the minute tick re-renders one word and not the stream. */
 function StatusText({ session }: { session: LiveSession }) {
   return <>{displayStatus(session, useMinuteClock()).label}</>;
+}
+
+/** Where a cloud session runs and when its files were last backed up. Its own component, like StatusText. */
+function CloudNote({ session }: { session: LiveSession }) {
+  const now = useMinuteClock();
+  const backup = session.raw_uploaded_at ? ` · Last backed up ${relativeTime(session.raw_uploaded_at, { now })}` : "";
+  return <span className="ui-muted ui-session__meta">{`Draft Cloud${backup}`}</span>;
 }
 
 function LinkedSession({ link, onOpenSession, lead }: { link: LiveSessionLink; onOpenSession?: (id: string) => void; lead: string }) {
@@ -281,14 +293,17 @@ function SessionContents({
   const agentName = shortName(harnessId);
   // Only Claude runs in a pane the owner can open, and only its hook reads a reason for a denial.
   const hasTerminal = harnessId === "claude";
-  const hostOffline = session.status === "host_offline";
+  const hostWait = hostWaitOf(session);
+  const hostName = displayHostName(session);
+  // A sleeping session has no run to take a decision, a mode or a model, so those controls wait for the next message.
+  const sleeping = session.status === "sleeping";
   const viewerName = viewer.name;
   const items = useMemo<StreamItem[]>(
     () => [
       ...liveText.map((preview) => ({ type: "live" as const, messageId: preview.messageId, text: preview.text })),
-      ...pendingItems(inputs.inputs, stream.recentEvents, { viewerName, ownerName, hostOffline }),
+      ...pendingItems(inputs.inputs, stream.recentEvents, { viewerName, ownerName, hostWait }),
     ],
-    [liveText, inputs.inputs, stream.recentEvents, viewerName, ownerName, hostOffline],
+    [liveText, inputs.inputs, stream.recentEvents, viewerName, ownerName, hostWait],
   );
   const needAttention = useMemo(() => inputs.inputs.filter((input) => input.state === "failed" || input.state === "uncertain"), [inputs.inputs]);
 
@@ -427,9 +442,9 @@ function SessionContents({
     finally { olderRequest.current = false; }
   };
   const agentRuntime = useMemo(() => ({ api, sessionId, cacheKey: stream.cacheKey, target: agentTarget, mounted: scrollToWanted,
-    linkFor: shareBaseUrl ? linkFor : undefined, harness: harnessId, ownerName, hostName: session.host_name,
+    linkFor: shareBaseUrl ? linkFor : undefined, harness: harnessId, ownerName, hostName: hostName,
     viewerId: viewer.id, viewerName, viewerIsOwner: session.mine ?? false,
-  }), [api, sessionId, stream.cacheKey, agentTarget, scrollToWanted, shareBaseUrl, linkFor, harnessId, ownerName, session.host_name, viewer.id, viewerName, session.mine]);
+  }), [api, sessionId, stream.cacheKey, agentTarget, scrollToWanted, shareBaseUrl, linkFor, harnessId, ownerName, hostName, viewer.id, viewerName, session.mine]);
 
   const stop = useCallback(async () => {
     setStopping(true);
@@ -454,10 +469,10 @@ function SessionContents({
   const skipQuestions = useCallback(async () => void (await Promise.all(openQuestions.map((q) => skipRequest(q.requestId).catch(() => {})))), [openQuestions, skipRequest]);
   const sendMessage = useCallback(
     async (text: string) => {
-      if (canAnswer) await skipQuestions();
+      if (canAnswer && !sleeping) await skipQuestions();
       return inputs.send(text);
     },
-    [canAnswer, skipQuestions, inputs],
+    [canAnswer, sleeping, skipQuestions, inputs],
   );
   const modes = harnessModes(session.harness ?? "claude");
   const permissionSwitch = useSwitching(session.permission_mode);
@@ -480,7 +495,7 @@ function SessionContents({
     if (next) changeMode({ permissionMode: next });
   }, [modes.permission, session.permission_mode, permissionSwitch.target, changeMode]);
 
-  const showModes = canAnswer && (modes.permission.length > 0 || modes.approval.length > 0);
+  const showModes = canAnswer && !sleeping && (modes.permission.length > 0 || modes.approval.length > 0);
   const [pendingAgent, setPendingAgent] = useState<{ model: string | null; effort: string | null } | null>(null);
   const savedAgent = { model: session.model ?? null, effort: session.reasoning_effort ?? null };
   useEffect(() => {
@@ -505,7 +520,7 @@ function SessionContents({
     [api, sessionId],
   );
   // Only the owner's subscription pays for it, so only the owner changes the model and effort.
-  const agentControl = canAnswer && session.mine === true && getHarness(harnessId) ? (
+  const agentControl = canAnswer && !sleeping && session.mine === true && getHarness(harnessId) ? (
     <SectionedPicker
       label="Model and reasoning effort"
       align="start"
@@ -545,9 +560,11 @@ function SessionContents({
     // The card that held focus is gone, so focus goes back to the message box. Focus elsewhere stays.
     if (!active || active === document.body || active.closest(".ui-approval")) document.getElementById("session-message")?.focus();
   }, [approvals.length]);
-  const firstOpenRequest = canAnswer ? approvals[0] : undefined;
+  // Escape answers the first request, or dismisses a prompt, only while a run is there to take it.
+  const awake = canAnswer && !sleeping;
+  const firstOpenRequest = awake ? approvals[0] : undefined;
   // A prompt in the terminal that Draft shows no card for. Only the owner can dismiss it, and queued messages stay.
-  const blockedByPrompt = canAnswer && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && isPromptBlock(i.reason));
+  const blockedByPrompt = awake && session.mine === true && !firstOpenRequest && inputs.inputs.some((i) => i.state === "queued" && isPromptBlock(i.reason));
   const dismissPrompt = useCallback(() => void api.stop(sessionId, { keepQueued: true }).then(() => refresh()).catch(() => setActionError("Could not dismiss the prompt. Try again.")), [api, sessionId, refresh]);
   useEffect(() => {
     if (!firstOpenRequest && !blockedByPrompt) return;
@@ -562,11 +579,29 @@ function SessionContents({
 
   const menu = useSessionMenu({ api, items: menuItems, onDeleted });
 
-  const canResume = Boolean(api.resume) && session.mine === true && session.status === "ended" && session.end_reason !== "cleared";
+  // Only a computer can run a session again. A cloud session that failed to start has no run to bring back.
+  const canResume = Boolean(api.resume) && session.mine === true && session.status === "ended" && session.runtime !== "cloud" && session.end_reason !== "cleared" && session.end_reason !== "start_failed" && session.end_reason !== "expired";
   const resume = useCallback(async () => {
     await api.resume?.(sessionId);
     await refresh();
   }, [api, sessionId, refresh]);
+
+  // A finished routine run can become a cloud chat. Its own session stays as the record of the run.
+  const canContinue = Boolean(api.continueInChat) && session.session_type === "routine" && session.status === "ended" && session.end_reason !== "skipped";
+  const [continuing, setContinuing] = useState(false);
+  const continueChat = useCallback(async () => {
+    if (!api.continueInChat) return;
+    setContinuing(true);
+    setActionError(null);
+    try {
+      const newSessionId = await api.continueInChat(sessionId);
+      onOpenSession?.(newSessionId);
+    } catch (error) {
+      setActionError(cloudStartFailure(error instanceof Error ? error.message : "", "repo").message);
+    } finally {
+      setContinuing(false);
+    }
+  }, [api, sessionId, onOpenSession]);
 
   const readOnly = session.session_type === "routine";
   const running = !readOnly && (session.status === "live" || session.status === "starting");
@@ -582,9 +617,15 @@ function SessionContents({
               {watchers && <> · <span className="ui-session__presence" aria-live="polite">{watchers}</span></>}
             </span>
             <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null, effort: session.reasoning_effort ?? null })}</span>
+            {session.runtime === "cloud" && <CloudNote session={session} />}
           </div>
         </Crumbs>
         <div className="ui-session__actions">
+          {canContinue && (
+            <button type="button" className="ui-btn ui-btn--primary" disabled={continuing} onClick={() => void continueChat()}>
+              {continuing ? "Starting…" : "Continue in chat"}
+            </button>
+          )}
           {running && (
             <button type="button" className="ui-btn" disabled={stopping} title="Stop (Esc in the message box)" onClick={() => void stop()}>
               {stopping ? "Stopping…" : "Stop"}
@@ -598,6 +639,7 @@ function SessionContents({
       {stream.updateError && <p className="ui-muted ui-session__notice" role="status">{stream.updateError} <button type="button" className="ui-link" onClick={() => void refresh()}>Retry</button></p>}
       {banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
       <SessionLinks session={session} onOpenSession={onOpenSession} />
+      <CloudStartNoticeView session={session} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scrollRef} onScroll={() => { onScroll(); if (history && scrollRef.current && scrollRef.current.scrollTop > 0 && scrollRef.current.scrollTop < 200) void older(); }}>
@@ -611,7 +653,7 @@ function SessionContents({
               liveItems={items}
               separateLive={history?.focused}
               ownerName={session.owner_name ?? undefined}
-              hostName={session.host_name}
+              hostName={hostName}
               viewerId={viewer.id}
               viewerName={viewer.name}
               viewerIsOwner={session.mine ?? false}
@@ -620,7 +662,7 @@ function SessionContents({
               onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
               onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
               onDismissPrompt={blockedByPrompt ? dismissPrompt : undefined}
-              onSkipQuestions={canAnswer && openQuestions.length > 0 ? () => void skipQuestions() : undefined}
+              onSkipQuestions={awake && openQuestions.length > 0 ? () => void skipQuestions() : undefined}
               linkFor={shareBaseUrl ? linkFor : undefined}
               highlightSeq={highlightSeq}
             />
@@ -641,14 +683,14 @@ function SessionContents({
             {session.status !== "ended" &&
               approvals.map((approval) =>
                 approval.kind === "plan" && approval.plan ? (
-                  <PlanCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <PlanCard key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ) : approval.kind === "question" && approval.questions.length > 0 ? (
-                  <QuestionCard key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} hasTerminal={hasTerminal} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
+                  <QuestionCard key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} hasTerminal={hasTerminal} sleeping={sleeping} onSkip={skipRequest} onAnswer={(requestId, answers) => api.decideApproval(sessionId, requestId, { decision: "allow", answers })} />
                 ) : (
-                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={session.host_name} agent={agentName} explainsDenial={hasTerminal} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
+                  <ApprovalPanel key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostOffline={hostOffline} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />
             </>
           )}
         </div>

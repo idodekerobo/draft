@@ -10,7 +10,7 @@ import { recordError } from "../errors/record-error";
 import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../types/tables";
 import { describeRoutineTriggers } from "draft-core/routines";
-import { ROUTINE_HOST_NAME, parseAgentRoutineConfig, routineHostId, type AgentRoutineConfig } from "./config";
+import { parseAgentRoutineConfig, routineHostId, type AgentRoutineConfig } from "./config";
 import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
@@ -103,13 +103,14 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       workspace_id: task.workspace_id,
       owner_user_id: task.created_by_user_id,
       session_type: "routine",
+      runtime: "cloud",
       harness: routine.harness,
       model: routine.model,
       reasoning_effort: routine.reasoningEffort ?? null,
       title: routine.title,
       status: "starting",
       host_id: routineHostId(sessionId),
-      host_name: ROUTINE_HOST_NAME,
+      host_name: null,
       scheduled_task_id: task.id,
       idempotency_key: idempotencyKey,
       concurrency_key: skip ? null : concurrencyKey,

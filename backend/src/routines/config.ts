@@ -4,7 +4,6 @@ import { ROUTINE_EVENT_NAMES, type RoutineEventName } from "draft-core/routines"
 
 export const ROUTINE_RUN_ID_PREFIX = "routine:";
 const ROUTINE_HOST_PREFIX = "fly:";
-export const ROUTINE_HOST_NAME = "Draft cloud";
 export const ROUTINE_RUN_TIMEOUT_SECONDS = 2 * 60 * 60;
 export const ROUTINE_STALE_AFTER_MS = (ROUTINE_RUN_TIMEOUT_SECONDS + 10 * 60) * 1_000;
 

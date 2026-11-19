@@ -1,10 +1,11 @@
--- Private. The backend hands the host signed upload URLs, so there is no
--- authenticated write path. Workspace members can read their own workspace's
--- objects.
+-- Private. The backend hands the host and routine runs signed upload URLs, so
+-- there is no authenticated write path. Workspace members can read their own
+-- workspace's objects.
 --
 -- Object key convention:
 --   <workspace_id>/<session_id>/root.jsonl.gz
 --   <workspace_id>/<session_id>/subagents/agent-<id>.jsonl.gz
+--   <workspace_id>/<session_id>/metadata.json   (routine runs only)
 insert into storage.buckets (id, name, public)
 values ('session-raw', 'session-raw', false)
 on conflict (id) do nothing;

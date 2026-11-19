@@ -49,7 +49,7 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
       env: spec.env,
       ...(volumeId === undefined ? {} : { mounts: [{ volume: volumeId, path: VOLUME_PATH }] }),
     });
-  const destroyMachine = (machineId: string): Promise<void> => ignoreNotFound(fly.forceDelete(machineId));
+  const deleteMachine = (machineId: string): Promise<void> => ignoreNotFound(fly.forceDelete(machineId));
 
   return {
     async create(spec) {
@@ -83,7 +83,7 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
         if (machine.state === "stopped" || machine.state === "suspended") await fly.start(ref.machine);
         await fly.waitForState(ref.machine, "started", { timeoutMs: BOOT_TIMEOUT_MS });
       } catch (error) {
-        return cleanUpOrThrow(error, () => destroyMachine(ref.machine));
+        return cleanUpOrThrow(error, () => deleteMachine(ref.machine));
       }
     },
 
@@ -93,11 +93,16 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
     },
 
     async destroy(ref) {
-      await destroyMachine(ref.machine);
+      if (ref.machine) await deleteMachine(ref.machine);
       if (ref.volume !== null) await ignoreNotFound(fly.deleteVolume(ref.volume.id));
     },
 
+    async destroyMachine(ref) {
+      if (ref.machine) await deleteMachine(ref.machine);
+    },
+
     async status(ref) {
+      if (!ref.machine) return "missing";
       let machine: FlyMachine;
       try {
         machine = await fly.get(ref.machine);

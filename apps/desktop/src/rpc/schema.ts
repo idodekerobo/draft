@@ -83,6 +83,16 @@ export interface AppState {
   activeProfile: string;
 }
 
+/**
+ * What a cloud session starts from: a GitHub repository, a folder snapshot already uploaded under `sessionId`, or the
+ * finished routine run (`sessionId`) that a new chat continues.
+ */
+export type CloudSessionSeed =
+  | { kind: "repo"; gitRemote: string; branch: string }
+  | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string }
+  | { kind: "routine_run"; sessionId: string }
+  | { kind: "empty" };
+
 export interface SessionLaunchConfig {
   tool: "claude-code" | "codex";
   profile: string;
@@ -282,6 +292,8 @@ export type AppRPCType = {
       runRoutine: { params: { id: string }; response: { ok: true; outcome: RoutineRunOutcome } | { ok: false; code: string; field?: string; message?: string } };
       getRoutineSlackChannels: { params: void; response: Array<{ id: string; name: string }> };
       getRoutineGithubRepos: { params: void; response: string[] };
+      /** A repository's branches through the workspace's GitHub app. Null fields when GitHub is not connected or cannot reach it. */
+      listGithubBranches: { params: { repo: string }; response: { defaultBranch: string | null; branches: string[] | null } };
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
 
       /** Disconnect an input source by revoking its cloud connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
@@ -343,8 +355,33 @@ export type AppRPCType = {
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
-      /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
-      startLiveSession: { params: { harness?: string; folderPath: string; model?: string | null; effort?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
+      /**
+       * Start a session. A computer session runs the agent in a background terminal pane in the folder. A cloud session
+       * is created on the server only, so this computer runs nothing for it. The error is the server's code for cloud.
+       */
+      startLiveSession: {
+        params:
+          | { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null }
+          | { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; seed: CloudSessionSeed };
+        response: { ok: true; sessionId: string } | { ok: false; error: string };
+      };
+
+      /** The `.env*` files in a folder, nested ones included, for the snapshot checklist. All start unticked by the caller. */
+      listSessionEnvFiles: { params: { folderPath: string }; response: { ok: true; files: string[] } | { ok: false; error: string } };
+      /** How much a folder snapshot would copy, `.env` files aside. */
+      snapshotFolderSize: { params: { folderPath: string }; response: { ok: true; bytes: number; fileCount: number } | { ok: false; error: string } };
+
+      /**
+       * Packs a folder for a cloud session's snapshot, with the ticked .env files, and uploads it. The result holds the
+       * session id, key and folder name that startLiveSession needs. A folder over the cap returns its size and a message.
+       */
+      uploadSessionSnapshot: {
+        params: { folderPath: string; includeEnvFiles: string[] };
+        response: { ok: true; sessionId: string; storageKey: string; folderName: string; bytes: number } | { ok: false; error: string; bytes?: number; detail?: string };
+      };
+
+      /** The origin remote of a folder as git reports it, or null when it is not a git repository or has none. */
+      folderGitRemote: { params: { folderPath: string }; response: { gitRemote: string | null } };
 
       /** The whole list of signal topics the window wants. Main joins what is new and leaves what is gone. */
       setSignalTopics: { params: { topics: string[] }; response: void };

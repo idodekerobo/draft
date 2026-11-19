@@ -1,11 +1,80 @@
 #!/bin/sh
-# Minimal privileged bootstrap; lifecycle logic lives in runner.ts.
+# Minimal privileged bootstrap; lifecycle logic lives in runner.ts (routine) or host.ts (cloud session).
 set -eu
 
 [ "$(id -u)" -eq 0 ] || {
   echo "[entrypoint] fatal: bootstrap must run as root" >&2
   exit 1
 }
+
+# Cloud-session host: a long-lived process that keeps HOME, the workspace and the
+# harness login on the /data volume. Unset or "routine" runs the routine path below.
+case "${DRAFT_MODE:-routine}" in
+  host)
+    : "${DRAFT_API_BASE_URL:?DRAFT_API_BASE_URL is required}"
+    : "${DRAFT_SEED:?DRAFT_SEED is required}"
+    network="${DRAFT_NETWORK:-restricted}"
+    case "$network" in
+      restricted | open) ;;
+      *)
+        echo "[entrypoint] fatal: DRAFT_NETWORK must be restricted or open" >&2
+        exit 1
+        ;;
+    esac
+
+    agent_uid="$(id -u agent)"
+    agent_gid="$(id -g agent)"
+    mkdir -p /data/.draft/bin
+    chown "$agent_uid:$agent_gid" /data /data/.draft /data/.draft/bin
+    # The core driver starts tmux from $HOME/.draft/bin/tmux, so point that path at the system binary.
+    ln -sfn /usr/bin/tmux /data/.draft/bin/tmux
+
+    api_host="$({ node -e '
+      const url = new URL(process.env.DRAFT_API_BASE_URL);
+      if (url.protocol !== "https:" || (url.port && url.port !== "443")) throw new Error("api");
+      if (url.username || url.password) throw new Error("api");
+      process.stdout.write(url.hostname);
+    '; } 2>/dev/null)" || {
+      echo "[entrypoint] fatal: DRAFT_API_BASE_URL must be an https URL on port 443" >&2
+      exit 1
+    }
+    # Node errors are dropped: they can echo DRAFT_SEED, which may hold a credential.
+    seed_host="$({ node -e '
+      const seed = JSON.parse(process.env.DRAFT_SEED);
+      if (seed.kind === "snapshot") process.stdout.write(new URL(seed.url).hostname);
+      else if (seed.kind === "routine_run") process.stdout.write("");
+      else if (seed.kind === "repo") {
+        try {
+          process.stdout.write(new URL(seed.gitRemote).hostname);
+        } catch {
+          process.stdout.write(/^[^@\s]+@([^:\s]+):/.exec(seed.gitRemote)[1]);
+        }
+      } else throw new Error("seed");
+    '; } 2>/dev/null)" || {
+      echo "[entrypoint] fatal: DRAFT_SEED must name a host" >&2
+      exit 1
+    }
+
+    # The harness is chosen per session after boot, so both model providers are allowed.
+    export DRAFT_EGRESS_REQUIRED_HOST="api.anthropic.com"
+    if [ "$network" = "restricted" ]; then
+      export DRAFT_EGRESS_HOSTS="api.anthropic.com chatgpt.com auth.openai.com api.openai.com ${api_host} ${seed_host} ${DRAFT_EGRESS_HOSTS:-}"
+      # configure-egress.sh requires the host the session reports to. For a cloud session that is the API.
+      export DRAFT_CALLBACK_HOST="$api_host"
+      /usr/local/sbin/configure-egress.sh
+    else
+      /usr/local/sbin/configure-open-egress.sh
+    fi
+
+    # The image pins Claude Code, so its self-updater stays off.
+    exec gosu agent env HOME=/data DISABLE_AUTOUPDATER=1 /usr/local/bin/bun /opt/draft/host.mjs
+    ;;
+  routine) ;;
+  *)
+    echo "[entrypoint] fatal: DRAFT_MODE must be host or routine" >&2
+    exit 1
+    ;;
+esac
 
 : "${DRAFT_CALLBACK_URL:?DRAFT_CALLBACK_URL is required}"
 

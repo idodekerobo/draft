@@ -89,6 +89,24 @@ describe("commands the runner builds", () => {
     ]);
   });
 
+  it("a Claude routine that keeps its session file: persistence is not switched off", () => {
+    const upload = { fileUrl: "https://storage.example.test/root.jsonl.gz", metadataUrl: "https://storage.example.test/metadata.json" };
+    expect(claudeArgs(manifestOf({ sessionUpload: upload }), "PROMPT", null)).toEqual([
+      "-p", "PROMPT",
+      "--tools", "Read,Glob",
+      "--permission-mode", "dontAsk",
+      "--output-format", "stream-json",
+      "--verbose",
+    ]);
+  });
+
+  it("a Codex routine that keeps its session file: --ephemeral is left out", () => {
+    const upload = { fileUrl: "https://storage.example.test/root.jsonl.gz", metadataUrl: "https://storage.example.test/metadata.json" };
+    expect(codexArgs(manifestOf({ harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, sessionUpload: upload }))).toEqual([
+      "exec", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "-",
+    ]);
+  });
+
   it("the Codex config: web search first, then Draft's server", () => {
     expect(codexConfigToml({ mcpUrl: MCP_URL, webSearch: true })).toBe(
       [
@@ -269,5 +287,23 @@ describe("environments the launcher gives the machine", () => {
         manifestOf({ harness: "codex", network: "open", tools: { native: ["shell", "web_search"], draftMcpUrl: MCP_URL } }),
       ),
     );
+  });
+
+  it("Claude routine that keeps its session file: the manifest carries the signed upload links", async () => {
+    const sessionUpload = { fileUrl: "https://project.supabase.co/storage/v1/upload/session-raw/ws/s/root.jsonl.gz?token=file", metadataUrl: "https://project.supabase.co/storage/v1/upload/session-raw/ws/s/metadata.json?token=meta" };
+    const result = await launched({
+      spec: routineSpec({ harness: "claude", model: "haiku", toolset: { nativeTools: ["WebSearch"], mcpServers: [] } }),
+      prompt: { kind: "text", text: "PROMPT" },
+      timeoutSeconds: 900,
+      credentials: { claudeCodeOAuthToken: "login" },
+      sessionUpload,
+    });
+    expect(result.env).toEqual(
+      withManifest(
+        { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_TOKEN: "<token>" },
+        manifestOf({ model: "haiku", network: "open", tools: { native: ["Read", "Glob", "Grep", "Bash", "WebSearch"], draftMcpUrl: MCP_URL }, sessionUpload }),
+      ),
+    );
+    expect(result.uploaded).toEqual(["input/context/a.md", "input/prompt.md"]);
   });
 });
