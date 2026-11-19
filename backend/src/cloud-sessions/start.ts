@@ -70,6 +70,16 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
     routineSource = loaded.source;
   }
 
+  // Checked before any row exists, so a workspace without a Claude login gets no empty, ended session.
+  let claudeToken: string;
+  try {
+    ({ secret: claudeToken } = await resolveCredential(client, workspaceId, claudeCredentialRules));
+  } catch (cause) {
+    if (cause instanceof CredentialError) return { ok: false, status: 409, error: "claude_not_connected" };
+    await recordError({ client, workspaceId, operation: "session", code: "claude_credential_failed", message: "Reading the workspace's Claude Code login failed", error: cause });
+    return { ok: false, status: 502, error: START_FAILED };
+  }
+
   const { error: insertError } = await client
     .from("sessions")
     .insert({
@@ -145,16 +155,6 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
     runCreated = true;
   } catch (cause) {
     return abandon({ status: 502, response: START_FAILED, code: "run_create_failed", operation: "session", message: "Creating the run of a cloud session failed", cause });
-  }
-
-  let claudeToken: string;
-  try {
-    ({ secret: claudeToken } = await resolveCredential(client, workspaceId, claudeCredentialRules));
-  } catch (cause) {
-    if (cause instanceof CredentialError) {
-      return abandon({ status: 409, response: "claude_not_connected", code: "claude_not_connected", operation: "session", message: "The workspace has no usable Claude Code login", cause, refusal: true });
-    }
-    return abandon({ status: 502, response: START_FAILED, code: "claude_credential_failed", operation: "session", message: "Reading the workspace's Claude Code login failed", cause });
   }
 
   let hostSeed: SeedSpec;

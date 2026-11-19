@@ -10,6 +10,7 @@ import { discardSnapshot, snapshotKeyOf, storageSnapshotStore } from "../cloud-s
 import { wakeCloudSession } from "../cloud-sessions/wake";
 import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
+import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import { eventsForHarness } from "../ingestion/harness-lines";
 import { latestNativeTitle } from "draft-core/harnesses/claude/native-title";
@@ -158,14 +159,17 @@ export async function loadSessionLinks(workspaceId: string, session: SessionRow)
   return { previous_session: previousResult?.data ?? null, next_session: nextResult?.data ?? null };
 }
 
-export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
+// A cloud host reads its own session at startup. Its run token binds it to this session,
+// so it skips the membership check and reads as the owner.
+export const EVENTS = withHostAuth<EventsRequest>(async (req, caller) => {
+  const viewerId = caller.kind === "user" ? caller.userId : caller.ownerUserId;
   const { id: workspaceId, sessionId } = req.params;
   const params = new URL(req.url).searchParams;
   const after = Math.max(0, Number(params.get("after")) || 0);
   const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || EVENTS_PAGE_SIZE));
 
   const [denied, { data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
-    authorize(workspaceId, caller.userId),
+    caller.kind === "user" ? authorize(workspaceId, caller.userId) : null,
     serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<SessionRow>(),
     serviceClient
       .from("session_events")
@@ -175,7 +179,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
       .gt("seq", after)
       .order("seq", { ascending: true })
       .limit(limit),
-    loadViewerInputs(workspaceId, sessionId, caller.userId),
+    loadViewerInputs(workspaceId, sessionId, viewerId),
   ]);
   if (denied) return denied;
   if (sessionError) return errorResponse("session_lookup_failed", 500, sessionError, workspaceId, sessionId);
@@ -195,7 +199,7 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
 
   const authorIds = [
     ...new Set([
-      caller.userId,
+      viewerId,
       session.owner_user_id,
       ...authors.bySeq.values(),
       ...recent.rows.map((r) => r.author_user_id),
@@ -213,8 +217,8 @@ export const EVENTS = withAuth<EventsRequest>(async (req, caller) => {
   const inputs = viewerInputs.inputs.map((i) => ({ ...i, author_name: names.users.get(i.author_user_id) ?? i.author_name }));
   const authorList = recent.rows.map((r) => ({ seq: r.consumed_seq, author_user_id: r.author_user_id, author_name: names.users.get(r.author_user_id) ?? null }));
   return Response.json({
-    session: { ...session, owner_name: names.users.get(session.owner_user_id) ?? null, mine: session.owner_user_id === caller.userId, ...links },
-    viewer: { id: caller.userId, name: names.users.get(caller.userId) ?? "A teammate" },
+    session: { ...session, owner_name: names.users.get(session.owner_user_id) ?? null, mine: session.owner_user_id === viewerId, ...links },
+    viewer: { id: viewerId, name: names.users.get(viewerId) ?? "A teammate" },
     events: withAuthors,
     inputs,
     authors: authorList,
@@ -395,9 +399,26 @@ export const END = withHostAuth<EndRequest>(async (req, caller) => {
     .neq("status", "ended");
   if (error) return errorResponse("session_end_failed", 500, error, workspaceId, sessionId);
   await failQueuedInputs(sessionId, reason === "cleared" ? "session_cleared" : "session_ended");
+  if (caller.kind === "cloud_host") {
+    const closed = await closeCloudRun(caller.runId, reason);
+    if (!closed.ok) return errorResponse("run_close_failed", 500, closed.error, workspaceId, sessionId);
+  }
 
   return Response.json({ ok: true });
 });
+
+const FAILED_END_REASONS = new Set(["host_failed", "launch_failed", "seed_failed", "resume_failed"]);
+
+/** Closes the run of a cloud host that ended its session, so no run stays active after its machine exits. */
+async function closeCloudRun(runId: string, reason: string): Promise<{ ok: true } | { ok: false; error: unknown }> {
+  const failed = FAILED_END_REASONS.has(reason);
+  const { error } = await serviceClient
+    .from("agent_runs")
+    .update({ status: failed ? "failed" : "succeeded", completed_at: new Date().toISOString(), ...(failed ? { failure_code: reason, failure_detail: "The cloud host ended its session" } : {}) })
+    .eq("id", runId)
+    .in("status", ACTIVE_AGENT_RUN_STATUSES as unknown as string[]);
+  return error ? { ok: false, error } : { ok: true };
+}
 
 /**
  * The cloud host says its session is idle and it is stopping. A waiting input refuses the sleep (409 inputs_pending),

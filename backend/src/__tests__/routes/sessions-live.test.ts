@@ -734,6 +734,24 @@ describe("cloud host requests", () => {
     expect(updates.find((u) => u.table === "sessions")?.payload).toMatchObject({ status: "ended", end_reason: "user_exit" });
   });
 
+  it("closes its run as succeeded on a normal end, and as failed when the host failed", async () => {
+    expect((await routes.END(cloudPost({ reason: "user_exit" }))).status).toBe(200);
+    expect(updates.find((u) => u.table === "agent_runs")?.payload).toMatchObject({ status: "succeeded" });
+
+    updates = [];
+    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST })];
+    expect((await routes.END(cloudPost({ reason: "host_failed" }))).status).toBe(200);
+    expect(updates.find((u) => u.table === "agent_runs")?.payload).toMatchObject({ status: "failed", failure_code: "host_failed" });
+  });
+
+  it("reads its own session with its run token, as the owner and without a membership check", async () => {
+    accessResult = Response.json({ error: "forbidden" }, { status: 403 });
+    const read = Object.assign(new Request("http://localhost/x?after=0&limit=1", { headers: (cloudPost({}) as unknown as Request).headers }), { params: { id: CLOUD_WS, sessionId: SESSION } }) as never;
+    const response = await routes.EVENTS(read);
+    expect(response.status).toBe(200);
+    expect((await response.json()).session).toMatchObject({ id: SESSION, mine: true });
+  });
+
   it("uploads raw files under its own session folder", async () => {
     expect((await routes.RAW_UPLOAD_URLS(cloudPost({ files: ["root.jsonl"] }))).status).toBe(200);
     expect(signedPaths).toEqual([`${CLOUD_WS}/${SESSION}/root.jsonl.gz`]);

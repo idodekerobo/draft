@@ -234,7 +234,7 @@ describe("startCloudSession", () => {
     expect(JSON.stringify(db.tables.errors)).not.toContain(CLAUDE_TOKEN);
   });
 
-  it("refuses with 409 when the workspace has no Claude login, ends the session and fails the run", async () => {
+  it("refuses with 409 when the workspace has no Claude login, and creates no session or run", async () => {
     const fly = fakeProvider();
     const outcome = await startCloudSession(
       input,
@@ -243,8 +243,8 @@ describe("startCloudSession", () => {
 
     expect(outcome).toEqual({ ok: false, status: 409, error: "claude_not_connected" });
     expect(fly.calls).toEqual([]);
-    expect(session()).toMatchObject({ status: "ended", end_reason: "start_failed" });
-    expect(run()).toMatchObject({ status: "failed", failure_code: "claude_not_connected" });
+    expect(db.tables.sessions ?? []).toEqual([]);
+    expect(db.tables.agent_runs ?? []).toEqual([]);
     expect(db.tables.errors).toEqual([]);
   });
 
@@ -253,8 +253,7 @@ describe("startCloudSession", () => {
 
     expect(outcome).toEqual({ ok: false, status: 502, error: "start_failed" });
     expect(errorCodes()).toEqual(["claude_credential_failed"]);
-    expect(session()).toMatchObject({ status: "ended", end_reason: "start_failed" });
-    expect(run()).toMatchObject({ status: "failed", failure_code: "claude_credential_failed" });
+    expect(db.tables.sessions ?? []).toEqual([]);
   });
 
   it("does not destroy anything when the sandbox cannot be created, but records it and ends the session", async () => {
