@@ -1,6 +1,6 @@
 # Architecture
 
-Draft is a hosted or self-hosted company-brain system. The workspace and synthesis pipeline live behind an authenticated API. Desktop, CLI, and agent integrations are local clients of that API.
+Draft is a hosted or self-hosted company-brain system. The workspace and synthesis pipeline live behind an authenticated API. Desktop, CLI, and agent connections are local clients of that API.
 
 ## System shape
 
@@ -32,13 +32,13 @@ Draft is a hosted or self-hosted company-brain system. The workspace and synthes
 
 ### Desktop
 
-The Electrobun desktop app is the main interactive workspace client. It signs users in through the web app, calls the backend with the current access token, displays cloud context and synthesis activity, manages integrations, and creates invite links.
+The Electrobun desktop app is the main interactive workspace client. It signs users in through the web app, calls the backend with the current access token, displays cloud context and synthesis activity, manages connections, and creates invite links.
 
 The desktop can also read a local folder during onboarding to seed a workspace. That folder is source material for a synthesis run; it is not the long-term source of truth.
 
 ### CLI
 
-The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context and skill reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's hosted integrations (GitHub, Slack, Linear, Fireflies, Granola, Claude Code). The desktop app and CLI both manage these connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
+The Bun CLI is a thin authenticated client for the Draft API. It supports auth, context and skill reads, coding-session capture setup, session listing/search/reading, and connecting/disconnecting the workspace's hosted connections (GitHub, Slack, Linear, Fireflies, Granola, Claude Code). The desktop app and CLI both manage these connections. It defaults to the hosted API and can be configured for another deployment through DRAFT_API_BASE_URL, DRAFT_APP_URL, DRAFT_SUPABASE_URL, and DRAFT_SUPABASE_PUBLISHABLE_KEY.
 
 ### Agent connection
 
@@ -90,4 +90,4 @@ The repository does not currently provide a one-command production deployment. O
 
 ## GitHub
 
-GitHub is a source integration. The backend can receive GitHub App events, the desktop can use GitHub source import during onboarding, and `draft integrations connect github` in the CLI drives the same App-installation flow — see [CLI reference](./cli.md#hosted-integrations). Collaboration uses hosted workspace context and the backend API.
+GitHub is a source integration. The backend can receive GitHub App events, the desktop can use GitHub source import during onboarding, and `draft connections connect github` in the CLI drives the same App-installation flow — see [CLI reference](./cli.md#hosted-connections). Collaboration uses hosted workspace context and the backend API.
