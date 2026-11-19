@@ -187,7 +187,7 @@ describe("isMine", () => {
   });
 
   it("uses the input's own flag for a message still waiting", () => {
-    const pending = (mine: boolean) => ({ type: "pending" as const, key: "k", author: "x", ownerName: "o", hostOffline: false, input: { mine } as never });
+    const pending = (mine: boolean) => ({ type: "pending" as const, key: "k", author: "x", ownerName: "o", hostOffline: false as const, input: { mine } as never });
     expect(isMine(pending(true), viewer)).toBe(true);
     expect(isMine(pending(false), viewer)).toBe(false);
   });

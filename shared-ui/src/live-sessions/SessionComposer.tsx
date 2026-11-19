@@ -3,7 +3,7 @@
 import { MAX_INPUT_CHARS, type LiveSessionErrorCode } from "draft-core/live-sessions";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { clearDraft, hasDraft, useDraft } from "./drafts";
-import { inputStatusLine } from "./input-status";
+import { inputStatusLine, type HostOffline } from "./input-status";
 import { submitOnEnter, useAutoGrow } from "./message-box";
 import type { SessionInputsState } from "./useSessionInputs";
 import { useTypeToFocus } from "./useTypeToFocus";
@@ -65,7 +65,7 @@ export function SessionComposer({
   agentControl,
   onCycleMode,
   sleeping = false,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: HostOffline; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());

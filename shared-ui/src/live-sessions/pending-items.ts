@@ -1,3 +1,4 @@
+import type { HostOffline } from "./input-status";
 import { splitAuthor } from "draft-core/live-sessions";
 import type { StreamItem } from "./stream-items";
 import type { ComposerInput, LiveSessionEvent } from "./types";
@@ -11,7 +12,7 @@ const CLOCK_SLACK_MS = 60_000;
 export function pendingItems(
   inputs: ComposerInput[],
   events: LiveSessionEvent[],
-  context: { viewerName: string; ownerName: string; hostOffline: boolean },
+  context: { viewerName: string; ownerName: string; hostOffline: HostOffline },
 ): PendingItem[] {
   const turns = events
     .filter((event) => event.kind === "user_message" && !event.payload.agent_id && typeof event.payload.text === "string")

@@ -18,8 +18,8 @@ describe("sessionBanner", () => {
     expect(sessionBanner({ ...base, status: "host_offline", owner_name: null })).toContain("The owner's computer");
   });
 
-  it("does not blame a laptop for a cloud session that stops responding", () => {
-    expect(sessionBanner({ ...base, status: "host_offline", runtime: "cloud" })).toBe("This session is not responding. Messages wait until it is back.");
+  it("shows no banner for a cloud session, since Draft restarts it", () => {
+    expect(sessionBanner({ ...base, status: "host_offline", runtime: "cloud" })).toBeNull();
   });
 
   it("warns about an untested Claude version, but not for an ended session", () => {

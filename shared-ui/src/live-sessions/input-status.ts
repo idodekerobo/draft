@@ -17,17 +17,21 @@ const FAILED: Partial<Record<InputFailReason, string>> = {
   pane_unavailable: "the session was not reachable",
 };
 
+/** Where an offline host runs, or false when it is online. Only a computer's owner can bring the host back. */
+export type HostOffline = false | "local" | "cloud";
+
 /** True when a queued message waits for a reason a person can act on, not just for the host to pick it up. */
-export function isBlocked(input: ComposerInput, hostOffline = false): boolean {
+export function isBlocked(input: ComposerInput, hostOffline: HostOffline = false): boolean {
   if (input.state !== "queued") return false;
-  return hostOffline || input.reason === "composer_busy" || BLOCKED[input.reason as InputBlockReason] !== undefined;
+  return hostOffline !== false || input.reason === "composer_busy" || BLOCKED[input.reason as InputBlockReason] !== undefined;
 }
 
 /** Text to show the sender of an unfinished message. */
-export function inputStatusLine(input: ComposerInput, ownerName: string, now = Date.now(), hostOffline = false, harness = "claude"): string {
+export function inputStatusLine(input: ComposerInput, ownerName: string, now = Date.now(), hostOffline: HostOffline = false, harness = "claude"): string {
   switch (input.state) {
     case "queued": {
-      if (hostOffline) return `Queued, ${ownerName}'s laptop is offline`;
+      if (hostOffline === "cloud") return "Queued, restarting Draft cloud";
+      if (hostOffline) return `Queued, ${ownerName}'s computer is offline`;
       if (input.reason === "composer_busy") return harness === "claude" ? `Queued, ${ownerName} is typing in the terminal` : `Queued, ${shortName(harness)} is working`;
       const blocked = BLOCKED[input.reason as InputBlockReason];
       if (blocked) return `Queued, ${shortName(harness)} ${blocked}`;

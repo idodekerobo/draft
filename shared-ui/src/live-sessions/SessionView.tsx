@@ -6,7 +6,7 @@ import { ApprovalPanel } from "./ApprovalPanel";
 import { QuestionCard } from "./QuestionCard";
 import { PlanCard } from "./PlanCard";
 import { ModeMenu, nextMode, useSwitching } from "./ModeMenu";
-import { shortName } from "./input-status";
+import { shortName, type HostOffline } from "./input-status";
 import type { SessionEntry, TrackFn } from "../analytics/events";
 import { DataBoundary } from "../query";
 import { ColumnToggleButton } from "./SessionsLayout";
@@ -290,7 +290,7 @@ function SessionContents({
   const agentName = shortName(harnessId);
   // Only Claude runs in a pane the owner can open, and only its hook reads a reason for a denial.
   const hasTerminal = harnessId === "claude";
-  const hostOffline = session.status === "host_offline";
+  const hostOffline: HostOffline = session.status === "host_offline" && (session.runtime === "cloud" ? "cloud" : "local");
   // A sleeping session has no run to take a decision, a mode or a model, so those controls wait for the next message.
   const sleeping = session.status === "sleeping";
   const viewerName = viewer.name;

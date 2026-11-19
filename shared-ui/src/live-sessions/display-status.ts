@@ -22,7 +22,7 @@ const STATUSES: Record<DisplayStatusKey, DisplayStatus> = {
 
 /**
  * The one status a person sees. Host offline and sleeping win over Waiting for approval, which wins over the stored
- * state, because neither an offline laptop nor a sleeping session can answer. Idle is not stored: a live session with no event for an hour.
+ * state, because neither an offline host nor a sleeping session can answer. Idle is not stored: a live session with no event for an hour.
  * A cloud session that starts with events already counted has woken from sleep: the server only sets `starting` again on a wake.
  */
 export function displayStatus(

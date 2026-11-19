@@ -1,10 +1,9 @@
 import { harnessLabel, isTestedVersion, testedVersionLabel } from "draft-core/harnesses";
 import type { LiveSession } from "./types";
 
-/** The one line shown under the header, or null. Host offline comes before the version warning. */
+/** The one line shown under the header, or null. A computer that is offline comes before the version warning. */
 export function sessionBanner(session: Pick<LiveSession, "status" | "owner_name" | "harness" | "harness_version" | "runtime">, devOnly = false): string | null {
-  if (session.status === "host_offline") {
-    if (session.runtime === "cloud") return "This session is not responding. Messages wait until it is back.";
+  if (session.status === "host_offline" && session.runtime !== "cloud") {
     return `${session.owner_name ?? "The owner"}'s computer is offline. Messages wait until it is back.`;
   }
   const harness = session.harness ?? "claude";

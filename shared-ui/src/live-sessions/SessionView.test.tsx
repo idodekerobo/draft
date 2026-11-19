@@ -552,8 +552,8 @@ describe("SessionView", () => {
     const offline: LiveSession = { ...session, status: "host_offline" };
     const queued = { id: "i1", author_user_id: "u2", author_name: "Dev", text: "hi", state: "queued" as const, reason: null, created_at: new Date().toISOString(), updated_at: "", mine: false };
     render(<SessionView api={{ ...api, fetchEvents: async () => ({ viewer, session: offline, events: [], inputs: [queued] }) }} sessionId="s1" />);
-    expect((await screen.findByText(/computer is offline/)).textContent).toBe("Maya's computer is offline. Messages wait until it is back.");
-    expect(screen.getByText("Queued, Maya's laptop is offline")).toBeTruthy();
+    expect(await screen.findByText("Maya's computer is offline. Messages wait until it is back.")).toBeTruthy();
+    expect(screen.getByText("Queued, Maya's computer is offline")).toBeTruthy();
     expect(screen.getByText(/· Host offline/)).toBeTruthy();
   });
 
