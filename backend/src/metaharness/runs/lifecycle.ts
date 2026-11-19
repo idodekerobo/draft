@@ -1,3 +1,4 @@
+import { captureProductEvent } from "../../observability/product-analytics";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 
@@ -35,12 +36,36 @@ function outcomeColumns(outcome: AgentRunOutcome) {
 
 /** Ends a run that has not ended yet. A second call changes nothing. */
 export async function finishAgentRun(client: SupabaseClient, runId: string, outcome: AgentRunOutcome): Promise<void> {
-  const { error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("id", runId).in("status", ACTIVE_AGENT_RUN_STATUSES);
-  if (error) logLifecycleFailure("finish_failed", error);
+  try {
+    const { data, error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("id", runId).in("status", ACTIVE_AGENT_RUN_STATUSES).select("id, workspace_id, kind, session_id, scheduled_task_id, on_behalf_of_user_id, harness, runtime, trigger, completed_at");
+    if (error) logLifecycleFailure("finish_failed", error);
+    else await captureCompletedRuns(client, data ?? [], outcome);
+  } catch (error) { logLifecycleFailure("finish_failed", error); }
 }
 
 /** Ends the active run that streams to this session, if there is one. */
 export async function finishAgentRunForSession(client: SupabaseClient, sessionId: string, outcome: AgentRunOutcome): Promise<void> {
-  const { error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("session_id", sessionId).in("status", ACTIVE_AGENT_RUN_STATUSES);
-  if (error) logLifecycleFailure("finish_for_session_failed", error);
+  try {
+    const { data, error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("session_id", sessionId).in("status", ACTIVE_AGENT_RUN_STATUSES).select("id, workspace_id, kind, session_id, scheduled_task_id, on_behalf_of_user_id, harness, runtime, trigger, completed_at");
+    if (error) logLifecycleFailure("finish_for_session_failed", error);
+    else await captureCompletedRuns(client, data ?? [], outcome);
+  } catch (error) { logLifecycleFailure("finish_for_session_failed", error); }
+}
+
+interface FinishedRun {
+  id: string; workspace_id: string; kind: string; session_id: string | null; scheduled_task_id: string | null;
+  on_behalf_of_user_id: string | null; harness: string; runtime: { type?: string }; trigger: { type?: string }; completed_at: string;
+}
+async function captureCompletedRuns(client: SupabaseClient, runs: FinishedRun[], outcome: AgentRunOutcome): Promise<void> {
+  for (const run of runs) {
+    if (run.kind !== "routine") continue;
+    const reason = run.trigger?.type;
+    await captureProductEvent(client, "routine_run_completed", {
+      userId: run.on_behalf_of_user_id, workspaceId: run.workspace_id, key: run.id, timestamp: run.completed_at,
+      properties: { run_id: run.id, routine_id: run.scheduled_task_id, live_session_id: run.session_id,
+        run_kind: run.kind, harness: run.harness, runtime: run.runtime?.type,
+        start_reason: reason === "cron" ? "schedule" : reason === "event" || reason === "webhook" ? "event" : reason,
+        status: outcome.status, error_code: outcome.failureCode },
+    });
+  }
 }

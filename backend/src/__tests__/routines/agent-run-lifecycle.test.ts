@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import * as analytics from "../../observability/product-analytics";
+import { describe, expect, it, spyOn } from "bun:test";
 import { finishAgentRun, markAgentRunRunning } from "../../metaharness/runs/lifecycle";
 import { endRoutineSession, failRoutineSession } from "../../routines/fail-routine-session";
 import { fakeClient, fakeDb } from "./fake-client";
@@ -39,6 +40,18 @@ describe("a routine's agent run follows its session", () => {
     await endRoutineSession(client, session, "completed");
     await failRoutineSession(client, session, { code: "late", note: "n", message: "m" });
     expect(run()).toMatchObject({ status: "succeeded", failure_code: null });
+  });
+
+  it("emits a routine completion only for the winning terminal transition", async () => {
+    const { client, run } = setup();
+    Object.assign(run(), { kind: "routine", on_behalf_of_user_id: "u1", scheduled_task_id: "t1", harness: "claude", runtime: { type: "cloud" }, trigger: { type: "event" } });
+    const capture = spyOn(analytics, "captureProductEvent").mockResolvedValue(undefined);
+    try {
+      await finishAgentRun(client, "r1", { status: "succeeded" });
+      await finishAgentRun(client, "r1", { status: "failed" });
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(capture.mock.calls[0]![2]).toMatchObject({ key: "r1", properties: { start_reason: "event", status: "succeeded", runtime: "cloud" } });
+    } finally { capture.mockRestore(); }
   });
 
   it("does not touch a run that already finished", async () => {

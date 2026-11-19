@@ -296,7 +296,7 @@ export function createRoutineTools(client: SupabaseClient) {
             if (refusal) return refusal;
           }
         }
-        const updated = await svc.updateRoutine(task, patch.patch, owner, now);
+        const updated = await svc.updateRoutine(task, patch.patch, owner, now, { via: actor.type === "run" ? "run" : actor.via });
         return { status: "ok", output: { routine: (await savedRoutine(actor.workspaceId, owner, input.taskId)) ?? updated } };
       } catch (error) { return runError(error, actor.workspaceId, "routines.update", scope.scheduledTaskId, agentRunOf(actor)); }
     },
@@ -316,7 +316,7 @@ export function createRoutineTools(client: SupabaseClient) {
         if (!task || task.task.task_type !== "agent_routine") return refuse("not_found", "Routine not found.");
         scope.scheduledTaskId = task.task.id;
         if (actor.type === "run" && !(await runMayManage(client, actor.run, task.task))) return refuse("not_permitted", RUN_CHANGE_SCOPE);
-        await svc.deleteRoutine(task, owner);
+        await svc.deleteRoutine(task, owner, new Date(), { via: actor.type === "run" ? "run" : actor.via });
         return { status: "ok", output: { deleted: true } };
       } catch (error) { return runError(error, actor.workspaceId, "routines.delete", scope.scheduledTaskId, agentRunOf(actor)); }
     },
@@ -341,7 +341,7 @@ export function createRoutineTools(client: SupabaseClient) {
             return refuse("limit_reached", `This run has already started ${max} routines, the most one run can.`);
           }
         }
-        const outcome = await svc.runRoutineNow(actor.workspaceId, input.taskId, owner);
+        const outcome = await svc.runRoutineNow(actor.workspaceId, input.taskId, owner, { attribution: { via: actor.type === "run" ? "run" : actor.via } });
         if (outcome.status === "queued") return { status: "ok", output: { sessionId: null, queued: true, message: "Queued. It runs when the current run ends." } };
         if (outcome.status === "failed" && outcome.code === "routine_lease_busy") return refuse("codex_login_busy", "Another Codex run is using the login. Try again when it finishes.");
         if (outcome.status === "failed") return refuse(outcome.code, "The routine could not start.");
