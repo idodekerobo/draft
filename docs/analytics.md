@@ -60,3 +60,17 @@ The marketing site (`apps/landing-page`) records page views and, when enabled, s
 
 - Turn off **Share usage data** in Settings in either app. This stops future events.
 - To delete events already sent, contact the Draft team through **Questions & Feedback** in the desktop app with the email on your Draft account. A self-serve delete action is planned.
+
+## Agent calls and routines
+
+Draft keeps operational call and execution records in its database separately from optional PostHog analytics. External CLI/MCP tool invocations reaching the gateway are recorded with surface, outcome, elapsed time and response size. Direct app calls are excluded. Calls made inside a Draft-managed run remain linked to that run. Older query records and legacy routes can have unknown outcomes.
+
+Web and desktop send `routine_setup_started` when the creation form opens, and `routine_result_viewed` with `live_session_id` when an ended routine session is viewed, including one that finishes while open. These events use the existing Share usage data setting.
+
+The backend sends `routine_created`, `routine_updated`, `routine_deleted`, `routine_run_requested` and `routine_run_completed`. These carry coded metadata and applicable workspace/routine/run/session IDs, call surface, harness, runtime, start reason and outcome. They contain no prompts, routine titles, message content, credentials or document bodies. Occurrence identifiers let analysis deduplicate lifecycle events.
+
+Backend events require an attributed user whose Share usage data setting is currently enabled. Shared work with no attributed user remains in the operational database and is not assigned to a random PostHog identity. Missing configuration and analytics failures do not fail customer work; event delivery is best effort and is not a billing ledger.
+
+Hosted backend configuration accepts `POSTHOG_KEY` and `POSTHOG_HOST` (or the existing `NEXT_PUBLIC_POSTHOG_KEY` and `NEXT_PUBLIC_POSTHOG_HOST`). Use the same project as the apps to join user UUIDs and workspace IDs. No key disables backend capture. Self-hosters can leave it unset.
+
+Routine creation records one `created_via` value: `web_app`, `desktop_app`, `cli`, `mcp`, `run` or `system`. Historical `app` records retain their unknown app surface. CLI/MCP usage alone does not distinguish a human from an external agent. PostHog’s existing `platform` property remains a separate marketing/app SDK property.
