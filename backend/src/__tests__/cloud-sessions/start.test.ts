@@ -124,6 +124,7 @@ describe("startCloudSession", () => {
       harness: "claude",
       model: "haiku",
       git_remote: "https://github.com/acme/app.git",
+      folder_name: "app",
       seed: { kind: "repo", branch: "main" },
       sandbox_volume: REF.volume,
     });

@@ -12,6 +12,8 @@ import { appVersionQueryOptions } from "../../queries";
 import { rpc } from "../../rpc";
 
 const loadAgentDefaults = (harness: string) => rpc.request.getAgentDefaults({ harness });
+// Module-level so the start screen's effect does not run again on every render.
+const cloudStart = { folderRemote: (folderPath: string) => rpc.request.folderGitRemote({ folderPath }).then(({ gitRemote }) => gitRemote) };
 const REVEAL_LABEL = /Windows/i.test(navigator.userAgent) ? "Open in Explorer" : "Reveal in Finder";
 
 /** The webview has no process.env, so a dev build is read from the app channel. */
@@ -120,11 +122,14 @@ export function SessionsView() {
     return (await rpc.request.selectSetupFolder()).folderPath;
   }
 
-  async function start({ harness, folderPath, text, model, effort }: StartRequest): Promise<StartResult> {
-    const result = await rpc.request.startLiveSession({ harness, folderPath, model, effort });
+  async function start(request: StartRequest): Promise<StartResult> {
+    const { harness, text, model, effort } = request;
+    const result = request.runtime === "cloud"
+      ? await rpc.request.startLiveSession({ runtime: "cloud", model, effort, network: request.network, gitRemote: request.gitRemote, branch: request.branch })
+      : await rpc.request.startLiveSession({ harness, folderPath: request.folderPath, model, effort });
     if (!result.ok) return result;
-    track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default", effort: effort ?? "default" });
-    setRecentFolders(rememberFolder(window.localStorage, folderPath));
+    track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default", effort: effort ?? "default", runtime: request.runtime ?? "local" });
+    if (request.runtime !== "cloud") setRecentFolders(rememberFolder(window.localStorage, request.folderPath));
     // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
     await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));
     await refetch();
@@ -146,7 +151,7 @@ export function SessionsView() {
       onDeleted={onDeleted}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} menuItems={menuItems} notice={notice} onDeleted={() => onDeleted(selectedId)} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} menuItems={menuItems} notice={notice} onDeleted={() => onDeleted(selectedId)} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} cloud={cloudStart} />}
     </SessionsLayout>
   );
 }

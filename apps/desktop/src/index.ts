@@ -50,6 +50,7 @@ import {
   sendLiveSessionMessage,
   setLiveSessionMode,
   stopLiveSession,
+  startLiveSessionRequest,
 } from "./main/live-session-api";
 import {
   endLiveSession,
@@ -61,6 +62,7 @@ import {
   resumeLiveSessions,
   startLiveSession,
 } from "draft-core/host/live-session";
+import { gitRemote } from "draft-core/host/git-remote";
 import { readAgentDefaults } from "draft-core/host/agent-defaults";
 import { connectPresence } from "./main/presence/connect-presence";
 import { PresenceHub } from "./main/presence/presence-hub";
@@ -825,7 +827,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startLiveSession: ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort }),
+      startLiveSession: (params) => startLiveSessionRequest(params, ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort })),
+
+      folderGitRemote: async ({ folderPath }) => ({ gitRemote: await gitRemote(folderPath) }),
 
       setSignalTopics: ({ topics }) => realtime.setWindowTopics(topics),
 

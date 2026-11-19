@@ -57,6 +57,7 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
       host_id: cloudHostId(sessionId),
       host_name: CLOUD_HOST_NAME,
       git_remote: seed.gitRemote,
+      folder_name: repoName(seed.gitRemote),
       seed: { kind: "repo", branch: seed.branch },
       runtime: "cloud",
       status: "starting",
@@ -148,4 +149,9 @@ export async function startCloudSession(input: CloudStartInput, deps: StartCloud
     return abandon({ status: 502, response: START_FAILED, code: "run_start_failed", operation: "session", message: "Marking the run of a cloud session as running failed", cause: runningError });
   }
   return { ok: true, sessionId };
+}
+
+/** The list shows the repository name where a local session shows its folder. */
+function repoName(gitRemote: string): string {
+  return gitRemote.replace(/\.git$/, "").split("/").pop() || gitRemote;
 }

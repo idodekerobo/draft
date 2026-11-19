@@ -506,6 +506,7 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
     return { ok: false, error: "Could not load the session." };
   }
   const hostId = hostServices().hostId();
+  if (session.runtime === "cloud") return { ok: false, error: "Cloud sessions run in Draft cloud. Nothing on this computer can resume them." };
   if (!session.mine) return { ok: false, error: "Only the person who started a session can resume it." };
   if (session.status !== "ended") return { ok: false, error: "This session is not ended." };
   if (session.end_reason === "cleared") return { ok: false, error: "This conversation was cleared. Open the session that continued it." };
@@ -550,10 +551,21 @@ export async function resumeLiveSession(sessionId: string): Promise<{ ok: true }
   return { ok: true };
 }
 
-/** Picks up the sessions this machine was forwarding when the app last closed. */
+/** True when the server says the session runs in a Draft cloud sandbox. If the server cannot say, it is treated as a computer session, as before. */
+async function isCloudSession(sessionId: string): Promise<boolean> {
+  try {
+    const page = await hostServices().fetchServerJSON<LiveSessionEventsPage>(`${sessionBase(sessionId)}/events?after=0&limit=1`);
+    return page.session.runtime === "cloud";
+  } catch {
+    return false;
+  }
+}
+
+/** Picks up the sessions this machine was forwarding when the app last closed. A cloud session is never picked up here. */
 export async function resumeLiveSessions(): Promise<void> {
   for (const state of loadStates()) {
     if (running.has(state.sessionId)) continue;
+    if (await isCloudSession(state.sessionId)) continue;
     const runner = new SessionHost(state);
     runner.start();
     if (!state.ended && (await runner.isAlive())) await runner.uploadIfChanged();

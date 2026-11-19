@@ -58,6 +58,7 @@ export function SessionMenu({ items, onSelect, variant = "header" }: { items: Se
 
 const DELETE_LIVE = "Delete this session? It ends first, and then nobody on your team can see it. Files on your computer are not removed.";
 const DELETE_IDLE = "Delete this session? Nobody on your team will be able to see it. Files on your computer are not removed.";
+const DELETE_CLOUD = "Delete this session? It ends first, and then nobody on your team can see it. Its cloud workspace is removed.";
 
 interface UseSessionMenuOptions {
   api: Pick<LiveSessionsApi, "deleteSession">;
@@ -87,7 +88,7 @@ export function useSessionMenu({ api, items, onDeleted }: UseSessionMenuOptions)
         {
           label: "Delete",
           danger: true,
-          confirm: running ? DELETE_LIVE : DELETE_IDLE,
+          confirm: session.runtime === "cloud" ? DELETE_CLOUD : running ? DELETE_LIVE : DELETE_IDLE,
           onSelect: async () => {
             await api.deleteSession!(session.id);
             viewStates.deleteSession(session.id);

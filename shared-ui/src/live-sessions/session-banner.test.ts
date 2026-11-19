@@ -18,6 +18,10 @@ describe("sessionBanner", () => {
     expect(sessionBanner({ ...base, status: "host_offline", owner_name: null })).toContain("The owner's computer");
   });
 
+  it("does not blame a laptop for a cloud session that stops responding", () => {
+    expect(sessionBanner({ ...base, status: "host_offline", runtime: "cloud" })).toBe("This session is not responding. Messages wait until it is back.");
+  });
+
   it("warns about an untested Claude version, but not for an ended session", () => {
     expect(sessionBanner({ ...base, harness_version: "2.2.0" }, true)).toContain("[DEV ONLY] This session runs Claude Code 2.2.0");
     expect(sessionBanner({ ...base, harness_version: "2.2.0", status: "ended" }, true)).toBeNull();

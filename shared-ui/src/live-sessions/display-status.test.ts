@@ -44,4 +44,21 @@ describe("displayStatus", () => {
   it("treats a missing approval count as none", () => {
     expect(displayStatus({ status: "live", last_event_at: ago(1), started_at: ago(2) }, NOW).key).toBe("live");
   });
+
+  it("shows Starting for a new cloud session, which has no events yet", () => {
+    expect(displayStatus({ ...base, status: "starting", runtime: "cloud", last_seq: 0 }, NOW)).toEqual({ key: "starting", label: "Starting" });
+    expect(displayStatus({ ...base, status: "starting", runtime: "cloud" }, NOW).key).toBe("starting");
+  });
+
+  it("shows Waking up for a cloud session that starts again after it had events", () => {
+    expect(displayStatus({ ...base, status: "starting", runtime: "cloud", last_seq: 14 }, NOW)).toEqual({ key: "waking", label: "Waking up" });
+  });
+
+  it("never shows Waking up for a computer session, whatever its event count", () => {
+    expect(displayStatus({ ...base, status: "starting", runtime: "local", last_seq: 14 }, NOW).key).toBe("starting");
+  });
+
+  it("shows Sleeping, not Waking up, for a sleeping cloud session", () => {
+    expect(displayStatus({ ...base, status: "sleeping", runtime: "cloud", last_seq: 14 }, NOW).key).toBe("sleeping");
+  });
 });

@@ -343,8 +343,19 @@ export type AppRPCType = {
       /** Open the native folder picker for an optional local-context import. */
       selectSetupFolder: { params: void; response: { folderPath: string | null } };
 
-      /** Start Claude Code in a background terminal pane in the folder and share it with the workspace. */
-      startLiveSession: { params: { harness?: string; folderPath: string; model?: string | null; effort?: string | null }; response: { ok: true; sessionId: string } | { ok: false; error: string } };
+      /**
+       * Start a session. A computer session runs the agent in a background terminal pane in the folder. A cloud session
+       * is created on the server only, so this computer runs nothing for it. The error is the server's code for cloud.
+       */
+      startLiveSession: {
+        params:
+          | { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null }
+          | { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; gitRemote: string; branch: string };
+        response: { ok: true; sessionId: string } | { ok: false; error: string };
+      };
+
+      /** The origin remote of a folder as git reports it, or null when it is not a git repository or has none. */
+      folderGitRemote: { params: { folderPath: string }; response: { gitRemote: string | null } };
 
       /** The whole list of signal topics the window wants. Main joins what is new and leaves what is gone. */
       setSignalTopics: { params: { topics: string[] }; response: void };

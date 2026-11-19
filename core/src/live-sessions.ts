@@ -164,6 +164,8 @@ export interface LiveSession {
   session_type?: "interactive" | "routine";
   /** Where it runs: the owner's computer (local) or a Draft sandbox (cloud). */
   runtime?: "local" | "cloud";
+  /** When the session's files were last backed up. Cloud sessions only; null until the first backup. */
+  raw_uploaded_at?: string | null;
   title: string | null;
   folder_name: string | null;
   host_name: string | null;

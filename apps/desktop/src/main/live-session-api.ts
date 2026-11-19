@@ -1,6 +1,58 @@
 import type { ApprovalResponse, SessionViewQuery, SessionViewResponse, LiveSession, LiveSessionEventsPage, LiveSessionInput } from "draft-core/live-sessions";
 import { hostServices, ServerError } from "draft-core/host/services";
-import { sessionBase } from "draft-core/host/live-session";
+import { sessionBase, type StartLiveSessionResult } from "draft-core/host/live-session";
+
+export type LocalStartParams = { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null };
+export type CloudStartParams = { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; gitRemote: string; branch: string };
+
+/** The server calls a desktop makes to create a cloud session. Injected so tests can run without a signed-in host. */
+export interface CloudStartDeps {
+  workspaceId(): string | null;
+  fetchServerJSON<T>(path: string, init?: RequestInit): Promise<T>;
+}
+
+const hostCloudStartDeps: CloudStartDeps = {
+  workspaceId: () => hostServices().workspaceId(),
+  fetchServerJSON: (path, init) => hostServices().fetchServerJSON(path, init),
+};
+
+/**
+ * Creates a cloud session on the server. Nothing runs on this computer: the cloud sandbox hosts the session.
+ * The error is the server's code, or start_failed when the request never got an answer.
+ */
+export async function startCloudLiveSession(params: CloudStartParams, deps: CloudStartDeps = hostCloudStartDeps): Promise<StartLiveSessionResult> {
+  const workspaceId = deps.workspaceId();
+  if (!workspaceId) return { ok: false, error: "signed_out" };
+  try {
+    const body = await deps.fetchServerJSON<{ ok: true; session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
+      method: "POST",
+      body: JSON.stringify({
+        runtime: "cloud",
+        harness: "claude",
+        model: params.model,
+        reasoningEffort: params.effort,
+        network: params.network,
+        seed: { kind: "repo", gitRemote: params.gitRemote, branch: params.branch },
+      }),
+    });
+    return { ok: true, sessionId: body.session.id };
+  } catch (error) {
+    return { ok: false, error: error instanceof ServerError ? error.code : "start_failed" };
+  }
+}
+
+/**
+ * Starts a session the way the request asks: a cloud one on the server, anything else as a computer session through
+ * `startLocal`. A cloud request never reaches `startLocal`, so no host process starts on this computer for it.
+ */
+export async function startLiveSessionRequest(
+  params: LocalStartParams | CloudStartParams,
+  startLocal: (params: LocalStartParams) => Promise<StartLiveSessionResult>,
+  deps?: CloudStartDeps,
+): Promise<StartLiveSessionResult> {
+  if (params.runtime === "cloud") return startCloudLiveSession(params, deps);
+  return startLocal(params);
+}
 
 export async function listLiveSessions(): Promise<LiveSession[]> {
   const workspaceId = hostServices().workspaceId();

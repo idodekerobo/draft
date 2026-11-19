@@ -64,7 +64,8 @@ export function SessionComposer({
   modeControl,
   agentControl,
   onCycleMode,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
+  sleeping = false,
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostOffline?: boolean; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -129,7 +130,7 @@ export function SessionComposer({
             rows={2}
             autoFocus={autoFocus}
             maxLength={MAX_INPUT_CHARS}
-            placeholder={`Message ${ownerName}'s session`}
+            placeholder={sleeping ? "Send a message to wake this session." : `Message ${ownerName}'s session`}
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
