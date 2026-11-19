@@ -16,6 +16,7 @@ const loadAgentDefaults = (harness: string) => rpc.request.getAgentDefaults({ ha
 // Module-level so the start screen's effect does not run again on every render.
 const cloudStart = {
   folderRemote: (folderPath: string) => rpc.request.folderGitRemote({ folderPath }).then(({ gitRemote }) => gitRemote),
+  branches: (repo: string) => rpc.request.listGithubBranches({ repo }).then((found) => (found.branches && found.defaultBranch ? { defaultBranch: found.defaultBranch, branches: found.branches } : null)),
   envFiles: (folderPath: string) =>
     rpc.request.listSessionEnvFiles({ folderPath }).then((listing) => {
       if (!listing.ok) throw new Error(listing.error);

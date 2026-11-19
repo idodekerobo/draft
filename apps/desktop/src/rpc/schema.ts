@@ -291,6 +291,8 @@ export type AppRPCType = {
       runRoutine: { params: { id: string }; response: { ok: true; outcome: RoutineRunOutcome } | { ok: false; code: string; field?: string; message?: string } };
       getRoutineSlackChannels: { params: void; response: Array<{ id: string; name: string }> };
       getRoutineGithubRepos: { params: void; response: string[] };
+      /** A repository's branches through the workspace's GitHub app. Null fields when GitHub is not connected or cannot reach it. */
+      listGithubBranches: { params: { repo: string }; response: { defaultBranch: string | null; branches: string[] | null } };
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
 
       /** Disconnect an input source by revoking its cloud connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */

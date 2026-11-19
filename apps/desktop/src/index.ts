@@ -492,6 +492,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
         return (await fetchServerJSON<{ repos: string[] }>(`workspaces/${workspaceId}/routine-repositories`)).repos;
       },
+      listGithubBranches: async ({ repo }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        return fetchServerJSON<{ defaultBranch: string | null; branches: string[] | null }>(`workspaces/${workspaceId}/github-branches?repo=${encodeURIComponent(repo)}`);
+      },
       listRoutineRuns: async ({ id, before }) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");

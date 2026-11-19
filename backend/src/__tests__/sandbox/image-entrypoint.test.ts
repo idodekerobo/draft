@@ -157,8 +157,8 @@ describe("Dockerfile", () => {
 });
 
 describe("gh", () => {
-  it("runs with either the routine's run token or the cloud session's MCP token", () => {
-    expect(read("gh")).toContain('[ -z "${DRAFT_RUN_TOKEN:-}" ] && [ -z "${DRAFT_MCP_TOKEN:-}" ]');
+  it("stops when Draft gives no token, so gh never runs without one", () => {
+    expect(read("gh")).toContain('token="$(/usr/local/bin/draft-github-token)" || exit 1');
   });
 });
 
@@ -178,6 +178,7 @@ describe("draft-github-token", () => {
       `const { appendFileSync } = require("node:fs");
 globalThis.fetch = async (url, init) => {
   appendFileSync(process.env.STUB_RECORD, JSON.stringify({ url: String(url), method: init.method, authorization: init.headers.Authorization }) + "\\n");
+  if (process.env.STUB_REFUSE) return new Response(JSON.stringify({ status: "refused", code: process.env.STUB_REFUSE, message: "server message" }), { status: 403, headers: { "content-type": "application/json" } });
   return new Response(JSON.stringify({ output: { token: "ghs_STUBTOKEN", expiresAt: new Date(Date.now() + 3600000).toISOString() } }), { status: 200, headers: { "content-type": "application/json" } });
 };
 `,
@@ -219,6 +220,15 @@ globalThis.fetch = async (url, init) => {
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toContain("GitHub credentials unavailable");
     expect(run.requests).toEqual([]);
+  });
+
+  it("passes on why Draft refused, so the agent points the person at Draft and not at gh auth login", () => {
+    const run = runHelper({ DRAFT_API_BASE_URL: "https://api.draft.test", DRAFT_RUN_ID: RUN, DRAFT_MCP_TOKEN: "mcp-secret-value", STUB_REFUSE: "github_not_connected" });
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr).toContain("GitHub is not connected to this Draft workspace");
+    expect(run.stdout).toBe("");
+    const other = runHelper({ DRAFT_API_BASE_URL: "https://api.draft.test", DRAFT_RUN_ID: RUN, DRAFT_MCP_TOKEN: "mcp-secret-value", STUB_REFUSE: "something_new" });
+    expect(other.stderr).toContain("server message");
   });
 
   it("fails without asking the backend when the run id could change the path", () => {

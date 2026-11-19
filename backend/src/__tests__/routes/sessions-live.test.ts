@@ -749,7 +749,7 @@ describe("cloud host requests", () => {
     const read = Object.assign(new Request("http://localhost/x?after=0&limit=1", { headers: (cloudPost({}) as unknown as Request).headers }), { params: { id: CLOUD_WS, sessionId: SESSION } }) as never;
     const response = await routes.EVENTS(read);
     expect(response.status).toBe(200);
-    expect((await response.json()).session).toMatchObject({ id: SESSION, mine: true });
+    expect(((await response.json()) as { session: unknown }).session).toMatchObject({ id: SESSION, mine: true });
   });
 
   it("uploads raw files under its own session folder", async () => {

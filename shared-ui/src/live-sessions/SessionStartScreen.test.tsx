@@ -546,3 +546,14 @@ describe("EnvChecklist", () => {
     expect((screen.getByRole("checkbox", { name: "All .env files in .claude" }) as HTMLInputElement).indeterminate).toBe(true);
   });
 });
+
+describe("SessionStartScreen branch list", () => {
+  it("lists the repository's branches and takes its default branch until the person types one", async () => {
+    const branches = mock(async (_repo: string) => ({ defaultBranch: "develop", branches: ["develop", "main", "feature/x"] }));
+    render(<SessionStartScreen recentFolders={["/work/marigold"]} onBrowse={async () => null} onStart={async () => ({ ok: true })} cloud={{ folderRemote: async () => "https://github.com/acme/marigold", envFiles: async () => [], branches }} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Draft cloud" }));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Branch" }) as HTMLInputElement).value).toBe("develop"));
+    expect(branches).toHaveBeenCalledWith("acme/marigold");
+    expect(document.querySelectorAll("datalist option").length).toBeGreaterThanOrEqual(3);
+  });
+});

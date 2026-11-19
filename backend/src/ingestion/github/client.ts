@@ -135,6 +135,28 @@ export class GithubClient {
     return [...new Set(repositories)];
   }
 
+  /** A repository's default branch and its branch names, at most 1,000. */
+  async listRepoBranches(installationId: string, repo: string): Promise<{ defaultBranch: string; branches: string[] }> {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new GithubClientError("invalid repository name", "permission");
+    const token = await this.getInstallationToken(installationId);
+    const headers = this.headers(`Bearer ${token}`);
+    const meta = await this.fetchFn(`https://api.github.com/repos/${repo}`, { headers });
+    if (!meta.ok) throw new GithubClientError(`repository lookup failed (${meta.status})`, meta.status === 403 || meta.status === 404 ? "permission" : "transient");
+    const { default_branch: defaultBranch } = (await meta.json()) as { default_branch?: unknown };
+    if (typeof defaultBranch !== "string") throw new GithubClientError("invalid repository", "transient");
+    const branches: string[] = [];
+    for (let page = 1; page <= 10; page += 1) {
+      const res = await this.fetchFn(`https://api.github.com/repos/${repo}/branches?per_page=100&page=${page}`, { headers });
+      if (!res.ok) throw new GithubClientError(`branch list failed (${res.status})`, res.status === 403 || res.status === 404 ? "permission" : "transient");
+      const body = (await res.json()) as unknown;
+      if (!Array.isArray(body)) throw new GithubClientError("invalid branch list", "transient");
+      const names = body.flatMap((b) => (typeof (b as { name?: unknown })?.name === "string" ? [(b as { name: string }).name] : []));
+      branches.push(...names);
+      if (names.length < 100) break;
+    }
+    return { defaultBranch, branches };
+  }
+
   private async mintInstallationToken(installationId: string, isRetry = false): Promise<string> {
     const jwt = await this.signAppJwt();
     const res = await this.fetchFn(

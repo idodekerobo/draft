@@ -164,6 +164,8 @@ export function SessionStartScreen({
     folderRemote: (folderPath: string) => Promise<string | null>;
     /** The `.env*` files in a folder, relative to it. Rejects when the folder cannot be read. */
     envFiles: (folderPath: string) => Promise<string[]>;
+    /** A repository's branches (owner/name), or null when Draft cannot list them. The branch field stays free text then. */
+    branches?: (repo: string) => Promise<{ defaultBranch: string; branches: string[] } | null>;
     /** Whether the workspace has GitHub connected. Null while it loads. Without it the agent cannot push or read PRs. */
     githubConnected?: boolean | null;
     /** Opens the place to connect GitHub. */
@@ -192,10 +194,12 @@ export function SessionStartScreen({
   const [step, setStep] = useState<string | null>(null);
   const [recentRepos, setRecentRepos] = useState<string[]>(() => loadRecentRepos());
   const [suggested, setSuggested] = useState<string | null>(null);
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
+  const branchEdited = useRef(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const { open, setOpen, rootRef, triggerRef } = usePopover();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const ids = { where: useId(), source: useId(), repo: useId(), branch: useId(), repoError: useId(), branchError: useId(), network: useId(), repoList: useId(), repoHint: useId() };
+  const ids = { branchList: useId(), where: useId(), source: useId(), repo: useId(), branch: useId(), repoError: useId(), branchError: useId(), network: useId(), repoList: useId(), repoHint: useId() };
   useAutoGrow(inputRef, text);
 
   const folder = chosen ?? recentFolders[0] ?? null;
@@ -235,6 +239,28 @@ export function SessionStartScreen({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the recent list only fills an empty field once
   }, [cloudOn, folder, folderRemote]);
+
+  // The branch list follows the repository. The branch field takes the default branch until the person types one.
+  const branchesOf = cloud?.branches;
+  const repoSlug = repoProblem(repoValue) ? null : repoValue.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "");
+  useEffect(() => {
+    setBranchOptions([]);
+    if (!cloudOn || snapshotOn || !repoSlug || !branchesOf) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      branchesOf(repoSlug)
+        .then((found) => {
+          if (!current || !found) return;
+          setBranchOptions(found.branches);
+          if (!branchEdited.current) setBranch(found.defaultBranch);
+        })
+        .catch((error: unknown) => console.error("[sessions] could not list the repository's branches", error));
+    }, 300);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [cloudOn, snapshotOn, repoSlug, branchesOf]);
 
   // The .env checklist follows the folder. A new folder starts with nothing ticked.
   useEffect(() => {
@@ -405,8 +431,15 @@ export function SessionStartScreen({
                   spellCheck={false}
                   aria-invalid={branchShown ? true : undefined}
                   aria-describedby={branchShown ? ids.branchError : undefined}
-                  onChange={(event) => { setFailure(null); setBranch(event.target.value); }}
+                  list={branchOptions.length > 0 ? ids.branchList : undefined}
+                  placeholder={branchOptions.length > 0 ? "Pick or type a branch" : undefined}
+                  onChange={(event) => { branchEdited.current = true; setFailure(null); setBranch(event.target.value); }}
                 />
+                {branchOptions.length > 0 && (
+                  <datalist id={ids.branchList}>
+                    {branchOptions.map((name) => <option key={name} value={name} />)}
+                  </datalist>
+                )}
                 {branchShown && <p id={ids.branchError} className="ui-error ui-start__field-error">{branchShown}</p>}
               </div>
             </div>

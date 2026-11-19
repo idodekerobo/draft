@@ -119,7 +119,7 @@ export async function beginCloudSession(input: CloudStartInput, deps: StartCloud
   let runCreated = false;
   let sandbox: SandboxRef | null = null;
 
-  const abandon = async (failure: StartFailure): Promise<StartCloudSessionOutcome> => {
+  const abandon = async (failure: StartFailure): Promise<Extract<StartCloudSessionOutcome, { ok: false }>> => {
     const agentRunId = runCreated ? runId : null;
     if (!failure.refusal) {
       await recordError({ client, workspaceId, sessionId, agentRunId, operation: failure.operation, code: failure.code, message: failure.message, error: failure.cause });

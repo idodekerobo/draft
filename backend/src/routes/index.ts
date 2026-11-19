@@ -61,6 +61,7 @@ export const routes = {
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
   "/workspaces/:id/schedules": { GET: withCors(routines.GET), POST: withCors(routines.POST), OPTIONS },
   "/workspaces/:id/routine-repositories": { GET: withCors(routineOptions.GET), OPTIONS },
+  "/workspaces/:id/github-branches": { GET: withCors(routineOptions.BRANCHES), OPTIONS },
   "/workspaces/:id/schedules/:taskId": { PATCH: withCors(routines.PATCH), DELETE: withCors(routines.DELETE), OPTIONS },
   "/workspaces/:id/schedules/:taskId/runs": { GET: withCors(routines.RUNS), OPTIONS },
   "/workspaces/:id/schedules/:taskId/run": { POST: withCors(routines.RUN), OPTIONS },

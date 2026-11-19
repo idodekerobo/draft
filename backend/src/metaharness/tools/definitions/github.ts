@@ -1,3 +1,4 @@
+import { GithubClientError } from "../../../ingestion/github/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { ANY_RUN } from "draft-core/tools";
@@ -24,6 +25,18 @@ export async function listWorkspaceGithubRepos(client: SupabaseClient, workspace
   const connection = await activeGithubConnection(client, workspaceId);
   if (!connection) return [];
   return githubClient.listInstallationRepositories(connection.connection_key);
+}
+
+/** A repository's branches through the workspace's GitHub app, or null when GitHub is not connected or cannot reach it. */
+export async function listWorkspaceGithubBranches(client: SupabaseClient, workspaceId: string, repo: string): Promise<{ defaultBranch: string; branches: string[] } | null> {
+  const connection = await activeGithubConnection(client, workspaceId);
+  if (!connection) return null;
+  try {
+    return await githubClient.listRepoBranches(connection.connection_key, repo);
+  } catch (error) {
+    if (error instanceof GithubClientError && error.kind === "permission") return null;
+    throw error;
+  }
 }
 
 export function createGithubTools(client: SupabaseClient) {
