@@ -51,7 +51,7 @@ Use `<your API base URL>/mcp`. See [Self-hosted deployments](./mcp.md#self-hoste
 - **Access stays inside your workspace.** The server checks workspace access on every call.
 - **Read and write are separate scopes.** The server allows `read` and `write`. An agent needs the `write` scope for tools that change Draft data or take an action, such as editing routines, managing skills or teammates, connecting an integration, or posting to Slack. Without the scope, the call fails with `insufficient_scope`. The consent screen shows which scopes the agent asks for. Read it before you approve.
 - **Export links are short-lived.** A `context.export` link expires after 5 minutes and stops working if you lose workspace access. The export is a copy outside Draft's access control, so treat the files as private.
-- **Reads are logged.** Draft records each agent command in `agent_query_log`: who, which command, its arguments, and the response size. Today this log is for operators. You cannot view it in the app, and it does not record which agent made a call.
+- **Tool calls are logged.** Draft records each person-originated CLI or MCP tool call in `agent_query_log`, including reads and writes: who, which surface and command, its arguments, and the response size. Draft-run calls are recorded separately in `agent_run_tool_calls`. Today these logs are for operators; you cannot view them in the app, and they do not record which agent made a call.
 
 ## Disconnect an agent today
 
