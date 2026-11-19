@@ -74,6 +74,7 @@ function fakeProvider(failures: { create?: Error; start?: Error; destroy?: Error
       destroyed.push(ref);
       if (failures.destroy) throw failures.destroy;
     },
+    async destroyMachine() {},
     async status() {
       return "running";
     },

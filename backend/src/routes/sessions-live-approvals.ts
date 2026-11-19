@@ -128,6 +128,19 @@ async function withdrawQueuedMessages(workspaceId: string, sessionId: string, us
   return withdrawn;
 }
 
+/** A sleeping cloud session has no run to stop, and a run to switch the mode of. The next message wakes it. */
+async function refuseIfSleeping(workspaceId: string, sessionId: string): Promise<Response | null> {
+  const { data, error } = await serviceClient
+    .from("sessions")
+    .select("runtime, status")
+    .eq("id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .maybeSingle<{ runtime: string; status: string }>();
+  if (error) return errorResponse("session_lookup_failed", 500, error, workspaceId, sessionId);
+  return data?.runtime === "cloud" && data.status === "sleeping" ? errorResponse("session_sleeping", 409) : null;
+}
+
 /**
  * Any member can ask the host to interrupt the running turn. A second Stop while one waits does nothing.
  * The caller's own queued messages are withdrawn and returned; the host may claim one first, and then it is sent.
@@ -136,6 +149,8 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  const sleeping = await refuseIfSleeping(workspaceId, sessionId);
+  if (sleeping) return sleeping;
 
   // Dismissing a prompt keeps the caller's queued messages, so they go through once it is gone.
   const parsed = await readBody(req);
@@ -182,15 +197,16 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
 
   const { data: session, error: lookupError } = await serviceClient
     .from("sessions")
-    .select("harness, status, session_type, owner_user_id, model, reasoning_effort")
+    .select("harness, status, session_type, owner_user_id, model, reasoning_effort, runtime")
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
     .is("deleted_at", null)
-    .maybeSingle<{ harness: string; status: string; session_type: string; owner_user_id: string; model: string | null; reasoning_effort: string | null }>();
+    .maybeSingle<{ harness: string; status: string; session_type: string; owner_user_id: string; model: string | null; reasoning_effort: string | null; runtime: string }>();
   if (lookupError) return errorResponse("mode_failed", 500, lookupError, workspaceId, sessionId);
   if (!session) return errorResponse("session_not_found", 404);
   if (session.session_type === "routine") return errorResponse("routine_read_only", 409);
   if (session.status === "ended") return errorResponse("session_ended", 409);
+  if (session.runtime === "cloud" && session.status === "sleeping") return errorResponse("session_sleeping", 409);
 
   const modes = harnessModes(session.harness);
   const payload: Record<string, string | null> = {};

@@ -187,6 +187,15 @@ describe("Stop", () => {
     const res = await routes.STOP(request("/x", {}));
     expect(((await res.json()) as { withdrawn: unknown[] }).withdrawn).toEqual([]);
   });
+
+  it("refuses a cloud session that is sleeping, and withdraws nothing", async () => {
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", runtime: "cloud", status: "sleeping" }];
+    tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
+    const res = await routes.STOP(request("/x", {}));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
+    expect(rpcCalls).toEqual([]);
+  });
 });
 
 describe("switching the mode", () => {
@@ -244,6 +253,14 @@ describe("switching the mode", () => {
     expect((await mode({ permissionMode: "plan" })).status).toBe(409);
     setHarness("claude", { session_type: "routine" });
     expect((await mode({ permissionMode: "plan" })).status).toBe(409);
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("refuses a cloud session that is sleeping, since no run is there to switch", async () => {
+    setHarness("claude", { runtime: "cloud", status: "sleeping" });
+    const res = await mode({ permissionMode: "plan" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
     expect(rpcCalls).toEqual([]);
   });
 });
@@ -320,5 +337,12 @@ describe("cloud host requests", () => {
     const foreign = await routes.HOST_EVENTS(cloudRequest({ hostId: "host-1", events: [permission] }));
     expect(foreign.status).toBe(403);
     expect(rpcCalls).toEqual([]);
+  });
+
+  it("refuses a late append to a sleeping session with session_sleeping, so it cannot set the session live", async () => {
+    rpcResult = { data: null, error: { message: "session_sleeping" } };
+    const res = await routes.HOST_EVENTS(cloudRequest({ events: [permission] }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
   });
 });

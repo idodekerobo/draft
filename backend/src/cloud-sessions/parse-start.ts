@@ -69,7 +69,7 @@ function parseSeed(value: unknown, workspaceId: string): SeedParse {
 }
 
 /** An https github.com URL of one repository. Returns the URL and "owner/name" for the GitHub token scope. */
-function parseGitHubRemote(value: unknown): { gitRemote: string; repo: string } | null {
+export function parseGitHubRemote(value: unknown): { gitRemote: string; repo: string } | null {
   if (typeof value !== "string" || value.length > MAX_REMOTE_CHARS) return null;
   const match = GITHUB_REMOTE.exec(value);
   if (!match) return null;

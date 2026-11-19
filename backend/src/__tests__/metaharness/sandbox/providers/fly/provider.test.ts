@@ -280,6 +280,32 @@ describe("createFlyProvider.destroy", () => {
   });
 });
 
+describe("createFlyProvider.destroyMachine", () => {
+  it("deletes only the machine and leaves its volume for a new machine", async () => {
+    const { api, calls } = fakeApi();
+    await createFlyProvider(config, api).destroyMachine(withVolume);
+    expect(calls).toEqual(["forceDelete machine-1"]);
+  });
+
+  it("counts a machine that is already gone as destroyed", async () => {
+    const { api } = fakeApi({
+      forceDelete: async () => {
+        throw httpError(404);
+      },
+    });
+    await expect(createFlyProvider(config, api).destroyMachine(withVolume)).resolves.toBeUndefined();
+  });
+
+  it("rethrows other delete failures", async () => {
+    const { api } = fakeApi({
+      forceDelete: async () => {
+        throw httpError(500);
+      },
+    });
+    await expect(createFlyProvider(config, api).destroyMachine(withVolume)).rejects.toBeInstanceOf(FlyMachinesApiError);
+  });
+});
+
 describe("createFlyProvider.status", () => {
   const cases: Array<[string, "running" | "stopped" | "missing"]> = [
     ["starting", "running"],

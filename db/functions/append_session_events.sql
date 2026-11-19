@@ -1,7 +1,9 @@
 -- Session status:
 --   starting -> live -> ended
 --   starting/live --no heartbeat for 60 s--> host_offline --same host heartbeat--> live
--- Idle is not stored. Writes for an ended session are rejected.
+--   starting/live/host_offline --the cloud host sleeps--> sleeping --a wake--> starting
+-- Idle is not stored. Writes for an ended or sleeping session are rejected. A sleeping session has no
+-- run, so a late append from an old host must not set it live.
 --
 -- Appends a batch of events in order. Seq comes from the session's counter, so
 -- it has no gaps. A duplicate source_id is skipped and does not use a seq.
@@ -37,6 +39,9 @@ begin
   end if;
   if v_session.status = 'ended' then
     raise exception 'session_ended';
+  end if;
+  if v_session.status = 'sleeping' then
+    raise exception 'session_sleeping';
   end if;
   if v_session.host_id is distinct from p_host_id then
     raise exception 'foreign_host';

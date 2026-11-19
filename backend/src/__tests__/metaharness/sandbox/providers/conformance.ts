@@ -42,5 +42,26 @@ export function runProviderConformance(
         if (ref !== undefined && !destroyed) await provider.destroy(ref);
       }
     }, 300_000);
+
+    // A sleeping session keeps its volume, and a wake mounts a new machine on it.
+    it("replaces the machine on a volume it kept", async () => {
+      const provider = await makeProvider();
+      const spec: SandboxSpec = { runId: `conformance-${crypto.randomUUID()}`, env: {}, metadata: { conformance: "true" }, volume: { sizeGb: 1 } };
+      const first = await provider.create(spec);
+      if (first.volume === null) throw new Error("The conformance sandbox has no volume");
+      let replacement: SandboxRef | undefined;
+      try {
+        await provider.start(first);
+        await provider.destroyMachine(first);
+        expect(await provider.status(first)).toBe("missing");
+
+        replacement = await provider.create({ ...spec, volume: { existing: first.volume } });
+        expect(replacement.volume).toEqual(first.volume);
+        await provider.start(replacement);
+        expect(await provider.status(replacement)).toBe("running");
+      } finally {
+        await provider.destroy(replacement ?? first);
+      }
+    }, 300_000);
   });
 }

@@ -460,6 +460,7 @@ describe("the sandbox spec", () => {
       },
       stop: async () => undefined,
       destroy: async () => undefined,
+      destroyMachine: async () => undefined,
       status: async () => "running",
     };
     const { uploader } = fakeBundleUploader();

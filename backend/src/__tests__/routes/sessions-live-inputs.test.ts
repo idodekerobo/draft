@@ -1,6 +1,9 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { parseAgentRunId, parseWorkspaceId } from "draft-core/run-spec";
 import { createAgentRunToken } from "../../metaharness/runs/run-token";
+import type { CloudSessionDeps } from "../../cloud-sessions/launch";
+import type { SandboxProvider } from "../../metaharness/sandbox/providers";
+import { fakeClient, fakeDb, type FakeDb } from "../routines/fake-client";
 
 const caller = { userId: "user-2", accessToken: "token-2" };
 let accessResult: Response | null = null;
@@ -86,6 +89,15 @@ mock.module("../../db/client", () => ({
   },
 }));
 
+// A sleeping cloud session wakes through the real wake, on the deps a test sets. No test sets them unless it needs a wake.
+let makeWakeDeps: (() => CloudSessionDeps) | null = null;
+mock.module("../../cloud-sessions/deps", () => ({
+  productionStartDeps: () => {
+    if (!makeWakeDeps) throw new Error("No sandbox deps are set for this test");
+    return makeWakeDeps();
+  },
+}));
+
 const routes = await import("../../routes/sessions-live-inputs");
 
 const WS = "ws-1";
@@ -107,6 +119,163 @@ beforeEach(() => {
     session_events: [],
     users: [{ id: "user-2", display_name: "Priya", email: "p@example.test" }],
   };
+});
+
+describe("a message to a sleeping cloud session", () => {
+  const WAKE_WS = "11111111-1111-4111-8111-111111111111";
+  const WAKE_SESSION = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const WAKE_OWNER = "66666666-6666-4666-8666-666666666666";
+  const VERSION = "44444444-4444-4444-8444-444444444444";
+  const PREVIOUS_RUN = "10000000-0000-4000-8000-0000000000aa";
+  let wake: FakeDb;
+  let startError: Error | null = null;
+
+  const wakeRequest = (body: unknown) => request("POST", "/x", body, { id: WAKE_WS, sessionId: WAKE_SESSION });
+
+  /** The wake's own database: its session row, the last run to wake from, and the claim the database would run. */
+  function wakeDb(): FakeDb {
+    const db = fakeDb({
+      workspaces: [{ id: WAKE_WS, timezone: "UTC", current_context_version_id: VERSION }],
+      sessions: [
+        {
+          id: WAKE_SESSION,
+          workspace_id: WAKE_WS,
+          owner_user_id: WAKE_OWNER,
+          runtime: "cloud",
+          status: "sleeping",
+          model: "haiku",
+          reasoning_effort: null,
+          git_remote: "https://github.com/acme/app.git",
+          seed: { kind: "repo", branch: "main" },
+          sandbox_volume: { provider: "fly", id: "vol-1", region: "iad" },
+          host_id: `cloud:${WAKE_SESSION}`,
+          deleted_at: null,
+        },
+      ],
+      agent_runs: [
+        {
+          id: PREVIOUS_RUN,
+          workspace_id: WAKE_WS,
+          session_id: WAKE_SESSION,
+          kind: "interactive",
+          trigger: { type: "manual", requestedBy: WAKE_OWNER },
+          on_behalf_of_user_id: null,
+          runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, network: "restricted" },
+          harness: "claude",
+          model: "haiku",
+          reasoning_effort: null,
+          instructions: "",
+          base_context_version_id: VERSION,
+          permissions: [],
+          output: { type: "text" },
+          status: "succeeded",
+          sandbox_machine_id: null,
+          created_at: "2026-11-18T09:00:00.000Z",
+        },
+      ],
+      session_inputs: [],
+      errors: [],
+    });
+    db.rpcs.claim_cloud_session_wake = (args) => {
+      const row = db.tables.sessions!.find((s) => s.id === args.p_session_id && s.status === "sleeping");
+      if (!row) return { data: false };
+      row.status = "starting";
+      return { data: true };
+    };
+    return db;
+  }
+
+  const provider = (): SandboxProvider => ({
+    async create(spec) {
+      return { provider: "fly", machine: "machine-new", volume: spec.volume && "existing" in spec.volume ? spec.volume.existing : null };
+    },
+    async start() {
+      if (startError) throw startError;
+    },
+    async stop() {},
+    async destroy() {},
+    async destroyMachine() {},
+    async status() {
+      return "missing";
+    },
+  });
+
+  const wakeDeps = (): CloudSessionDeps => ({
+    client: fakeClient(wake),
+    provider: provider(),
+    config: {
+      callbackUrl: "https://api.draft.test/sandbox/callback",
+      callbackSecret: "callback-test-secret",
+      supabaseUrl: "https://project.supabase.co",
+      provider: { kind: "fly", apiToken: "fly-token", appName: "draft-sandbox", image: `registry.fly.io/draft-sandbox@sha256:${"a".repeat(64)}`, region: "iad" },
+    },
+    tokenSecret: "wake-route-test-secret",
+    resolveCredential: async () => ({ credentialId: "cred-1", secret: "sk-ant-test" }),
+  });
+
+  beforeEach(() => {
+    wake = wakeDb();
+    startError = null;
+    makeWakeDeps = wakeDeps;
+    tables.sessions = [{ id: WAKE_SESSION, workspace_id: WAKE_WS, owner_user_id: WAKE_OWNER, status: "sleeping", runtime: "cloud", host_id: `cloud:${WAKE_SESSION}`, last_seq: 0 }];
+  });
+  afterEach(() => {
+    makeWakeDeps = null;
+  });
+
+  it("wakes the session, so the message goes to a new run", async () => {
+    const res = await routes.INPUTS_CREATE(wakeRequest({ text: "pick up the tests" }));
+
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ ok: true, input: { text: "pick up the tests" } });
+    expect(wake.rpcCalls.map((call) => call.name)).toContain("claim_cloud_session_wake");
+    expect(wake.tables.sessions![0]).toMatchObject({ status: "starting" });
+    expect(wake.tables.agent_runs!.filter((row) => row.status === "running")).toHaveLength(1);
+  });
+
+  it("still sends the message when the wake fails, and records why", async () => {
+    startError = new Error("machine did not boot");
+    const res = await routes.INPUTS_CREATE(wakeRequest({ text: "hello" }));
+
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ ok: true, input: { text: "hello" } });
+    expect(wake.tables.sessions![0]).toMatchObject({ status: "sleeping" });
+    expect(wake.tables.errors!.map((row) => (row.detail_json as { code?: string }).code)).toEqual(["sandbox_start_failed"]);
+  });
+
+  it("returns the message as the wake left it, so a session that ends shows the message failed", async () => {
+    wake.tables.agent_runs = [1, 2, 3].map((n) => ({ id: `run-${n}`, workspace_id: WAKE_WS, session_id: WAKE_SESSION, status: "failed", created_at: `2026-11-18T0${n}:00:00.000Z` }));
+    tables.session_inputs = [
+      { id: "input-new", session_id: WAKE_SESSION, workspace_id: WAKE_WS, author_user_id: "user-2", author_name: "Priya", kind: "message", payload: { text: "hello" }, state: "failed", reason: "session_ended", created_at: "t", updated_at: "t" },
+    ];
+    const res = await routes.INPUTS_CREATE(wakeRequest({ text: "hello" }));
+
+    expect(((await res.json()) as { input: { state: string } }).input.state).toBe("failed");
+    expect(wake.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "start_failed" });
+  });
+
+  it("still sends the message when the wake cannot be set up, and logs the failure", async () => {
+    makeWakeDeps = () => {
+      throw new Error("SANDBOX_IMAGE is missing");
+    };
+    const logged: unknown[] = [];
+    const spy = spyOn(console, "error").mockImplementation((...args: unknown[]) => void logged.push(args));
+    try {
+      const res = await routes.INPUTS_CREATE(wakeRequest({ text: "hello" }));
+      expect(res.status).toBe(201);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(JSON.stringify(logged)).toContain("wake_failed");
+  });
+
+  it("does not wake a session that is live", async () => {
+    tables.sessions = [{ ...tables.sessions![0]!, status: "live" }];
+    const res = await routes.INPUTS_CREATE(wakeRequest({ text: "hello" }));
+
+    expect(res.status).toBe(201);
+    expect(wake.rpcCalls).toEqual([]);
+  });
 });
 
 describe("sending a message", () => {

@@ -27,5 +27,7 @@ export interface SandboxProvider {
   stop(ref: SandboxRef): Promise<void>;
   /** Deletes the machine and its volume. A machine or volume that is already gone counts as deleted. */
   destroy(ref: SandboxRef): Promise<void>;
+  /** Deletes only the machine, so its volume can mount a new machine. A machine that is already gone counts as deleted. */
+  destroyMachine(ref: SandboxRef): Promise<void>;
   status(ref: SandboxRef): Promise<"running" | "stopped" | "missing">;
 }

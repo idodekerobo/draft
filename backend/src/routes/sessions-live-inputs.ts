@@ -2,6 +2,8 @@ import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
+import { productionStartDeps } from "../cloud-sessions/deps";
+import { wakeCloudSession } from "../cloud-sessions/wake";
 import { getHarness } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
@@ -47,6 +49,47 @@ function publicInput(row: SessionInputRow): PublicInput {
   };
 }
 
+/**
+ * A message sent to a sleeping cloud session wakes it. The message is stored first, so a failed wake never fails
+ * the send: the message waits for the next wake. Returns true when a wake was attempted.
+ */
+async function wakeIfSleeping(workspaceId: string, sessionId: string): Promise<boolean> {
+  const { data, error } = await serviceClient
+    .from("sessions")
+    .select("runtime, status")
+    .eq("id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
+    .maybeSingle<{ runtime: string; status: string }>();
+  if (error) {
+    await recordError({ workspaceId, sessionId, operation: "session", code: "wake_lookup_failed", message: "Reading a session before a wake failed", error });
+    return false;
+  }
+  if (data?.runtime !== "cloud" || data.status !== "sleeping") return false;
+  try {
+    await wakeCloudSession({ workspaceId, sessionId }, productionStartDeps());
+  } catch (error) {
+    await recordError({ workspaceId, sessionId, operation: "session", code: "wake_failed", message: "Waking a sleeping cloud session failed", error });
+  }
+  return true;
+}
+
+/** The input as it stands after a wake, which can end the session and fail the message. A failed read keeps the stored copy. */
+async function inputAfterWake(workspaceId: string, sessionId: string, stored: SessionInputRow): Promise<SessionInputRow> {
+  const { data, error } = await serviceClient
+    .from("session_inputs")
+    .select(INPUT_COLUMNS)
+    .eq("id", stored.id)
+    .eq("session_id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle<SessionInputRow>();
+  if (error) {
+    await recordError({ workspaceId, sessionId, operation: "session", code: "input_lookup_failed", message: "Reading a message after a wake failed", error });
+    return stored;
+  }
+  return data ?? stored;
+}
+
 async function createInput(workspaceId: string, sessionId: string, userId: string, text: string): Promise<Response> {
   const { data, error } = await serviceClient.rpc("create_session_input", {
     p_session_id: sessionId,
@@ -59,7 +102,9 @@ async function createInput(workspaceId: string, sessionId: string, userId: strin
   if (error) {
     return knownDbError(error.message) ?? errorResponse("input_create_failed", 500, error, workspaceId, sessionId);
   }
-  return Response.json({ ok: true, input: publicInput(data as SessionInputRow) }, { status: 201 });
+  const stored = data as SessionInputRow;
+  const input = (await wakeIfSleeping(workspaceId, sessionId)) ? await inputAfterWake(workspaceId, sessionId, stored) : stored;
+  return Response.json({ ok: true, input: publicInput(input) }, { status: 201 });
 }
 
 export type ViewerInputs = { ok: true; inputs: Array<ReturnType<typeof publicInput> & { mine: boolean }> } | { ok: false; error: unknown };
