@@ -1068,11 +1068,18 @@
 .ui-start__field--repo { flex: 1 1 260px; }
 .ui-start__field--branch { flex: 0 1 140px; }
 .ui-start__field-error { margin: 0; font-size: var(--font-size-small); }
-.ui-start__cloud { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); width: 100%; max-width: 680px; font-size: var(--font-size-secondary); }
-.ui-start__cloud > p { margin: 0; }
+.ui-start__advanced { padding: 0 var(--space-3) var(--space-2); font-size: var(--font-size-secondary); }
+.ui-start__advanced > summary { cursor: pointer; padding: var(--space-1) 0; }
+.ui-start__advanced[open] > summary { margin-bottom: var(--space-2); }
+.ui-start__advanced > p { margin: var(--space-2) 0 0; }
+.ui-start__failure { margin: var(--space-2) 0 0; font-size: var(--font-size-secondary); }
+.ui-env-tree { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.ui-env-tree .ui-env-tree { padding-left: var(--space-5, 20px); margin-top: var(--space-1); }
+.ui-env-tree__folder > summary { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; }
 .ui-start__network { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
 .ui-start__network-label { color: var(--color-text-primary); }
 .ui-start__warning { margin: 0; color: var(--color-status-yellow); }
+.ui-start__note { padding: 0 var(--space-3); font-size: var(--font-size-secondary); }
 .ui-start__snapshot { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; max-width: 680px; padding: var(--space-3) var(--space-3) 0; font-size: var(--font-size-secondary); }
 .ui-start__snapshot > p { margin: 0; }
 .ui-start__env { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; margin: 0; padding: 0; border: 0; }

@@ -11,6 +11,8 @@ import { ColumnToggleButton } from "./SessionsLayout";
 import { usePopover } from "./usePopover";
 import { Toggle } from "../settings/SettingsRow";
 import { branchProblem, cloudRepoFromRemote, cloudStartFailure, repoProblem, type CloudStartField } from "./cloud-start";
+import { EnvChecklist } from "./EnvChecklist";
+import { loadRecentRepos, rememberRepo } from "./recent-repos";
 
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
@@ -162,10 +164,15 @@ export function SessionStartScreen({
     folderRemote: (folderPath: string) => Promise<string | null>;
     /** The `.env*` files in a folder, relative to it. Rejects when the folder cannot be read. */
     envFiles: (folderPath: string) => Promise<string[]>;
+    /** Whether the workspace has GitHub connected. Null while it loads. Without it the agent cannot push or read PRs. */
+    githubConnected?: boolean | null;
+    /** Opens the place to connect GitHub. */
+    onConnectGithub?: () => void;
   };
   recentFolders: string[];
   onBrowse: () => Promise<string | null>;
-  onStart: (request: StartRequest) => Promise<StartResult>;
+  /** `progress` names the step a slow start is on, such as copying a folder. */
+  onStart: (request: StartRequest, progress?: (step: string) => void) => Promise<StartResult>;
 }) {
   const [chosen, setChosen] = useState<string | null>(null);
   const [text, setText] = useDraft(NEW_SESSION_DRAFT_KEY);
@@ -182,10 +189,13 @@ export function SessionStartScreen({
   const [includeEnv, setIncludeEnv] = useState<string[]>([]);
   const repoEdited = useRef(false);
   const [starting, setStarting] = useState(false);
+  const [step, setStep] = useState<string | null>(null);
+  const [recentRepos, setRecentRepos] = useState<string[]>(() => loadRecentRepos());
+  const [suggested, setSuggested] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const { open, setOpen, rootRef, triggerRef } = usePopover();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const ids = { where: useId(), source: useId(), repo: useId(), branch: useId(), repoError: useId(), branchError: useId(), network: useId() };
+  const ids = { where: useId(), source: useId(), repo: useId(), branch: useId(), repoError: useId(), branchError: useId(), network: useId(), repoList: useId(), repoHint: useId() };
   useAutoGrow(inputRef, text);
 
   const folder = chosen ?? recentFolders[0] ?? null;
@@ -214,12 +224,16 @@ export function SessionStartScreen({
     let current = true;
     void folderRemote(folder)
       .then((remote) => {
-        if (current && !repoEdited.current) setRepo(remote ? cloudRepoFromRemote(remote) : "");
+        const repoOfFolder = remote ? cloudRepoFromRemote(remote) : null;
+        if (!current) return;
+        setSuggested(repoOfFolder);
+        if (!repoEdited.current) setRepo(repoOfFolder ?? recentRepos[0] ?? "");
       })
       .catch(() => {});
     return () => {
       current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the recent list only fills an empty field once
   }, [cloudOn, folder, folderRemote]);
 
   // The .env checklist follows the folder. A new folder starts with nothing ticked.
@@ -257,9 +271,9 @@ export function SessionStartScreen({
     setSource(next);
   }
 
-  function toggleEnvFile(file: string, ticked: boolean) {
+  function toggleEnvFiles(files: string[], ticked: boolean) {
     setFailure(null);
-    setIncludeEnv((current) => (ticked ? [...current, file] : current.filter((entry) => entry !== file)));
+    setIncludeEnv((current) => (ticked ? [...new Set([...current, ...files])] : current.filter((entry) => !files.includes(entry))));
   }
 
   async function browse() {
@@ -297,15 +311,21 @@ export function SessionStartScreen({
     setStarting(true);
     setFailure(null);
     try {
-      const result = await onStart(request);
-      if (result.ok) clearDraft(NEW_SESSION_DRAFT_KEY);
-      else setFailure(failureOf(result));
+      const result = snapshotOn ? await onStart(request, setStep) : await onStart(request);
+      if (result.ok) {
+        clearDraft(NEW_SESSION_DRAFT_KEY);
+        if (request.runtime === "cloud" && request.source === "repo") setRecentRepos(rememberRepo(request.gitRemote));
+      } else setFailure(failureOf(result));
     } finally {
       setStarting(false);
+      setStep(null);
     }
   }
 
   const repoShown = repoError ?? (failure?.field === "repo" ? failure.message : null);
+  const repoHint = suggested && repoValue === suggested && folder ? `From ${folderName(folder)}. Pick a recent repository or paste another URL.` : null;
+  const githubMissing = cloudOn && cloud?.githubConnected === false;
+  const generalFailure = failure && failure.field !== "repo" && failure.field !== "branch" && failure.field !== "network" ? failure.message : null;
   const branchShown = branchError ?? (failure?.field === "branch" ? failure.message : null);
 
   return (
@@ -331,7 +351,7 @@ export function SessionStartScreen({
           </div>
         )}
         <form className="ui-composer__box ui-start__box" onSubmit={submit}>
-          <div className="ui-composer__folder ui-start__folder" ref={rootRef}>
+          {(!cloudOn || snapshotOn) && <div className="ui-composer__folder ui-start__folder" ref={rootRef}>
             <button ref={triggerRef} type="button" className="ui-start__folder-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
               <FolderIcon />
               <span>{folder ? folderName(folder) : "Choose a folder"}</span>
@@ -352,7 +372,7 @@ export function SessionStartScreen({
                 </li>
               </ul>
             )}
-          </div>
+          </div>}
           {cloudOn && !snapshotOn && (
             <div className="ui-start__repo">
               <div className="ui-start__field ui-start__field--repo">
@@ -365,10 +385,15 @@ export function SessionStartScreen({
                   autoComplete="off"
                   spellCheck={false}
                   aria-invalid={repoShown ? true : undefined}
-                  aria-describedby={repoShown ? ids.repoError : undefined}
+                  list={ids.repoList}
+                  aria-describedby={repoShown ? ids.repoError : repoHint ? ids.repoHint : undefined}
                   onChange={(event) => { repoEdited.current = true; setFailure(null); setRepo(event.target.value); }}
                 />
+                <datalist id={ids.repoList}>
+                  {[...new Set([...(suggested ? [suggested] : []), ...recentRepos])].map((entry) => <option key={entry} value={entry} />)}
+                </datalist>
                 {repoShown && <p id={ids.repoError} className="ui-error ui-start__field-error">{repoShown}</p>}
+                {!repoShown && repoHint && <p id={ids.repoHint} className="ui-muted ui-start__field-error">{repoHint}</p>}
               </div>
               <div className="ui-start__field ui-start__field--branch">
                 <label htmlFor={ids.branch} className="ui-muted">Branch</label>
@@ -395,14 +420,31 @@ export function SessionStartScreen({
                 {envError && <p className="ui-error" role="alert">{envError}</p>}
                 {envFiles === null && !envError && <p className="ui-muted" role="status">Looking for .env files…</p>}
                 {envFiles?.length === 0 && <p className="ui-muted">No .env files in this folder.</p>}
-                {envFiles?.map((file) => (
-                  <label key={file} className="ui-start__env-file">
-                    <input type="checkbox" checked={includeEnv.includes(file)} onChange={(event) => toggleEnvFile(file, event.target.checked)} />
-                    <code>{file}</code>
-                  </label>
-                ))}
+                {envFiles && envFiles.length > 0 && <EnvChecklist files={envFiles} ticked={includeEnv} onToggle={toggleEnvFiles} />}
               </fieldset>
             </div>
+          )}
+          {githubMissing && (
+            <p className="ui-start__warning ui-start__note" role="note">
+              GitHub is not connected, so the agent cannot push or read pull requests.{" "}
+              {cloud?.onConnectGithub && <button type="button" className="ui-link" onClick={cloud.onConnectGithub}>Connect GitHub</button>}
+            </p>
+          )}
+          {cloudOn && (
+            <details className="ui-start__advanced" open={openNetwork || failure?.field === "network"}>
+              <summary className="ui-muted">Advanced</summary>
+              <div className="ui-start__network">
+                <Toggle
+                  checked={openNetwork}
+                  labelledBy={ids.network}
+                  onChange={(next) => { setFailure(null); setOpenNetwork(next); }}
+                />
+                <span id={ids.network} className="ui-start__network-label">Open network access</span>
+                <span className="ui-muted">{openNetwork ? "The agent can reach any website." : "Off: the agent reaches only GitHub, npm, PyPI and Draft."}</span>
+              </div>
+              {openNetwork && <p className="ui-start__warning" role="note">Anyone in this session can make the agent send data anywhere.</p>}
+              {failure?.field === "network" && <p className="ui-error" role="alert">{failure.message}</p>}
+            </details>
           )}
           <div className="ui-composer__row">
             <label className="ui-visually-hidden" htmlFor="start-message">First message</label>
@@ -436,31 +478,15 @@ export function SessionStartScreen({
                 className="ui-btn ui-btn--primary"
                 disabled={starting || !text.trim() || (cloudOn ? !cloudStartable : !folder || blocks(localProblem))}
               >
-                {starting ? "Starting…" : "Start"}
+                {starting ? (step ?? "Starting…") : "Start"}
               </button>
             </div>
+            {generalFailure && <p className="ui-error ui-start__failure" role="alert">{generalFailure}</p>}
           </div>
         </form>
-        {cloudOn && (
-          <div className="ui-start__cloud">
-            <p className="ui-muted">Cloud sessions run Claude Code.</p>
-            <div className="ui-start__network">
-              <Toggle
-                checked={openNetwork}
-                labelledBy={ids.network}
-                onChange={(next) => { setFailure(null); setOpenNetwork(next); }}
-              />
-              <span id={ids.network} className="ui-start__network-label">Open network</span>
-              <span className="ui-muted">Restricted limits where the agent can connect.</span>
-            </div>
-            {openNetwork && <p className="ui-start__warning" role="note">Anyone in this session can make the agent send data anywhere.</p>}
-            {failure?.field === "network" && <p className="ui-error" role="alert">{failure.message}</p>}
-          </div>
-        )}
         {!cloudOn && !folder && <p className="ui-muted">Choose a folder to start in.</p>}
         {snapshotOn && !folder && <p className="ui-muted">Choose a folder to copy.</p>}
         {!cloudOn && (setup ?? (line && <p className={blocks(localProblem) ? "ui-error" : "ui-muted"} role="status">{line}</p>))}
-        {failure && failure.field !== "repo" && failure.field !== "branch" && failure.field !== "network" && <p className="ui-error" role="alert">{failure.message}</p>}
       </div>
     </div>
   );

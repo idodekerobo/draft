@@ -195,7 +195,7 @@ describe("startCloudSession", () => {
       DRAFT_NETWORK: "restricted",
     });
     const hosts = env.DRAFT_EGRESS_HOSTS!.split(",");
-    for (const host of ["github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org", "pypi.org", "files.pythonhosted.org", "api.anthropic.com", "api.draft.test", "project.supabase.co"]) {
+    for (const host of ["github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com", "registry.npmjs.org", "pypi.org", "files.pythonhosted.org", "api.anthropic.com", "api.draft.test", "project.supabase.co"]) {
       expect(hosts).toContain(host);
     }
 

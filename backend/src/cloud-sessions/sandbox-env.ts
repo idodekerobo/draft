@@ -3,6 +3,7 @@ import type { SeedSpec } from "../sandbox/host/config";
 /** Hosts a cloud session may reach besides its model provider, the API and the storage host. */
 export const CLOUD_EGRESS_HOSTS = [
   "github.com",
+  "api.github.com",
   "codeload.github.com",
   "objects.githubusercontent.com",
   "registry.npmjs.org",

@@ -30,7 +30,7 @@ export function displayStatus(
   now: number,
 ): DisplayStatus {
   if (session.status === "ended") return STATUSES.ended;
-  if (session.status === "host_offline") return STATUSES.host_offline;
+  if (session.status === "host_offline") return session.runtime === "cloud" ? { key: "host_offline", label: "Restarting" } : STATUSES.host_offline;
   if (session.status === "sleeping") return STATUSES.sleeping;
   if ((session.open_approval_count ?? 0) > 0) return STATUSES.waiting;
   if (session.status === "starting") {

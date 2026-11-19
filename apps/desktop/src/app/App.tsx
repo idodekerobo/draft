@@ -166,7 +166,7 @@ export function App() {
               {activeView === "connections" && <ConnectionsView />}
               {activeView === "activity" && <ActivityView onOpenRoutine={(id) => { handleNavigate("routines"); setActivityRoutineId(id); }} onFixInConnections={() => handleNavigate("connections")} />}
               {activeView === "routines" && <RoutinesView initialOpenId={activityRoutineId} onReconnect={() => handleNavigate("connections")} />}
-              {activeView === "sessions" && <SessionsView />}
+              {activeView === "sessions" && <SessionsView onOpenConnections={() => handleNavigate("connections")} />}
             </>
           )}
         </main>
