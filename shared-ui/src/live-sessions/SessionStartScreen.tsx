@@ -376,6 +376,28 @@ export function SessionStartScreen({
             <Segmented labelId={ids.source} options={SOURCES} value={source} onChoose={chooseSource} />
           </div>
         )}
+        {githubMissing && (
+          <div className="ui-start__alert" role="alert">
+            <p><strong>GitHub is not connected.</strong> The agent cannot clone private repositories, push, or read pull requests.</p>
+            {cloud?.onConnectGithub && <button type="button" className="ui-btn ui-btn--primary" onClick={cloud.onConnectGithub}>Connect GitHub</button>}
+          </div>
+        )}
+        {cloudOn && (
+          <details className="ui-start__advanced" open={openNetwork || failure?.field === "network"}>
+            <summary className="ui-muted">Advanced</summary>
+            <div className="ui-start__network">
+              <Toggle
+                checked={openNetwork}
+                labelledBy={ids.network}
+                onChange={(next) => { setFailure(null); setOpenNetwork(next); }}
+              />
+              <span id={ids.network} className="ui-start__network-label">Open network access</span>
+              <span className="ui-muted">{openNetwork ? "The agent can reach any website." : "Off: the agent reaches only GitHub, npm, PyPI and Draft."}</span>
+            </div>
+            {openNetwork && <p className="ui-start__warning" role="note">Anyone in this session can make the agent send data anywhere.</p>}
+            {failure?.field === "network" && <p className="ui-error" role="alert">{failure.message}</p>}
+          </details>
+        )}
         <form className="ui-composer__box ui-start__box" onSubmit={submit}>
           {(!cloudOn || snapshotOn) && <div className="ui-composer__folder ui-start__folder" ref={rootRef}>
             <button ref={triggerRef} type="button" className="ui-start__folder-button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
@@ -400,49 +422,60 @@ export function SessionStartScreen({
             )}
           </div>}
           {cloudOn && !snapshotOn && (
-            <div className="ui-start__repo">
-              <div className="ui-start__field ui-start__field--repo">
-                <label htmlFor={ids.repo} className="ui-muted">Repository</label>
-                <input
-                  id={ids.repo}
-                  className="ui-input ph-no-capture"
-                  value={repo}
-                  placeholder="https://github.com/owner/repo"
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-invalid={repoShown ? true : undefined}
-                  list={ids.repoList}
-                  aria-describedby={repoShown ? ids.repoError : repoHint ? ids.repoHint : undefined}
-                  onChange={(event) => { repoEdited.current = true; setFailure(null); setRepo(event.target.value); }}
-                />
-                <datalist id={ids.repoList}>
-                  {[...new Set([...(suggested ? [suggested] : []), ...recentRepos])].map((entry) => <option key={entry} value={entry} />)}
-                </datalist>
-                {repoShown && <p id={ids.repoError} className="ui-error ui-start__field-error">{repoShown}</p>}
-                {!repoShown && repoHint && <p id={ids.repoHint} className="ui-muted ui-start__field-error">{repoHint}</p>}
-              </div>
-              <div className="ui-start__field ui-start__field--branch">
-                <label htmlFor={ids.branch} className="ui-muted">Branch</label>
-                <input
-                  id={ids.branch}
-                  className="ui-input ph-no-capture"
-                  value={branch}
-                  autoComplete="off"
-                  spellCheck={false}
-                  aria-invalid={branchShown ? true : undefined}
-                  aria-describedby={branchShown ? ids.branchError : undefined}
-                  list={branchOptions.length > 0 ? ids.branchList : undefined}
-                  placeholder={branchOptions.length > 0 ? "Pick or type a branch" : undefined}
-                  onChange={(event) => { branchEdited.current = true; setFailure(null); setBranch(event.target.value); }}
-                />
-                {branchOptions.length > 0 && (
-                  <datalist id={ids.branchList}>
-                    {branchOptions.map((name) => <option key={name} value={name} />)}
+            <>
+              <div className="ui-composer__folder ui-start__repobar">
+                <div className="ui-start__barfield ui-start__barfield--repo">
+                  <label htmlFor={ids.repo} className="ui-start__barlabel">Repository</label>
+                  <span className="ui-start__barinput">
+                    <input
+                      id={ids.repo}
+                      className="ph-no-capture"
+                      value={repo}
+                      placeholder="https://github.com/owner/repo"
+                      autoComplete="off"
+                      spellCheck={false}
+                      list={ids.repoList}
+                      aria-invalid={repoShown ? true : undefined}
+                      aria-describedby={repoShown ? ids.repoError : repoHint ? ids.repoHint : undefined}
+                      onChange={(event) => { repoEdited.current = true; setFailure(null); setRepo(event.target.value); }}
+                    />
+                    <span aria-hidden="true">▾</span>
+                  </span>
+                  <datalist id={ids.repoList}>
+                    {[...new Set([...(suggested ? [suggested] : []), ...recentRepos])].map((entry) => <option key={entry} value={entry} />)}
                   </datalist>
-                )}
-                {branchShown && <p id={ids.branchError} className="ui-error ui-start__field-error">{branchShown}</p>}
+                </div>
+                <div className="ui-start__barfield ui-start__barfield--branch">
+                  <label htmlFor={ids.branch} className="ui-start__barlabel">Branch</label>
+                  <span className="ui-start__barinput">
+                    <input
+                      id={ids.branch}
+                      className="ph-no-capture"
+                      value={branch}
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-invalid={branchShown ? true : undefined}
+                      aria-describedby={branchShown ? ids.branchError : undefined}
+                      list={branchOptions.length > 0 ? ids.branchList : undefined}
+                      onChange={(event) => { branchEdited.current = true; setFailure(null); setBranch(event.target.value); }}
+                    />
+                    <span aria-hidden="true">▾</span>
+                  </span>
+                  {branchOptions.length > 0 && (
+                    <datalist id={ids.branchList}>
+                      {branchOptions.map((name) => <option key={name} value={name} />)}
+                    </datalist>
+                  )}
+                </div>
               </div>
-            </div>
+              {(repoShown || branchShown || repoHint) && (
+                <div className="ui-start__barnotes">
+                  {repoShown && <p id={ids.repoError} className="ui-error">{repoShown}</p>}
+                  {!repoShown && repoHint && <p id={ids.repoHint} className="ui-muted">{repoHint}</p>}
+                  {branchShown && <p id={ids.branchError} className="ui-error">{branchShown}</p>}
+                </div>
+              )}
+            </>
           )}
           {snapshotOn && (
             <div className="ui-start__snapshot">
@@ -456,28 +489,6 @@ export function SessionStartScreen({
                 {envFiles && envFiles.length > 0 && <EnvChecklist files={envFiles} ticked={includeEnv} onToggle={toggleEnvFiles} />}
               </fieldset>
             </div>
-          )}
-          {githubMissing && (
-            <p className="ui-start__warning ui-start__note" role="note">
-              GitHub is not connected, so the agent cannot push or read pull requests.{" "}
-              {cloud?.onConnectGithub && <button type="button" className="ui-link" onClick={cloud.onConnectGithub}>Connect GitHub</button>}
-            </p>
-          )}
-          {cloudOn && (
-            <details className="ui-start__advanced" open={openNetwork || failure?.field === "network"}>
-              <summary className="ui-muted">Advanced</summary>
-              <div className="ui-start__network">
-                <Toggle
-                  checked={openNetwork}
-                  labelledBy={ids.network}
-                  onChange={(next) => { setFailure(null); setOpenNetwork(next); }}
-                />
-                <span id={ids.network} className="ui-start__network-label">Open network access</span>
-                <span className="ui-muted">{openNetwork ? "The agent can reach any website." : "Off: the agent reaches only GitHub, npm, PyPI and Draft."}</span>
-              </div>
-              {openNetwork && <p className="ui-start__warning" role="note">Anyone in this session can make the agent send data anywhere.</p>}
-              {failure?.field === "network" && <p className="ui-error" role="alert">{failure.message}</p>}
-            </details>
           )}
           <div className="ui-composer__row">
             <label className="ui-visually-hidden" htmlFor="start-message">First message</label>

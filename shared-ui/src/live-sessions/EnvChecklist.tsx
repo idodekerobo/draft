@@ -16,6 +16,7 @@ function FolderRow({ folder, ticked, onToggle }: { folder: EnvFolder; ticked: Re
     <li>
       <details className="ui-env-tree__folder">
         <summary>
+          <span className="ui-env-tree__chevron" aria-hidden="true">▸</span>
           <TriCheckbox state={state} label={`All .env files in ${folder.path}`} onChange={(on) => onToggle(filesUnder(folder), on)} />
           <code>{folder.name}/</code>
           <span className="ui-muted"> {filesUnder(folder).length}</span>
