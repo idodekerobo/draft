@@ -90,7 +90,8 @@ export interface AppState {
 export type CloudSessionSeed =
   | { kind: "repo"; gitRemote: string; branch: string }
   | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string }
-  | { kind: "routine_run"; sessionId: string };
+  | { kind: "routine_run"; sessionId: string }
+  | { kind: "empty" };
 
 export interface SessionLaunchConfig {
   tool: "claude-code" | "codex";

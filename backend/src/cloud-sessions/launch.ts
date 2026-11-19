@@ -33,7 +33,8 @@ export interface CloudSessionDeps {
 export type StoredSeed =
   | { kind: "repo"; gitRemote: string; branch: string }
   | { kind: "snapshot"; storageKey: string }
-  | { kind: "routine_run"; routineSessionId: string };
+  | { kind: "routine_run"; routineSessionId: string }
+  | { kind: "empty" };
 
 export function snapshotStoreOf(deps: Pick<CloudSessionDeps, "client" | "snapshots">): SnapshotStore {
   return deps.snapshots ?? storageSnapshotStore(deps.client);
@@ -42,7 +43,8 @@ export function snapshotStoreOf(deps: Pick<CloudSessionDeps, "client" | "snapsho
 /** What the host is told to fetch. A snapshot gets a new download link on every launch. */
 export async function hostSeedFor(seed: StoredSeed, snapshots: SnapshotStore): Promise<SeedSpec> {
   if (seed.kind === "repo") return { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch };
-  if (seed.kind === "routine_run") return { kind: "routine_run" };
+  // The host starts both in an empty git folder; a continued run reads its history through Draft's tools.
+  if (seed.kind === "routine_run" || seed.kind === "empty") return { kind: "routine_run" };
   return { kind: "snapshot", url: await snapshots.downloadUrl(seed.storageKey, SNAPSHOT_DOWNLOAD_TTL_SECONDS) };
 }
 

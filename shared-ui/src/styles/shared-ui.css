@@ -1069,7 +1069,7 @@
 .ui-start__field--branch { flex: 0 1 140px; }
 .ui-start__field-error { margin: 0; font-size: var(--font-size-small); }
 .ui-start__advanced { width: 100%; max-width: 680px; font-size: var(--font-size-secondary); }
-.ui-start__alert { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); width: 100%; max-width: 680px; box-sizing: border-box; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-status-yellow); border-radius: var(--radius-notice); background: var(--color-bg-elevated); font-size: var(--font-size-secondary); }
+.ui-start__alert { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); width: 100%; max-width: 680px; box-sizing: border-box; padding: var(--space-3) var(--space-4); border-radius: var(--radius-notice); background: var(--color-bg-surface); color: var(--color-text-primary); font-size: var(--font-size-secondary); }
 .ui-start__alert p { margin: 0; flex: 1 1 260px; }
 .ui-start__repobar { justify-content: space-between; align-items: flex-end; gap: var(--space-4); padding: var(--space-2) var(--space-3); }
 .ui-start__barfield { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

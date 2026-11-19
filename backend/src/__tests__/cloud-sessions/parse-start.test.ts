@@ -30,6 +30,12 @@ describe("parseCloudStart", () => {
     });
   });
 
+  it("accepts an empty project, with no repository scope", () => {
+    const result = parseCloudStart(body({ seed: { kind: "empty" } }), owner);
+    expect(result.ok && result.input.seed).toEqual({ kind: "empty" });
+    expect(errorOf(parseCloudStart(body({ seed: { kind: "empty" }, sessionId: "11111111-1111-4111-8111-111111111111" }), owner))).toBe("invalid_seed");
+  });
+
   it("takes an open network and a reasoning effort the model lists", () => {
     const result = parseCloudStart(body({ network: "open", reasoningEffort: "high" }), owner);
     expect(result.ok && result.input.network).toBe("open");

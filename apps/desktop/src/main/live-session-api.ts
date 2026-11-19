@@ -13,7 +13,8 @@ export type LocalStartParams = { runtime?: "local"; harness?: string; folderPath
 export type CloudSeedParams =
   | { kind: "repo"; gitRemote: string; branch: string }
   | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string }
-  | { kind: "routine_run"; sessionId: string };
+  | { kind: "routine_run"; sessionId: string }
+  | { kind: "empty" };
 
 export type CloudStartParams = { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; seed: CloudSeedParams };
 
@@ -55,7 +56,9 @@ export async function startCloudLiveSession(params: CloudStartParams, deps: Clou
   const seedBody =
     seed.kind === "repo"
       ? { kind: "repo", gitRemote: seed.gitRemote, branch: seed.branch }
-      : seed.kind === "routine_run"
+      : seed.kind === "empty"
+        ? { kind: "empty" }
+        : seed.kind === "routine_run"
         ? { kind: "routine_run", sessionId: seed.sessionId }
         : { kind: "snapshot", storageKey: seed.storageKey, folderName: seed.folderName };
   try {

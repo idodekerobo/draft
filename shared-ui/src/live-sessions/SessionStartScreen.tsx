@@ -39,7 +39,7 @@ export interface CloudStartRequest extends StartFields {
   runtime: "cloud";
   harness: "claude";
   source: "repo";
-  /** The https address of the GitHub repository. */
+  /** The https address of the GitHub repository. Empty starts an empty project. */
   gitRemote: string;
   branch: string;
   network: "restricted" | "open";
@@ -217,10 +217,13 @@ export function SessionStartScreen({
   const repoValue = cloudRepoFromRemote(repo);
   const repoError = repo.trim() ? repoProblem(repoValue) : null;
   const branchError = branchProblem(branch);
-  const cloudReady = !repoProblem(repoValue) && !branchProblem(branch) && repoValue !== "" && branch.trim() !== "";
+  const emptyProject = repoValue === "";
+  const cloudReady = emptyProject || (!repoProblem(repoValue) && !branchProblem(branch) && branch.trim() !== "");
   // The checklist must have loaded, or failed, before a snapshot can start. A failed listing includes no .env files.
   const snapshotReady = folder !== null && (envFiles !== null || envError !== null);
-  const cloudStartable = snapshotOn ? snapshotReady : cloudReady;
+  // Without GitHub the agent has no repository access and no shared place to work, so a cloud start waits for it.
+  const githubBlocks = cloud?.githubConnected === false;
+  const cloudStartable = !githubBlocks && (snapshotOn ? snapshotReady : cloudReady);
 
   // The repository follows the folder's git remote until the person types their own.
   useEffect(() => {
@@ -332,7 +335,7 @@ export function SessionStartScreen({
             includeEnvFiles: (envFiles ?? []).filter((file) => includeEnv.includes(file)),
             network: openNetwork ? "open" : "restricted",
           }
-        : { ...fields, runtime: "cloud", harness: "claude", source: "repo", gitRemote: repoValue, branch: branch.trim(), network: openNetwork ? "open" : "restricted" }
+        : { ...fields, runtime: "cloud", harness: "claude", source: "repo", gitRemote: repoValue, branch: emptyProject ? "" : branch.trim(), network: openNetwork ? "open" : "restricted" }
       : { ...fields, harness, folderPath: folder! };
     setStarting(true);
     setFailure(null);
@@ -340,7 +343,7 @@ export function SessionStartScreen({
       const result = snapshotOn ? await onStart(request, setStep) : await onStart(request);
       if (result.ok) {
         clearDraft(NEW_SESSION_DRAFT_KEY);
-        if (request.runtime === "cloud" && request.source === "repo") setRecentRepos(rememberRepo(request.gitRemote));
+        if (request.runtime === "cloud" && request.source === "repo" && request.gitRemote) setRecentRepos(rememberRepo(request.gitRemote));
       } else setFailure(failureOf(result));
     } finally {
       setStarting(false);
@@ -350,7 +353,7 @@ export function SessionStartScreen({
 
   const repoShown = repoError ?? (failure?.field === "repo" ? failure.message : null);
   const repoHint = suggested && repoValue === suggested && folder ? `From ${folderName(folder)}. Pick a recent repository or paste another URL.` : null;
-  const githubMissing = cloudOn && cloud?.githubConnected === false;
+  const githubMissing = cloudOn && githubBlocks;
   const generalFailure = failure && failure.field !== "repo" && failure.field !== "branch" && failure.field !== "network" ? failure.message : null;
   const branchShown = branchError ?? (failure?.field === "branch" ? failure.message : null);
 
@@ -378,7 +381,7 @@ export function SessionStartScreen({
         )}
         {githubMissing && (
           <div className="ui-start__alert" role="alert">
-            <p><strong>GitHub is not connected.</strong> The agent cannot clone private repositories, push, or read pull requests.</p>
+            <p><strong>Connect GitHub to start in Draft cloud.</strong> Without it the agent cannot clone, push or open pull requests, and teammates have no shared copy of the work.</p>
             {cloud?.onConnectGithub && <button type="button" className="ui-btn ui-btn--primary" onClick={cloud.onConnectGithub}>Connect GitHub</button>}
           </div>
         )}
@@ -431,7 +434,7 @@ export function SessionStartScreen({
                       id={ids.repo}
                       className="ph-no-capture"
                       value={repo}
-                      placeholder="https://github.com/owner/repo"
+                      placeholder="None: start an empty project"
                       autoComplete="off"
                       spellCheck={false}
                       list={ids.repoList}
@@ -445,7 +448,7 @@ export function SessionStartScreen({
                     {[...new Set([...(suggested ? [suggested] : []), ...recentRepos])].map((entry) => <option key={entry} value={entry} />)}
                   </datalist>
                 </div>
-                <div className="ui-start__barfield ui-start__barfield--branch">
+                {!emptyProject && <div className="ui-start__barfield ui-start__barfield--branch">
                   <label htmlFor={ids.branch} className="ui-start__barlabel">Branch</label>
                   <span className="ui-start__barinput">
                     <input
@@ -466,7 +469,7 @@ export function SessionStartScreen({
                       {branchOptions.map((name) => <option key={name} value={name} />)}
                     </datalist>
                   )}
-                </div>
+                </div>}
               </div>
               {(repoShown || branchShown || repoHint) && (
                 <div className="ui-start__barnotes">

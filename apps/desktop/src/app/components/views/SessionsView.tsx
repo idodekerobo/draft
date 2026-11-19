@@ -138,6 +138,7 @@ export function SessionsView({ onOpenConnections }: { onOpenConnections?: () => 
   async function startCloud(request: CloudStartRequest | CloudSnapshotStartRequest, progress?: (step: string) => void): Promise<{ ok: true; sessionId: string } | { ok: false; error: string; detail?: string }> {
     const common = { runtime: "cloud" as const, model: request.model, effort: request.effort, network: request.network };
     if (request.source === "repo") {
+      if (!request.gitRemote) return rpc.request.startLiveSession({ ...common, seed: { kind: "empty" as const } });
       return rpc.request.startLiveSession({ ...common, seed: { kind: "repo" as const, gitRemote: request.gitRemote, branch: request.branch } });
     }
     progress?.("Copying folder…");

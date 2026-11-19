@@ -13,7 +13,8 @@ export type CloudSeed =
   | { kind: "repo"; gitRemote: string; repo: string; branch: string }
   | { kind: "snapshot"; sessionId: string; storageKey: string; folderName: string }
   /** An empty workspace that continues the history of a finished routine run, which is read over Draft's tools. */
-  | { kind: "routine_run"; routineSessionId: string };
+  | { kind: "routine_run"; routineSessionId: string }
+  | { kind: "empty" };
 
 export interface CloudStartInput {
   workspaceId: string;
@@ -65,6 +66,11 @@ function parseSeed(value: unknown, sessionId: unknown, workspaceId: string): See
     const remote = parseGitHubRemote(seed.gitRemote);
     if (!remote || !isSafeBranch(seed.branch) || sessionId !== undefined) return { ok: false, error: "invalid_seed" };
     return { ok: true, seed: { kind: "repo", gitRemote: remote.gitRemote, repo: remote.repo, branch: seed.branch } };
+  }
+
+  if (seed.kind === "empty") {
+    if (sessionId !== undefined) return { ok: false, error: "invalid_seed" };
+    return { ok: true, seed: { kind: "empty" } };
   }
 
   // The routine run's session id is inside the seed, so the body has no sessionId for this kind.

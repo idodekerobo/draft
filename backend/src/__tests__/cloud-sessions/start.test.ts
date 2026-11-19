@@ -234,6 +234,15 @@ describe("startCloudSession", () => {
     expect(JSON.stringify(db.tables.errors)).not.toContain(CLAUDE_TOKEN);
   });
 
+  it("starts an empty project in an empty folder, with no repository and no GitHub access", async () => {
+    const fly = fakeProvider();
+    const outcome = await startCloudSession({ ...input, seed: { kind: "empty" } }, deps({ provider: fly.provider }));
+    expect(outcome.ok).toBe(true);
+    expect(fly.created[0]!.env.DRAFT_SEED).toBe(JSON.stringify({ kind: "routine_run" }));
+    expect(session()).toMatchObject({ git_remote: null, folder_name: null, seed: { kind: "empty" } });
+    expect(JSON.stringify(run()?.permissions ?? [])).not.toContain("github.credential");
+  });
+
   it("answers with the session before the sandbox has booted, and finishes the launch behind it", async () => {
     const fly = fakeProvider();
     let release!: () => void;

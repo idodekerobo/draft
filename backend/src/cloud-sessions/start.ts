@@ -232,5 +232,6 @@ function folderNameOf(seed: CloudSeed): string | null {
 function storedSeedOf(seed: CloudSeed): Record<string, unknown> {
   if (seed.kind === "repo") return { kind: "repo", branch: seed.branch };
   if (seed.kind === "snapshot") return { kind: "snapshot", storageKey: seed.storageKey };
+  if (seed.kind === "empty") return { kind: "empty" };
   return { kind: "routine_run", routineSessionId: seed.routineSessionId };
 }
