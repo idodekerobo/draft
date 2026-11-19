@@ -4,7 +4,7 @@ const url=process.env.SUPABASE_URL!;
 if (!url.includes('zpmnbwvpasxbgiifbeti')) throw new Error('Staging only');
 const db=createClient(url,process.env.SUPABASE_SECRET_KEY!,{auth:{persistSession:false}});
 const suffix=crypto.randomUUID();let user:string|undefined;let org:string|undefined;
-async function row(table:string, values:unknown) { const r=await db.from(table).insert(values).select().single();if(r.error)throw r.error;return r.data; }
+async function row(table:string, values:Record<string,unknown>) { const r=await db.from(table).insert(values).select().single();if(r.error)throw r.error;return r.data; }
 async function read(sessionId:string,ws:string,query:Record<string,unknown>={}) { const r=await db.rpc('read_session_view',{p_session_id:sessionId,p_workspace_id:ws,...query});if(r.error)throw r.error;return r.data; }
 try {
  const created=await db.auth.admin.createUser({email:`view-${suffix}@example.test`,email_confirm:true,password:suffix+"-Test1!"});if(created.error)throw created.error;user=created.data.user.id;

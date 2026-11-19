@@ -17,7 +17,7 @@ function setup(options:{failAgent?:boolean;orphan?:boolean;approval?:boolean}={}
   if(q.agentId||q.around===500){if(fail)throw new Error("agent failed");return {page:page(child,"a1")};}
   return {page:page(q.after!==undefined?[]:options.orphan?[root[1]!]:root),...(q.state===false?{}:{snapshot:{session,viewer:{id:"u",name:"User"},inputs:[],approvals:options.approval?[{seq:2,source_id:"perm:old",kind:"permission_request" as const,payload:{requestId:"old",name:"Bash",input:{command:"ls"}},created_at:""}]:[],agents:[summary]}})};
  };
- const api={fetchView,fetchEvents:async()=>{throw new Error("Legacy history must not be read");},sendMessage:async()=>{},actOnInput:async()=>{},decideApproval:async()=>({ok:true}),stop:async()=>({withdrawn:[]}),setMode:async()=>{}} as LiveSessionsApi;
+ const api:LiveSessionsApi={listSessions:async()=>[],fetchView,fetchEvents:async()=>{throw new Error("Legacy history must not be read");},sendMessage:async()=>{},actOnInput:async()=>{},decideApproval:async()=>({ok:true}),stop:async()=>({withdrawn:[]}),setMode:async()=>{}};
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
  const tree=(focusSeq:number|null=null)=><QueryClientProvider client={client}><SessionView api={api} sessionId="s" shareBaseUrl="https://draft.test" focusSeq={focusSeq}/></QueryClientProvider>;
  return {calls,client,tree,api,recover:()=>{fail=false;}};
@@ -57,7 +57,7 @@ it("preserves the visible message when older history arrives without native scro
  const old=Element.prototype.getBoundingClientRect;
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
  let finish!:(response:SessionViewResponse)=>void;
- const api={fetchView:async(_id:string,q:SessionViewQuery)=>q.before!==undefined?new Promise<SessionViewResponse>(resolve=>{finish=resolve;}):{page:{...page([{...root[1]!,seq:100},{...root[1]!,seq:200}]),hasOlder:true},snapshot:{session,viewer:{id:"u",name:"User"},inputs:[],approvals:[],agents:[]}},fetchEvents:async()=>{throw Error("legacy");},sendMessage:async()=>{},actOnInput:async()=>{},decideApproval:async()=>({ok:true}),stop:async()=>({withdrawn:[]}),setMode:async()=>{}} as LiveSessionsApi;
+ const api:LiveSessionsApi={listSessions:async()=>[],fetchView:async(_id:string,q:SessionViewQuery)=>q.before!==undefined?new Promise<SessionViewResponse>(resolve=>{finish=resolve;}):{page:{...page([{...root[1]!,seq:100},{...root[1]!,seq:200}]),hasOlder:true},snapshot:{session,viewer:{id:"u",name:"User"},inputs:[],approvals:[],agents:[]}},fetchEvents:async()=>{throw Error("legacy");},sendMessage:async()=>{},actOnInput:async()=>{},decideApproval:async()=>({ok:true}),stop:async()=>({withdrawn:[]}),setMode:async()=>{}};
  try {
   const {container}=render(<QueryClientProvider client={client}><SessionView api={api} sessionId="scroll-paged"/></QueryClientProvider>);
   await screen.findByRole("heading",{name:"Paged session"});
