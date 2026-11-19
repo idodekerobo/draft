@@ -272,7 +272,7 @@ async function runIntegrationsDisconnect(args: string[]): Promise<number> {
   }
 
   const result = await disconnectIntegration(
-    parsed.provider === "claude-code" ? "claude_session" : parsed.provider,
+    parsed.provider,
     parsed.provider === "granola" ? (parsed.workspaceKey ? "workspace" : "personal") : undefined,
   );
   if (!result.ok) {
