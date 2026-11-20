@@ -126,7 +126,7 @@ export function SessionComposer({
           <textarea
             ref={inputRef}
             id="session-message"
-            className="ui-composer__input ph-no-capture"
+            className="ui-composer__input"
             rows={2}
             autoFocus={autoFocus}
             maxLength={MAX_INPUT_CHARS}

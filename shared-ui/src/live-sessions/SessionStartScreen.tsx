@@ -551,7 +551,7 @@ export function SessionStartScreen({
             <textarea
               ref={inputRef}
               id="start-message"
-              className="ui-composer__input ph-no-capture"
+              className="ui-composer__input"
               rows={2}
               autoFocus
               placeholder="Describe a task to start a new session…"

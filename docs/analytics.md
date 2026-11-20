@@ -18,19 +18,19 @@ Builds without a PostHog key (for example self-hosted and open-source builds) se
 
 ## What is not collected
 
-- Anything you type, including API keys and search text.
-- The content of your context, files, messages, meetings or sessions.
-- File paths, workspace names, profile names, and your name or email.
+- Passwords, API keys and tokens (password-type fields), and the repository and branch fields on the start screen. These fields are excluded from session replay.
+- The content of your context, files, messages, meetings or sessions in usage events. Usage events carry coded values only. Session replay is different: see [Session replay](#session-replay).
+- File paths and workspace names in usage events.
 
 ## How events are linked to you
 
-After you turn usage data on, the web and desktop apps identify events with your Draft account id (a random UUID). This joins your web and desktop use. It is pseudonymous: it is not your name or email, but Draft can map it to your account.
+After you turn usage data on, the web and desktop apps identify events with your Draft account id (a random UUID). This joins your web and desktop use. Your email address is also stored on the PostHog profile, so the Draft team can find an account when it investigates an issue.
 
 When you turn usage data off, the apps stop sending events and reset the PostHog identity in that app.
 
 ## Session replay
 
-While usage data is on, PostHog records how you move through the app to help fix bugs. All text and all inputs are masked, so the recording shows layout and clicks, not content.
+While usage data is on, PostHog records how you move through the app to help the Draft team understand usage and fix bugs. Text masking is off, so a recording shows the text on screen, such as meeting quotes, names and session text, and the text you type in ordinary fields, including your messages to agents in a session. Password-type fields (API keys and tokens) and the repository and branch fields are excluded. Turn off **Share usage data** in Settings to stop recording.
 
 ## Events
 
@@ -54,7 +54,7 @@ Events sent before you turn usage data on are kept in memory in the open tab and
 
 ## Landing page
 
-The marketing site (`apps/landing-page`) records page views and, when enabled, session replay with all inputs masked. It does not ask for consent yet; a consent banner is planned.
+The marketing site (`apps/landing-page`) records page views and, when enabled, session replay without masking form input. It does not ask for consent yet; a consent banner is planned.
 
 ## Withdraw or delete
 
