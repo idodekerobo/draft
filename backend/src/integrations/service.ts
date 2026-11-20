@@ -95,6 +95,14 @@ function googleDriveIntegration(rows: Array<{ provider: string; status: string; 
   };
 }
 
+// One Google sign-in connects Gmail and Google Drive, so a connect link is still useful while either is missing.
+async function hasEveryGoogleProduct(client: SupabaseClient, workspaceId: string, userId: string): Promise<boolean> {
+  const { data, error } = await client.from("connections").select("provider, status").eq("workspace_id", workspaceId).eq("connected_by_user_id", userId).in("provider", connectionProviders("google"));
+  if (error) throw error;
+  const live = new Set(((data ?? []) as Array<{ provider: string; status: string }>).filter((row) => LIVE.has(row.status)).map((row) => row.provider));
+  return connectionProviders("google").every((provider) => live.has(provider));
+}
+
 export const hashConnectToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export type ConnectResult =
@@ -114,9 +122,13 @@ export async function createConnectRequest(
 ): Promise<ConnectResult> {
   const now = deps.now ?? new Date();
   const entry = INTEGRATIONS.find((item) => item.provider === input.provider)!;
+  if (input.provider === "google") {
+    if (await hasEveryGoogleProduct(client, input.workspaceId, input.userId)) return { status: "connected", provider: input.provider, message: `${entry.label} is already connected. No link is needed.` };
+  } else {
   const current = (await listIntegrations(client, input.workspaceId, input.userId)).find((item) => item.provider === input.provider);
   if (current?.status === "connected") return { status: "connected", provider: input.provider, message: `${entry.label} is already connected. No link is needed.` };
   if (current?.status === "pending") return { status: "pending", provider: input.provider, message: `${entry.label} is saved and waiting for its first event from the provider. No link is needed.` };
+  }
 
   const { count, error: countError } = await client
     .from("connection_requests")

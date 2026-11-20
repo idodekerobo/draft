@@ -64,6 +64,17 @@ describe("Google in listIntegrations", () => {
   });
 });
 
+describe("Google connect links", () => {
+  it("issues a link while the caller lacks Gmail or Google Drive, and reports connected with both", async () => {
+    const gmailOnly = fakeDb({ connections: [connection("gmail"), connection("google_drive", "active", OTHER)] });
+    expect(await createConnectRequest(fakeClient(gmailOnly), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toMatchObject({ status: "action_required" });
+    const driveOnly = fakeDb({ connections: [connection("google_drive"), connection("gmail", "revoked")] });
+    expect(await createConnectRequest(fakeClient(driveOnly), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toMatchObject({ status: "action_required" });
+    const both = fakeDb({ connections: [connection("gmail"), connection("google_drive", "degraded")] });
+    expect(await createConnectRequest(fakeClient(both), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toEqual({ status: "connected", provider: "google" });
+  });
+});
+
 describe("connect links", () => {
   it("returns a link and stores only the token's hash", async () => {
     const db = fakeDb({ connections: [] });
