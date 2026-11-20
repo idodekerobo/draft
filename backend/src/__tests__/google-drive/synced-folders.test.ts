@@ -71,14 +71,15 @@ describe("synced Google Drive folders", () => {
     expect((await routes.addDriveFolder("ws-1", "user-a", { googleFolderId: "missing" }, deps(db, api))).status).toBe(404);
   });
 
-  it("allows a nested folder and resets that folder's backfill", async () => {
+  it("allows a nested folder and leaves the sync cursor to the sync", async () => {
     const db = seed();
-    db.tables.connections![0]!.cursor_json = { backfill: { seen: 40, folders: { "f-child": { done: true }, "f-1": { done: true } } } };
+    const cursor = { backfill: { seen: 40, folders: { "f-child": { done: true }, "f-1": { done: true } } } };
+    db.tables.connections![0]!.cursor_json = cursor;
     await routes.addDriveFolder("ws-1", "user-b", { folderKind: "folder", googleFolderId: "f-1", name: "Plans" }, deps(db));
     const response = await routes.addDriveFolder("ws-1", "user-a", { folderKind: "folder", googleFolderId: "f-child", name: "Q4" }, deps(db));
     expect(response.status).toBe(201);
     expect(db.tables.synced_google_drive_folders).toHaveLength(2);
-    expect(db.tables.connections![0]!.cursor_json).toEqual({ backfill: { seen: 0, folders: { "f-1": { done: true } } } });
+    expect(db.tables.connections![0]!.cursor_json).toEqual(cursor);
     expect(db.tables.scheduled_tasks![0]!.next_due_at).toBe("2026-11-20T00:00:00.000Z");
   });
 

@@ -404,6 +404,18 @@ describe("syncDriveConnection", () => {
     expect(db.tables.connections![0]!.cursor_json).toMatchObject({ start_page_token: "start-1", backfill: { folders: { "f-gone": { done: true }, "f-1": { done: true } } } });
   });
 
+  it("starts a new or re-added folder's backfill with a fresh file budget", async () => {
+    const db = seed([connection("conn-a", "user-a", { cursor_json: { start_page_token: "t-1", backfill: { seen: 500, folders: { "f-1": { done: true, synced_folder_id: "old-row" } } } } })]);
+    addFolder(db, "conn-a", "f-1");
+    const drive = new FakeDrive();
+    drive.add({ id: "doc-1", parents: ["f-1"] });
+
+    await run(db, "conn-a", { "conn-a": drive });
+
+    expect(active(db).map((row) => row.external_id)).toEqual(["doc-1"]);
+    expect(db.tables.connections![0]!.cursor_json).toMatchObject({ backfill: { seen: 1, folders: { "f-1": { done: true, synced_folder_id: "sf-f-1" } } } });
+  });
+
   it("skips a file it may not read and keeps going", async () => {
     const db = seed();
     addFolder(db, "conn-a", "f-1");

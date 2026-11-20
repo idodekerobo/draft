@@ -156,15 +156,7 @@ export async function addDriveFolder(workspaceId: string, userId: string, body: 
       return Response.json({ error: result.code, message: result.message, synced_by: result.ownerName }, { status: 409 });
     }
 
-    // A new folder starts its own backfill; the sync task runs on the next tick.
-    const cursor = { ...(connection.cursor_json ?? {}) } as { backfill?: { seen?: number; folders?: Record<string, unknown> } };
-    if (cursor.backfill) {
-      const folders = { ...(cursor.backfill.folders ?? {}) };
-      delete folders[input.googleFolderId];
-      cursor.backfill = { ...cursor.backfill, seen: 0, folders };
-    }
-    const { error: cursorError } = await deps.db.from("connections").update({ cursor_json: cursor }).eq("id", connection.id).eq("workspace_id", workspaceId);
-    if (cursorError) throw cursorError;
+    // The sync sees the new folder row and starts its backfill; run it on the next tick.
     const { error: taskError } = await deps.db
       .from("scheduled_tasks")
       .update({ next_due_at: deps.now().toISOString() })

@@ -60,6 +60,8 @@ const defaultDependencies: DriveSyncDependencies = {
 };
 
 interface FolderBackfill {
+  // The synced folder row this progress belongs to; a removed and re-added folder starts over.
+  synced_folder_id?: string;
   page_token?: string;
   // Folders still to list, breadth first. Unused for a shared drive.
   queue?: string[];
@@ -317,7 +319,13 @@ async function cleanRemovedFolders(ctx: PassContext, after: string | null): Prom
 async function backfillPass(ctx: PassContext, folders: SyncedGoogleDriveFolder[], cursor: DriveCursor): Promise<DriveCursor["backfill"]> {
   const previous = cursor.backfill ?? { seen: 0, folders: {} };
   const state: NonNullable<DriveCursor["backfill"]> = { seen: previous.seen, folders: {} };
-  for (const folder of folders) state.folders[folder.googleFolderId] = { ...(previous.folders[folder.googleFolderId] ?? {}) };
+  for (const folder of folders) {
+    const prior = previous.folders[folder.googleFolderId];
+    const same = prior && (prior.synced_folder_id ?? folder.id) === folder.id;
+    // A new folder gets the full file budget again.
+    if (!same) state.seen = 0;
+    state.folders[folder.googleFolderId] = same ? { ...prior, synced_folder_id: folder.id } : { synced_folder_id: folder.id };
+  }
 
   const since = windowStart(ctx.now, BACKFILL_DAYS);
   const nativeQuery = `modifiedTime > '${since}' and trashed = false and (${NATIVE_MIME_TYPES.map((mime) => `mimeType = '${mime}'`).join(" or ")})`;
