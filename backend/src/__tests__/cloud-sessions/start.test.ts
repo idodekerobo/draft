@@ -136,7 +136,7 @@ describe("startCloudSession", () => {
       kind: "interactive",
       status: "running",
       session_id: SESSION,
-      on_behalf_of_user_id: null,
+      on_behalf_of_user_id: OWNER,
       sandbox_machine_id: "machine-1",
       trigger: { type: "manual", requestedBy: OWNER },
       harness: "claude",

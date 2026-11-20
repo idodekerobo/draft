@@ -103,8 +103,8 @@ describe("loadRoutineRunSource", () => {
     expect(await load(db, OTHER)).toEqual({ ok: false, status: 404, error: "routine_run_not_found" });
   });
 
-  it("refuses a private routine's run even to its owner, since a cloud chat cannot read it", async () => {
-    expect(await load(seed({}, { visibility: "private" }), OWNER)).toEqual({ ok: false, status: 409, error: "routine_run_private" });
+  it("lets the owner continue their private routine's run, since the chat acts as them", async () => {
+    expect((await load(seed({}, { visibility: "private" }), OWNER)).ok).toBe(true);
   });
 
   it("refuses a run that is still going, since its history is not complete", async () => {

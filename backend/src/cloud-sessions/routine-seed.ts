@@ -16,7 +16,7 @@ export interface RoutineRunSource {
 
 export type RoutineRunSourceResult =
   | { ok: true; source: RoutineRunSource }
-  | { ok: false; status: 404 | 409; error: "routine_run_not_found" | "routine_run_not_finished" | "routine_run_skipped" | "routine_run_private" }
+  | { ok: false; status: 404 | 409; error: "routine_run_not_found" | "routine_run_not_finished" | "routine_run_skipped" }
   | { ok: false; status: 500; error: "routine_run_lookup_failed"; cause: unknown };
 
 interface RunSessionRow {
@@ -60,8 +60,6 @@ export async function loadRoutineRunSource(client: SupabaseClient, workspaceId: 
   const task = taskData as RoutineTaskRow | null;
   if (!task || task.deleted_at || task.task_type !== "agent_routine" || !routineVisibleTo(task, viewerId)) return NOT_FOUND;
 
-  // A cloud chat reads history with no person behind it, so it cannot read a private routine's runs. Refused until that changes.
-  if (task.visibility === "private") return { ok: false, status: 409, error: "routine_run_private" };
   if (run.status !== "ended") return { ok: false, status: 409, error: "routine_run_not_finished" };
   // A skipped run never started, so it has no history to continue.
   if (run.end_reason === "skipped") return { ok: false, status: 409, error: "routine_run_skipped" };

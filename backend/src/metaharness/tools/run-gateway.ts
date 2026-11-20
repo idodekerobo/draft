@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
-import { runCaller } from "draft-core/tools";
+import { personCaller, runCaller, type ToolCaller } from "draft-core/tools";
 import { auditToDatabase, loadActiveAgentRunSpec } from "../runs/agent-run-store";
 import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
@@ -10,6 +10,7 @@ import { toMcpResult } from "./mcp-result";
 import { remoteToolsForRun } from "./remote-mcp";
 import { AgentRunTokenError, verifyAgentRunToken } from "../runs/run-token";
 import { describeTools, type RegisteredTool, type ToolRegistry } from "./tool-registry";
+import { userInvokeDeps } from "./user-gateway";
 
 export interface RunGatewayDeps {
   client: SupabaseClient;
@@ -39,6 +40,20 @@ export function createRunGateway(deps: RunGatewayDeps) {
     return { registry: remote.length > 0 ? deps.registry.extendedWith(remote) : deps.registry, audit, now: deps.now };
   }
 
+  /**
+   * An interactive run that acts for a person is that person's own agent, as a local session is. It also gets
+   * every tool the person can call over MCP, called as the person. Null for any other run.
+   */
+  function personToolsFor(run: AgentRunSpec, runDeps: InvokeToolDeps): { deps: InvokeToolDeps; caller: ToolCaller; tools: RegisteredTool[] } | null {
+    if (run.kind !== "interactive" || !run.onBehalfOf) return null;
+    const runTools = new Set(runDeps.registry.listFor(run).map((tool) => tool.name));
+    return {
+      deps: { ...userInvokeDeps(deps.client, deps.registry), now: deps.now },
+      caller: personCaller({ userId: run.onBehalfOf, workspaceId: run.workspaceId, via: "mcp" }),
+      tools: deps.registry.listForUser().filter((tool) => tool.mcp && !runTools.has(tool.name)),
+    };
+  }
+
   async function authenticate(request: Request, runId: string): Promise<Authenticated> {
     const header = request.headers.get("authorization") ?? "";
     if (!header.startsWith("Bearer ")) return unauthorized();
@@ -59,7 +74,9 @@ export function createRunGateway(deps: RunGatewayDeps) {
   async function listTools(request: Request, runId: string): Promise<Response> {
     const auth = await authenticate(request, runId);
     if (!auth.ok) return auth.response;
-    const tools = describeTools((await depsFor(auth.run)).registry.listFor(auth.run));
+    const runDeps = await depsFor(auth.run);
+    const person = personToolsFor(auth.run, runDeps);
+    const tools = describeTools([...runDeps.registry.listFor(auth.run), ...(person?.tools ?? [])]);
     return Response.json({ tools });
   }
 
@@ -68,7 +85,11 @@ export function createRunGateway(deps: RunGatewayDeps) {
     if (!auth.ok) return auth.response;
     const body = parseToolArgs(await request.text());
     if (!body.ok) return body.response;
-    const result = await invokeTool(await depsFor(auth.run), runCaller(auth.run), toolName, body.args);
+    const runDeps = await depsFor(auth.run);
+    const person = personToolsFor(auth.run, runDeps);
+    const result = person?.tools.some((tool) => tool.name === toolName)
+      ? await invokeTool(person.deps, person.caller, toolName, body.args)
+      : await invokeTool(runDeps, runCaller(auth.run), toolName, body.args);
     return toHttpResponse(result);
   }
 
@@ -77,6 +98,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
     if (!auth.ok) return auth.response;
     const run = auth.run;
     const requestDeps = await depsFor(run);
+    const person = personToolsFor(run, requestDeps);
     // Stateless, like the person-facing MCP: a fresh server per request that lists only this run's tools.
     const handler = createMcpHandler(() => {
       const server = new McpServer({ name: "draft", version: "1.0.0" });
@@ -85,6 +107,13 @@ export function createRunGateway(deps: RunGatewayDeps) {
           tool.name,
           { description: tool.description, inputSchema: tool.inputSchema as z.ZodObject },
           async (args: unknown) => toMcpResult(await invokeTool(requestDeps, runCaller(run), tool.name, args)),
+        );
+      }
+      for (const tool of person?.tools ?? []) {
+        server.registerTool(
+          tool.name,
+          { description: tool.description, inputSchema: tool.inputSchema as z.ZodObject },
+          async (args: unknown) => toMcpResult(await invokeTool(person!.deps, person!.caller, tool.name, args)),
         );
       }
       return server;

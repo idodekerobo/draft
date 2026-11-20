@@ -53,7 +53,6 @@ const FAILURES: Record<string, CloudStartFailure> = {
   routine_run_not_found: { field: "general", message: "This routine run is no longer available." },
   routine_run_not_finished: { field: "general", message: "Wait for this run to finish, then continue it in chat." },
   routine_run_skipped: { field: "general", message: "A skipped run has no history to continue." },
-  routine_run_private: { field: "general", message: "Private routines can't be continued in chat yet." },
 };
 
 /** Where the cloud seed comes from. A snapshot has no repository or branch field to point at. */

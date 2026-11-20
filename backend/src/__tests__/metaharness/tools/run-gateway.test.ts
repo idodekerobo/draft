@@ -12,15 +12,15 @@ const WS = "11111111-1111-4111-8111-111111111111";
 const RUN_ID = "22222222-2222-4222-8222-222222222222";
 const FAR_FUTURE = Date.now() + 60_000;
 
-async function setup(permissions: AnyDraftToolPermission[], status = "running") {
+async function setup(permissions: AnyDraftToolPermission[], status = "running", run: Partial<Pick<AgentRunSpec, "kind" | "onBehalfOf">> = {}) {
   const db = createFakeContextDb({ "a.md": "A" });
   const spec: AgentRunSpec = {
     id: parseAgentRunId(RUN_ID),
-    kind: "routine",
+    kind: run.kind ?? "routine",
     network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
-    onBehalfOf: null,
+    onBehalfOf: run.onBehalfOf ?? null,
     runtime: { type: "local", hostId: parseHostId("mac") },
     harness: "claude",
     model: null,
@@ -167,5 +167,26 @@ describe("run gateway MCP", () => {
     );
     expect(JSON.stringify(call)).toMatch(/not found|unknown|invalid|error/i);
     expect(db.current()["a.md"].content).toBe("A");
+  });
+});
+
+describe("run gateway for a session that acts for its owner", () => {
+  const OWNER = parseUserId("33333333-3333-4333-8333-333333333333");
+  const names = async (response: Response) => ((await response.json()) as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
+
+  it("lists every tool the owner has over MCP, beside the run's own tools", async () => {
+    const { gateway, request } = await setup([{ tool: "context.read" }], "running", { kind: "interactive", onBehalfOf: OWNER });
+    const listed = await names(await gateway.listTools(request("/x", { method: "GET" }), RUN_ID));
+    expect(listed).toContain("context.read");
+    expect(listed).toContain("sessions.list");
+    expect(listed).toContain("routines.create");
+    expect(new Set(listed).size).toBe(listed.length);
+  });
+
+  it("keeps a routine, and a session with no owner, to the run's own tools", async () => {
+    for (const run of [{ kind: "routine" as const, onBehalfOf: OWNER }, { kind: "interactive" as const, onBehalfOf: null }]) {
+      const { gateway, request } = await setup([{ tool: "context.read" }], "running", run);
+      expect(await names(await gateway.listTools(request("/x", { method: "GET" }), RUN_ID))).toEqual(["context.read"]);
+    }
   });
 });

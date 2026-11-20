@@ -3,8 +3,8 @@ import { parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, 
 import type { AnyDraftToolPermission } from "draft-core/tools";
 
 /**
- * What a cloud session may call through Draft by default. A session is a person's own work, so it gets the
- * company brain, sources, skills and its routines' run history. Messaging and routine editing stay off.
+ * The run-scoped tools of a cloud session. It also gets every tool its owner can call over MCP, as the owner,
+ * through the run gateway; these are the ones that belong to the run itself.
  */
 export function cloudSessionPermissions(repo: string | null): AnyDraftToolPermission[] {
   const permissions: AnyDraftToolPermission[] = [
@@ -38,7 +38,8 @@ export function buildCloudRunSpec(input: CloudRunSpecInput): AgentRunSpec {
     network: input.network,
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: { type: "manual", requestedBy: parseUserId(input.ownerUserId) },
-    onBehalfOf: null,
+    // The session is the owner's own agent, as a local session is: it calls Draft as the owner.
+    onBehalfOf: parseUserId(input.ownerUserId),
     runtime: { type: "cloud", toolset: cloudToolsetFor("claude") },
     harness: "claude",
     model: input.model,
