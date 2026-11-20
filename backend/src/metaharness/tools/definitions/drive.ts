@@ -80,10 +80,16 @@ interface DriveVersionRow {
   connection_id: string;
   external_version: string;
   created_at: string;
+  normalized_at: string | null;
   lifecycle_status: string;
   content_markdown: string | null;
   metadata_json: Record<string, unknown> | null;
 }
+
+// A reverted file revives its old row, so normalized_at (reset on every write) is when the version became current.
+const capturedAt = (row: DriveVersionRow) => row.normalized_at ?? row.created_at;
+const timeOf = (row: DriveVersionRow) => Date.parse(capturedAt(row));
+const latestOf = (versions: DriveVersionRow[]) => versions.find((row) => row.lifecycle_status === "active") ?? versions[versions.length - 1]!;
 
 /** The first line that changed from the previous version, cut to 120 characters. Null for the first version. */
 export function changeSummary(previous: string | null, current: string): string | null {
@@ -116,19 +122,19 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
     return (data ?? []) as DriveConnectionRow[];
   }
 
-  /** Every stored version of the file, oldest first. */
+  /** Every stored version of the file, oldest first by when each became current. */
   async function versionsOf(workspaceId: string, fileId: string, connections: DriveConnectionRow[]): Promise<DriveVersionRow[]> {
     if (connections.length === 0) return [];
     const { data, error } = await client
       .from("source_items")
-      .select("id, connection_id, external_version, created_at, lifecycle_status, content_markdown, metadata_json")
+      .select("id, connection_id, external_version, created_at, normalized_at, lifecycle_status, content_markdown, metadata_json")
       .eq("workspace_id", workspaceId)
       .eq("external_id", fileId)
       .eq("visibility", "shared")
       .in("connection_id", connections.map((connection) => connection.id))
       .in("lifecycle_status", ["active", "superseded"]);
     if (error) throw error;
-    return ((data ?? []) as DriveVersionRow[]).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    return ((data ?? []) as DriveVersionRow[]).sort((a, b) => timeOf(a) - timeOf(b) || a.id.localeCompare(b.id));
   }
 
   /** Fetches the file with the asker's own Drive login and stores it under the connection that owns the latest copy. */
@@ -186,7 +192,7 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       let stale = false;
       const latestOnly = !cursor && !wantsVersion && !asOf;
       if (latestOnly) {
-        const latest = versions[versions.length - 1]!;
+        const latest = latestOf(versions);
         const owner = connections.find((connection) => connection.id === latest.connection_id)!;
         const checkedAt = owner.last_success_at ? new Date(owner.last_success_at).getTime() : 0;
         if (now().getTime() - checkedAt > FRESH_MS) {
@@ -203,11 +209,11 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       let chosen: DriveVersionRow | undefined;
       if (cursor) chosen = versions.find((row) => row.id === cursor.version_id);
       else if (wantsVersion) chosen = versions.find((row) => row.id === input.version);
-      else if (asOf) chosen = versions.filter((row) => row.created_at <= asOf).pop();
-      else chosen = versions[versions.length - 1];
+      else if (asOf) chosen = versions.filter((row) => timeOf(row) <= Date.parse(asOf)).pop();
+      else chosen = latestOf(versions);
       if (!chosen) {
         if (cursor) return invalidCursor();
-        if (asOf) return refuse("drive_no_version_at_time", `The first stored version of this file is from ${versions[0]!.created_at}.`);
+        if (asOf) return refuse("drive_no_version_at_time", `The first stored version of this file is from ${capturedAt(versions[0]!)}.`);
         return refuse("drive_version_not_found", "This file has no stored version with that version_id. List them with include: [\"versions\"].");
       }
 
@@ -225,7 +231,7 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
         const newestFirst = versions.map((row, index) => ({ row, previous: versions[index - 1] ?? null })).reverse();
         versionList = newestFirst.slice(versionsOffset, versionsOffset + VERSIONS_PER_PAGE).map(({ row, previous }) => ({
           version_id: row.id,
-          captured_at: row.created_at,
+          captured_at: capturedAt(row),
           last_modified_by: row.metadata_json?.last_modified_by ?? null,
           change_summary: changeSummary(previous ? previous.content_markdown ?? "" : null, row.content_markdown ?? ""),
         }));
@@ -246,10 +252,10 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
           title: metadata.title ?? null,
           web_view_link: metadata.web_view_link ?? null,
           version_count: versions.length,
-          first_captured_at: versions[0]!.created_at,
-          last_captured_at: versions[versions.length - 1]!.created_at,
+          first_captured_at: capturedAt(versions[0]!),
+          last_captured_at: capturedAt(versions[versions.length - 1]!),
           version_id: chosen.id,
-          captured_at: chosen.created_at,
+          captured_at: capturedAt(chosen),
           is_latest: chosen.lifecycle_status === "active",
           source,
           ...(stale ? { stale: true } : {}),

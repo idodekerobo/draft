@@ -117,6 +117,16 @@ describe("drive.read", () => {
     expect(result.output!.versions.map((entry: Row) => [entry.version_id, entry.change_summary])).toEqual([["v2", "ship in June"], ["v1", null]]);
   });
 
+  it("treats a reverted version (A then B then A) as the latest, ordered by when it became current", async () => {
+    const reverted = { ...version("v1", "2026-11-01T00:00:00.000Z", "# Plan\nA", "active"), normalized_at: "2026-11-15T00:00:00.000Z" };
+    const middle = { ...version("v2", "2026-11-10T00:00:00.000Z", "# Plan\nB"), normalized_at: "2026-11-10T00:00:00.000Z" };
+    const { call } = setup(seed({ versions: [reverted, middle] }));
+    const latest = await call("drive.read", { file_id: "file-1" });
+    expect(latest.output).toMatchObject({ version_id: "v1", is_latest: true, version_count: 2, content: "# Plan\nA", captured_at: "2026-11-15T00:00:00.000Z", last_captured_at: "2026-11-15T00:00:00.000Z" });
+    expect((await call("drive.read", { file_id: "file-1", as_of: "2026-11-12T00:00:00Z" })).output).toMatchObject({ version_id: "v2", is_latest: false });
+    expect((await call("drive.read", { file_id: "file-1", as_of: "2026-11-16T00:00:00+00:00" })).output).toMatchObject({ version_id: "v1", is_latest: true });
+  });
+
   it("reads by as_of and by version", async () => {
     const { call } = setup();
     expect((await call("drive.read", { file_id: "file-1", as_of: "2026-11-05T00:00:00Z" })).output).toMatchObject({ version_id: "v1", is_latest: false });
