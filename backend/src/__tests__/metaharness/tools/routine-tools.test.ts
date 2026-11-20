@@ -126,7 +126,7 @@ describe("routines.create from a run", () => {
     expect(row.config_json).toEqual({
       title: "Check the digest", prompt: "Check it.", harness: "claude", model: "haiku", reasoningEffort: "low",
       canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" },
-      toolset: { nativeTools: ["WebSearch"], mcpServers: [] },
+      toolset: { nativeTools: ["WebSearch"], mcpServers: [] }, builtInTools: ["Bash", "WebSearch"],
     });
     expect(output(result).routine!.id).toBe(row.id);
   });
@@ -135,6 +135,7 @@ describe("routines.create from a run", () => {
     await call("routines.create", runCaller(runOf(RUN_1, P)), { title: "x", prompt: "y", when: { in: "2h" }, harness: "codex" });
     expect(table("scheduled_tasks").find((task) => task.created_via === "run")!.config_json).toEqual({
       title: "x", prompt: "y", harness: "codex", model: null, canNotify: true, postChannels: "joined", github: { repos: ["acme/app"], access: "read" },
+      builtInTools: ["web_search"],
     });
   });
 

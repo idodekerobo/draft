@@ -1,5 +1,6 @@
 "use client";
 
+import { defaultRoutineBuiltInTools } from "draft-core/routines";
 import type { HarnessId } from "draft-core/harnesses";
 import { useEffect, useRef, useId, useMemo, useState, type ReactNode, type RefObject } from "react";
 import { useDraftTrack } from "../query/api";
@@ -41,7 +42,14 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
   const [mode, setMode] = useState<WhenMode>("schedule");
   const [events, setEvents] = useState<RoutineEventName[]>([]);
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({ preset: "daily", time: "09:00", weekday: "mon", timezone: browserTimezone() }));
-  const [capabilities, setCapabilities] = useState<CapabilityValue>(() => defaultCapabilities(connectedProviders));
+  const [capabilities, setCapabilities] = useState<CapabilityValue>(() => defaultCapabilities(connectedProviders, agent.harness));
+  // Each harness has its own built-in tools, so a new harness starts with all of its own.
+  const toolsHarness = useRef(agent.harness);
+  useEffect(() => {
+    if (toolsHarness.current === agent.harness) return;
+    toolsHarness.current = agent.harness;
+    setCapabilities((current) => ({ ...current, builtInTools: defaultRoutineBuiltInTools(agent.harness) }));
+  }, [agent.harness]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
 
@@ -70,6 +78,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
         ...(capabilities.canNotify ? { canNotify: true } : {}),
         ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
         ...(capabilities.github ? { github: capabilities.github } : {}),
+        builtInTools: capabilities.builtInTools,
       });
       rememberAgent({ harness: agent.harness, model: agent.model, effort: agent.effort });
     } catch (caught) {
@@ -124,7 +133,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
                 fieldError={fieldError}
                 schedule={<ScheduleFields value={schedule} onChange={setSchedule} disabled={saving} fieldError={fieldError} zones={zones} />}
               />
-              <AbilityFields value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
+              <AbilityFields harness={agent.harness} value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
             </div>
             {onSchedule && isHeavyCadence(schedule.preset) && (
               <p className="ui-routines__notice" role="status">Hourly runs use your agent plan every hour.</p>

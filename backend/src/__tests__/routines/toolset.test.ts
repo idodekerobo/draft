@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { validateAgentRoutineConfig, parseAgentRoutineConfig } from "../../routines/config";
+import { effectiveBuiltInTools, validateAgentRoutineConfig, parseAgentRoutineConfig } from "../../routines/config";
 import { dispatchAgentRoutine } from "../../routines/dispatch-routine";
 import type { LaunchRoutineRun } from "../../routines/launch-routine-run";
 import { buildRoutineRunSpec } from "../../routines/run-spec";
@@ -41,7 +41,7 @@ describe("routine config toolset", () => {
   });
 
   it("refuses a tool that would widen the sandbox, or that belongs to the other harness", () => {
-    for (const tool of ["Edit", "Write", "WebFetch", "shell"]) {
+    for (const tool of ["shell", "computer"]) {
       expect(validateAgentRoutineConfig({ ...base, toolset: { nativeTools: [tool] } })).toEqual({ ok: false, field: "toolset" });
     }
     expect(validateAgentRoutineConfig({ ...base, harness: "codex", toolset: { nativeTools: ["WebSearch"] } })).toEqual({ ok: false, field: "toolset" });
@@ -146,5 +146,35 @@ describe("dispatch resolves a routine's connections", () => {
     await dispatchAgentRoutine({ task: plain, occurrenceAt: "2026-11-09T09:00:00.000Z", kind: "timer", firstEventId: "2026-11-09T09:00:00.000Z", concurrencyKey: null, config: {} as never, client: fakeClient(db), launch: mock<LaunchRoutineRun>(async () => undefined) });
     expect(db.tables.errors).toHaveLength(0);
     expect((db.tables.agent_runs![0]!.runtime as { toolset: { mcpServers: unknown[] } }).toolset.mcpServers).toEqual([]);
+  });
+});
+
+describe("routine built-in tools", () => {
+  const base = { title: "t", prompt: "p", harness: "claude", model: null };
+
+  it("keeps the tools a routine picked, in the harness's order, and refuses one its harness does not offer", () => {
+    expect(validateAgentRoutineConfig({ ...base, builtInTools: ["WebFetch", "Edit"] })).toMatchObject({ ok: true, config: { builtInTools: ["Edit", "WebFetch"] } });
+    expect(validateAgentRoutineConfig({ ...base, builtInTools: ["Read"] })).toEqual({ ok: false, field: "builtInTools" });
+    expect(validateAgentRoutineConfig({ ...base, harness: "codex", builtInTools: ["Bash"] })).toEqual({ ok: false, field: "builtInTools" });
+  });
+
+  it("gives a routine saved before the setting what it had: a shell and its toolset", () => {
+    expect(effectiveBuiltInTools({ harness: "claude" })).toEqual(["Bash"]);
+    expect(effectiveBuiltInTools({ harness: "claude", toolset: { nativeTools: ["WebSearch"], mcpServers: [] } })).toEqual(["Bash", "WebSearch"]);
+    expect(effectiveBuiltInTools({ harness: "codex" })).toEqual([]);
+    expect(effectiveBuiltInTools({ harness: "claude", builtInTools: [] })).toEqual([]);
+  });
+
+  it("runs with reading always on plus exactly the tools it picked", () => {
+    const tools = (builtInTools: string[]) => {
+      const spec = buildRoutineRunSpec({
+        id: "11111111-1111-4111-8111-111111111111", workspaceId: "22222222-2222-4222-8222-222222222222", scheduledTaskId: "33333333-3333-4333-8333-333333333333",
+        occurrenceAt: "2026-11-19T00:00:00Z", ownerUserId: "44444444-4444-4444-8444-444444444444", contextVersionId: "55555555-5555-4555-8555-555555555555",
+        routine: { ...base, harness: "claude", builtInTools } as never,
+      });
+      return spec.runtime.type === "cloud" ? spec.runtime.toolset.nativeTools.map((entry) => entry.tool).sort() : [];
+    };
+    expect(tools(["Edit"])).toEqual(["Edit", "Glob", "Grep", "Read"]);
+    expect(tools([])).toEqual(["Glob", "Grep", "Read"]);
   });
 });

@@ -1,3 +1,4 @@
+import { routineBuiltInTools } from "draft-core/routines";
 import { CLOUD_NATIVE_TOOLS } from "draft-core/run-spec";
 import { getHarness, isEffortFor, isKnownModel, type HarnessId } from "draft-core/harnesses";
 import { ROUTINE_EVENT_NAMES, type RoutineEventName } from "draft-core/routines";
@@ -41,9 +42,22 @@ export interface AgentRoutineConfig {
   /** Slack channels the run may post in. */
   postChannels?: "joined" | string[];
   github?: { repos: string[]; access: "read" | "write" };
+  /**
+   * The built-in tools it may use, from its harness's routine list. Routines saved before this setting have none
+   * stored, and keep what they had: a shell, plus any tool in their toolset.
+   */
+  builtInTools?: string[];
 }
 
-export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "toolset" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "body" };
+/** The built-in tools a routine may use, for a routine saved with or without the setting. */
+export function effectiveBuiltInTools(config: Pick<AgentRoutineConfig, "harness" | "builtInTools" | "toolset">): string[] {
+  if (config.builtInTools) return config.builtInTools;
+  const offered = routineBuiltInTools(config.harness).map((entry) => entry.tool);
+  const legacy = config.harness === "claude" ? ["Bash", ...(config.toolset?.nativeTools ?? [])] : (config.toolset?.nativeTools ?? []);
+  return offered.filter((tool) => legacy.includes(tool));
+}
+
+export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "toolset" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "builtInTools" | "body" };
 
 const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
@@ -71,7 +85,7 @@ export function validateRoutineToolset(value: unknown, harness: HarnessId): Rout
 /** Checks field by field so a caller can say which one is wrong. */
 export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, field: "body" };
-  const { title, prompt, harness, model, reasoningEffort, toolset, events, onSchedule, canNotify, postChannels, github } = value as Record<string, unknown>;
+  const { title, prompt, harness, model, reasoningEffort, toolset, events, onSchedule, canNotify, postChannels, github, builtInTools } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
@@ -81,6 +95,8 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   if (reasoningEffort != null && (typeof reasoningEffort !== "string" || !isEffortFor(definition.id, model, reasoningEffort))) return { ok: false, field: "reasoningEffort" };
   const validToolset = toolset == null ? undefined : validateRoutineToolset(toolset, harnessId);
   if (toolset != null && !validToolset) return { ok: false, field: "toolset" };
+  const offeredTools = routineBuiltInTools(harnessId).map((entry) => entry.tool);
+  if (builtInTools !== undefined && !(Array.isArray(builtInTools) && builtInTools.every((tool) => typeof tool === "string" && offeredTools.includes(tool)))) return { ok: false, field: "builtInTools" };
   if (events !== undefined && !(Array.isArray(events) && events.every((event) => (ROUTINE_EVENTS as ReadonlyArray<unknown>).includes(event)))) return { ok: false, field: "events" };
   if (onSchedule !== undefined && typeof onSchedule !== "boolean") return { ok: false, field: "onSchedule" };
   if (canNotify !== undefined && typeof canNotify !== "boolean") return { ok: false, field: "canNotify" };
@@ -103,6 +119,7 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
       ...(onSchedule === false ? { onSchedule: false as const } : {}),
       ...(canNotify !== undefined ? { canNotify: canNotify as boolean } : {}),
       ...(postChannels !== undefined ? { postChannels: postChannels === "joined" ? "joined" : [...new Set((postChannels as string[]).map((channel) => channel.trim()))] } : {}),
+      ...(builtInTools !== undefined ? { builtInTools: offeredTools.filter((tool) => (builtInTools as string[]).includes(tool)) } : {}),
       ...(github !== undefined ? { github: { repos: [...new Set((github as { repos: string[] }).repos)], access: (github as { access: "read" | "write" }).access } } : {}),
     },
   };

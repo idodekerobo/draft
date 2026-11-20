@@ -1,5 +1,6 @@
 "use client";
 
+import { defaultRoutineBuiltInTools } from "draft-core/routines";
 import type { HarnessId } from "draft-core/harnesses";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { AgentFields, isDisconnected, type AgentStatuses, type AgentValue } from "./AgentFields";
@@ -46,6 +47,14 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   const [agent, setAgent] = useState<AgentValue | null>(original);
   const originalCapabilities = useMemo(() => capabilitiesOf(routine.agent), [routine]);
   const [capabilities, setCapabilities] = useState<CapabilityValue>(originalCapabilities);
+  // Each harness has its own built-in tools: a new harness starts with all of its own, and going back restores the saved ones.
+  const toolsHarness = useRef(agent?.harness);
+  useEffect(() => {
+    if (!agent || toolsHarness.current === agent.harness) return;
+    toolsHarness.current = agent.harness;
+    const tools = agent.harness === original?.harness ? originalCapabilities.builtInTools : defaultRoutineBuiltInTools(agent.harness);
+    setCapabilities((current) => ({ ...current, builtInTools: tools }));
+  }, [agent, original, originalCapabilities]);
   const originalMode: WhenMode = routine.agent?.onSchedule === false ? "events" : "schedule";
   const originalEvents = useMemo(() => routine.agent?.events ?? [], [routine]);
   const [mode, setMode] = useState<WhenMode>(originalMode);
@@ -261,7 +270,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
                   fieldError={fieldError}
                   schedule={scheduleFields}
                 />
-                <AbilityFields value={capabilities} onChange={setCapabilities} disabled={busy} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
+                <AbilityFields harness={agent?.harness} value={capabilities} onChange={setCapabilities} disabled={busy} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
               </div>
             ) : (
               <section className="ui-routines__agent">

@@ -1,12 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
-import { ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
+import { routineBuiltInTools, ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller, type UserCallSurface } from "draft-core/tools";
 import { z } from "zod";
 import { recordError } from "../../../errors/record-error";
 import { countRunToolCalls } from "../../../people/limits";
-import { parseAgentRoutineConfig, type AgentRoutineConfig } from "../../../routines/config";
+import { effectiveBuiltInTools, parseAgentRoutineConfig, type AgentRoutineConfig } from "../../../routines/config";
 import { loadParentRoutine, MAX_PENDING_AGENT_ONE_SHOTS, pendingAgentOneShots, ROUTINE_MAX_DEPTH, runMayManage, runVisibility, widerAccess, type RoutineAccess } from "../../../routines/run-creator";
 import { ROUTINE_CREATE_MAX_PER_RUN } from "../../../routines/run-spec";
 import { personCreator, type RoutineCreator } from "../../../routines/creator";
@@ -109,6 +109,7 @@ function givenAccess(patch: RoutinePatch, agent: AgentRoutineConfig | undefined)
     ...(patch.canNotify !== undefined ? { canNotify: agent.canNotify } : {}),
     ...(patch.postChannels !== undefined ? { postChannels: agent.postChannels } : {}),
     ...(patch.github !== undefined ? { github: agent.github } : {}),
+    ...(patch.builtInTools !== undefined ? { harness: agent.harness, builtInTools: agent.builtInTools } : {}),
   };
 }
 
@@ -158,6 +159,7 @@ async function createRoutine(client: SupabaseClient, actor: RoutineCaller, input
     canNotify: input.canNotify ?? from?.canNotify,
     postChannels: input.postChannels ?? from?.postChannels,
     github: input.github ?? from?.github,
+    builtInTools: input.builtInTools ?? (inherit ? effectiveBuiltInTools(inherit) : undefined),
   });
   if (!checked.ok) return refuse("invalid_input", `Invalid routine field: ${checked.field}`);
   const config = inherit?.toolset ? { ...checked.config, toolset: inherit.toolset } : checked.config;
@@ -230,10 +232,12 @@ export function createRoutineTools(client: SupabaseClient) {
               harness: harness.id,
               status: agents[harness.id as keyof typeof agents] ?? "not_connected",
               models: harness.models.map((model) => ({ model: model.alias, label: model.label, reasoningEfforts: model.efforts, defaultReasoningEffort: model.defaultEffort })),
+              builtInTools: routineBuiltInTools(harness.id).map((entry) => ({ tool: entry.tool, label: entry.label })),
             })),
             access: {
               postChannels: "\"joined\" for any channel Draft's bot is in, or a list of channel names; null (update only) turns posting off",
               canNotify: "true lets it message teammates on Slack",
+              builtInTools: "the agent's built-in tools it may use, from agents[].builtInTools; a new routine gets them all when left out",
               github: "{ repos: [\"owner/repo\"], access: \"read\" | \"write\" }; write lets it open pull requests; null (update only) turns it off",
               slackChannels: slack?.status === "ok" ? slack.output : null,
               githubRepos: github,

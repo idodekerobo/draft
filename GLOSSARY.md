@@ -42,6 +42,8 @@ When you add a concept, add it here first.
   Drivers live in `core/src/host/drivers/`.
 - **Runner**: the one-shot program inside a routine sandbox (`backend/src/sandbox/runner.ts`). Not a CLI binary.
 - **Toolset**: the native tools, MCP servers, skills and instructions a cloud run gets (`AgentRunToolset`).
+- **Built-in tool**: a tool a harness ships with, such as Claude Code's `Edit` or `Bash`, as opposed to Draft's tools.
+  Code calls them native tools. A routine picks its own (`builtInTools`); reading tools are always on.
 - **Agent client**: an AI tool installed on a person's computer that Draft can connect to (Claude Code, Codex, Cursor).
 
 ## Who and on whose authority

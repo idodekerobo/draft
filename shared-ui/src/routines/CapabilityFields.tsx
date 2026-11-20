@@ -1,7 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useId, useState, type ReactNode } from "react";
+import { defaultRoutineBuiltInTools, routineBuiltInTools, ROUTINE_ALWAYS_ON_TOOLS, ROUTINE_BUILT_IN_TOOLS } from "draft-core/routines";
+import { getHarness } from "draft-core/harnesses";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useDraftApi } from "../query/api";
 import type { AgentRoutine } from "./types";
 
@@ -12,15 +14,20 @@ export interface CapabilityValue {
   postChannels: "joined" | string[] | null;
   /** Null when the routine may not touch GitHub. */
   github: { repos: string[]; access: "read" | "write" } | null;
+  /** The harness's built-in tools it may use. */
+  builtInTools: string[];
 }
 
-export const capabilitiesOf = (agent: Pick<AgentRoutine, "canNotify" | "postChannels" | "github"> | null): CapabilityValue => ({
+export const capabilitiesOf = (agent: Pick<AgentRoutine, "canNotify" | "postChannels" | "github" | "builtInTools"> | null): CapabilityValue => ({
   canNotify: agent?.canNotify ?? false,
   postChannels: agent?.postChannels ?? null,
   github: agent?.github ?? null,
+  builtInTools: agent?.builtInTools ?? [],
 });
 
-export const NO_CAPABILITIES: CapabilityValue = { canNotify: false, postChannels: null, github: null };
+export const NO_CAPABILITIES: CapabilityValue = { canNotify: false, postChannels: null, github: null, builtInTools: [] };
+
+const sameTools = (a: string[], b: string[]) => a.length === b.length && a.every((tool) => b.includes(tool));
 
 const sameGithub = (a: CapabilityValue["github"], b: CapabilityValue["github"]) =>
   a === b || (!!a && !!b && a.access === b.access && a.repos.length === b.repos.length && a.repos.every((repo) => b.repos.includes(repo)));
@@ -34,6 +41,7 @@ export function capabilityChanges(original: CapabilityValue, next: CapabilityVal
   if (next.canNotify !== original.canNotify) changes.canNotify = next.canNotify;
   if (!sameChannels(original.postChannels, next.postChannels)) changes.postChannels = next.postChannels;
   if (!sameGithub(original.github, next.github)) changes.github = next.github;
+  if (!sameTools(original.builtInTools, next.builtInTools)) changes.builtInTools = next.builtInTools;
   return changes;
 }
 
@@ -49,6 +57,8 @@ export function accessLines(value: CapabilityValue): string[] {
   if (value.canNotify) lines.push("Messages teammates on Slack");
   if (value.postChannels === "joined") lines.push("Posts in any Slack channel Draft is in");
   else if (value.postChannels?.length) lines.push(`Posts in ${value.postChannels.join(", ")}`);
+  const toolLabels = Object.values(ROUTINE_BUILT_IN_TOOLS).flat().filter((entry) => value.builtInTools.includes(entry.tool)).map((entry) => entry.label.toLowerCase());
+  if (toolLabels.length) lines.push(`Can ${toolLabels.join(", ")}`);
   if (value.github?.repos.length) lines.push(`${value.github.access === "write" ? "Pushes branches and opens pull requests in" : "Reads code in"} ${value.github.repos.join(", ")}`);
   return lines;
 }
@@ -161,9 +171,64 @@ function GithubRepoPicker({ value, onChange, disabled }: { value: NonNullable<Ca
 }
 
 /** What a new routine may do: everything its connections offer, except GitHub, which needs repos picked first. */
-export function defaultCapabilities(connectedProviders?: ReadonlyArray<string>): CapabilityValue {
+export function defaultCapabilities(connectedProviders?: ReadonlyArray<string>, harness = "claude"): CapabilityValue {
   const slack = !!connectedProviders?.includes("slack");
-  return { canNotify: slack, postChannels: slack ? "joined" : null, github: null };
+  return { canNotify: slack, postChannels: slack ? "joined" : null, github: null, builtInTools: defaultRoutineBuiltInTools(harness) };
+}
+
+/** A checkbox that can show a mixed state, which HTML sets only from script. */
+function MixedCheckbox({ state, label, disabled, onChange }: { state: "all" | "some" | "none"; label: string; disabled: boolean; onChange: (on: boolean) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === "some";
+  }, [state]);
+  return <input ref={ref} type="checkbox" aria-label={label} checked={state === "all"} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />;
+}
+
+/** The harness's built-in tools: one box for all of them, which opens to pick each. */
+function BuiltInToolsField({ harness, value, disabled, onChange }: { harness: string; value: string[]; disabled: boolean; onChange: (tools: string[]) => void }) {
+  const offered = routineBuiltInTools(harness);
+  if (offered.length === 0) return null;
+  const on = offered.filter((entry) => value.includes(entry.tool));
+  const state = on.length === 0 ? "none" : on.length === offered.length ? "all" : "some";
+  const label = `Enable ${getHarness(harness)?.label ?? harness} built-in tools`;
+  const alwaysOn = (ROUTINE_ALWAYS_ON_TOOLS as Record<string, ReadonlyArray<{ tool: string; label: string }>>)[harness] ?? [];
+  const name = (entry: { tool: string; label: string }, hint?: string) => (
+    <span className="ui-routines__tool-name">
+      {entry.label} <code>{entry.tool}</code>
+      {hint && <span className="ui-routines__secondary">{hint}</span>}
+    </span>
+  );
+  return (
+    <details className="ui-routines__builtins">
+      <summary className="ui-routines__builtins-summary">
+        <span className="ui-routines__builtins-chevron" aria-hidden="true">▸</span>
+        <MixedCheckbox state={state} label={label} disabled={disabled} onChange={(all) => onChange(all ? offered.map((entry) => entry.tool) : [])} />
+        <span className="ui-routines__builtins-label">
+          {label} <span className="ui-routines__secondary">{on.length} of {offered.length}</span>
+        </span>
+      </summary>
+      <div className="ui-routines__builtins-list">
+        {offered.map((entry) => (
+          <label key={entry.tool} className="ui-routines__check">
+            <input
+              type="checkbox"
+              checked={value.includes(entry.tool)}
+              disabled={disabled}
+              onChange={(event) => onChange(event.target.checked ? offered.map((o) => o.tool).filter((tool) => tool === entry.tool || value.includes(tool)) : value.filter((tool) => tool !== entry.tool))}
+            />
+            {name(entry)}
+          </label>
+        ))}
+        {alwaysOn.map((entry) => (
+          <label key={entry.tool} className="ui-routines__check ui-routines__check--locked">
+            <input type="checkbox" checked disabled />
+            {name(entry, "Always on")}
+          </label>
+        ))}
+      </div>
+    </details>
+  );
 }
 
 function slackShort(value: CapabilityValue): string {
@@ -174,7 +239,9 @@ function slackShort(value: CapabilityValue): string {
  * What the routine may do, grouped by connection. Collapsed it shows one row of what is on; expanded,
  * each connection's actions can be changed. A connection that is missing offers to connect it.
  */
-export function AbilityFields({ value, onChange, disabled, fieldError, connectedProviders, onConnect }: {
+export function AbilityFields({ value, onChange, disabled, fieldError, connectedProviders, onConnect, harness = "claude" }: {
+  /** The routine's harness, whose built-in tools it lists. */
+  harness?: string;
   value: CapabilityValue;
   onChange: (value: CapabilityValue) => void;
   disabled: boolean;
@@ -210,6 +277,11 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
       {!open && (
         <ul className="ui-routines__ability-pills" aria-label="What it can do now">
           <li className="ui-routines__pill">Draft</li>
+          {routineBuiltInTools(harness).length > 0 && (
+            <li className={`ui-routines__pill${value.builtInTools.length ? "" : " ui-routines__pill--off"}`}>
+              {`Built-in tools · ${value.builtInTools.length} of ${routineBuiltInTools(harness).length}`}
+            </li>
+          )}
           {pill("Slack", connected("slack"), slackShort(value))}
           {pill("GitHub", connected("github"), value.github ? (value.github.access === "write" ? "opens PRs" : "reads repos") : "")}
         </ul>
@@ -219,6 +291,11 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
         <div className="ui-routines__provider-group" role="group" aria-label="Draft">
           <p className="ui-routines__provider-name">Draft</p>
           <p className="ui-routines__secondary">Always reads your team’s context and shared sources.</p>
+        </div>
+
+        <div className="ui-routines__provider-group" role="group" aria-label="Built-in tools">
+          <p className="ui-routines__provider-name">Built-in tools</p>
+          <BuiltInToolsField harness={harness} value={value.builtInTools} disabled={disabled} onChange={(builtInTools) => onChange({ ...value, builtInTools })} />
         </div>
 
         <div className="ui-routines__provider-group" role="group" aria-label="Slack">

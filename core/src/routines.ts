@@ -28,6 +28,41 @@ export const RoutineWhen = z.union([
 ]);
 export type RoutineWhen = z.infer<typeof RoutineWhen>;
 
+/** A built-in tool a routine can turn on or off, with the words the app shows for it. */
+export interface RoutineBuiltInTool {
+  tool: string;
+  label: string;
+}
+
+/**
+ * The built-in tools a routine chooses from, per harness. Reading tools (Claude Code's Read, Glob and Grep) are
+ * always on and not listed. Codex always has its shell and file edits, so only web search is a choice there.
+ */
+export const ROUTINE_BUILT_IN_TOOLS = {
+  claude: [
+    { tool: "Edit", label: "Edit files" },
+    { tool: "Write", label: "Create files" },
+    { tool: "Bash", label: "Run shell commands" },
+    { tool: "WebSearch", label: "Search the web" },
+    { tool: "WebFetch", label: "Fetch web pages" },
+  ],
+  codex: [{ tool: "web_search", label: "Search the web" }],
+} as const satisfies Record<string, ReadonlyArray<RoutineBuiltInTool>>;
+
+/** Built-in tools a harness always has in a routine. Shown, ticked and locked, so the person knows. */
+export const ROUTINE_ALWAYS_ON_TOOLS: Record<keyof typeof ROUTINE_BUILT_IN_TOOLS, ReadonlyArray<RoutineBuiltInTool>> = {
+  claude: [{ tool: "Read, Glob, Grep", label: "Read files" }],
+  codex: [{ tool: "shell", label: "Run shell commands" }, { tool: "apply_patch", label: "Edit files" }],
+};
+
+/** The built-in tools a harness offers routines. Empty for a harness with none. */
+export function routineBuiltInTools(harness: string): ReadonlyArray<RoutineBuiltInTool> {
+  return (ROUTINE_BUILT_IN_TOOLS as Record<string, ReadonlyArray<RoutineBuiltInTool>>)[harness] ?? [];
+}
+
+/** A new routine starts with every built-in tool its harness offers. */
+export const defaultRoutineBuiltInTools = (harness: string): string[] => routineBuiltInTools(harness).map((entry) => entry.tool);
+
 export const RoutineInput = z.object({
   title: z.string().trim().min(1).max(120),
   prompt: z.string().trim().min(1).max(20_000),
@@ -38,6 +73,8 @@ export const RoutineInput = z.object({
   canNotify: z.boolean().optional(),
   postChannels: z.union([z.literal("joined"), z.array(z.string().min(1).max(80).trim()).max(20)]).optional(),
   github: githubSchema.optional(),
+  /** The built-in tools it may use. Left out, a new routine gets them all. */
+  builtInTools: z.array(z.string().min(1).max(40)).max(20).optional(),
   enabled: z.boolean().optional(),
 }).strict();
 

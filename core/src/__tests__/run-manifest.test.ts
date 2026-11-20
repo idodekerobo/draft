@@ -51,7 +51,8 @@ describe("the run manifest", () => {
   });
 
   it("refuses a native tool the harness may not use", () => {
-    expect(() => parse({ ...good, tools: { native: ["Write"], draftMcpUrl: null } })).toThrow("tools.native");
+    expect(() => parse({ ...good, tools: { native: ["NotebookEdit"], draftMcpUrl: null } })).toThrow("tools.native");
+    expect(() => parse({ ...good, harness: "codex", tools: { native: ["apply_patch"], draftMcpUrl: null } })).toThrow("tools.native");
     expect(() => parse({ ...good, harness: "codex", tools: { native: ["Read"], draftMcpUrl: null } })).toThrow("tools.native");
   });
 

@@ -20,7 +20,7 @@ import {
   type ParsedPreset,
   type Weekday,
 } from "../scheduling/presets";
-import { parseAgentRoutineConfig, type AgentRoutineConfig } from "./config";
+import { effectiveBuiltInTools, parseAgentRoutineConfig, type AgentRoutineConfig } from "./config";
 import {
   ROUTINE_TASK_TYPES,
   agentRoutineDefinition,
@@ -334,6 +334,7 @@ async function buildRoutines(
       const { title: _title, ...agentConfig } = config;
       const agent: AgentRoutineInfo = {
         ...agentConfig,
+        builtInTools: effectiveBuiltInTools(config),
         createdByName: task.created_by_user_id ? (names.get(task.created_by_user_id) ?? null) : null,
         lastRun: lastAgentRuns.get(task.id) ?? null,
         missingConnections: routineProviders(config).filter((provider) => !connectedProviders.includes(provider)),

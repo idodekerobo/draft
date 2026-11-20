@@ -105,12 +105,11 @@ export type NativeToolPermission =
   | { harness: "codex"; tool: CodexNativeTool };
 
 /**
- * The built-in tools a cloud run may be given. The rest either run inside the sandbox and widen what
- * it can do (Bash, Edit, Write, WebFetch), or need a display. The sandbox never holds a secret, so a
- * tool that needs one is reached through Draft's gateway instead.
+ * The built-in tools a cloud run may be given. Tools that need a display are left out. The sandbox never
+ * holds a secret, so a tool that needs one is reached through Draft's gateway instead.
  */
 export const CLOUD_NATIVE_TOOLS = {
-  claude: ["Read", "Glob", "Grep", "WebSearch", "Bash"],
+  claude: ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash", "Edit", "Write"],
   codex: ["shell", "web_search"],
 } as const satisfies { claude: ReadonlyArray<ClaudeNativeTool>; codex: ReadonlyArray<CodexNativeTool> };
 

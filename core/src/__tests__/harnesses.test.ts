@@ -58,7 +58,8 @@ describe("cloudToolsetFor", () => {
 
   it("adds what was chosen once, and never a tool outside the cloud list", () => {
     const toolset = cloudToolsetFor("claude", { nativeTools: ["WebSearch", "Read", "Write"] });
-    expect(toolset.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch"]);
+    expect(toolset.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "WebSearch", "Write"]);
+    expect(cloudToolsetFor("codex", { nativeTools: ["apply_patch", "web_search"] }).nativeTools.map((tool) => tool.tool)).toEqual(["shell", "web_search"]);
   });
 });
 
