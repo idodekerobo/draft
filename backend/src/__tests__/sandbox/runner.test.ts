@@ -598,7 +598,8 @@ describe("built-in tools of a run", () => {
   test("a tool outside the list for that harness is refused", () => {
     const withTools = (harness: "claude" | "codex", native: string[]) => validateRunnerManifest({ ...manifestOf({ harness }), tools: { native, draftMcpUrl: null } }, { callbackUrl: CALLBACK });
     expect(withTools("claude", ["Read", "Glob", "WebSearch"]).tools.native).toEqual(["Read", "Glob", "WebSearch"]);
-    expect(() => withTools("claude", ["Read", "Write"])).toThrow("may not use");
+    expect(withTools("claude", ["Read", "Edit", "Write", "WebFetch"]).tools.native).toEqual(["Read", "Edit", "Write", "WebFetch"]);
+    expect(() => withTools("claude", ["Read", "NotebookEdit"])).toThrow("may not use");
     expect(() => withTools("codex", ["shell", "WebSearch"])).toThrow("may not use");
     expect(withTools("claude", ["Read", "Read"]).tools.native).toEqual(["Read"]);
   });
