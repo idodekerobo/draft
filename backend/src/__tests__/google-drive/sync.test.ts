@@ -364,6 +364,24 @@ describe("syncDriveConnection", () => {
     expect(refreshed).toBe(0);
   });
 
+  it("records a needs-reconnect transition and a change feed reset in the errors table", async () => {
+    const recorded: string[] = [];
+    const recordError = ((input: { errorCode: string; connectionId?: string | null }) => recorded.push(`${input.connectionId}:${input.errorCode}`)) as never;
+    const db = seed();
+    await sync.syncDriveConnection({ id: "conn-a", workspace_id: "ws-1" }, fakeClient(db), { ...deps({}, [], async () => {
+      throw new GoogleOAuthError("expired", "invalid_grant");
+    }), recordError });
+    expect(recorded).toEqual(["conn-a:drive_sync_reconnect_required"]);
+
+    const expired = seed([connection("conn-a", "user-a", { cursor_json: { start_page_token: "old", backfill: { seen: 0, folders: {} } } })]);
+    const drive = new FakeDrive();
+    const api = drive.api();
+    const stale = { ...api, listChanges: async () => { throw new DriveApiError("gone", "invalid_page_token", 404); } };
+    await sync.syncDriveConnection({ id: "conn-a", workspace_id: "ws-1" }, fakeClient(expired), { ...deps({ "conn-a": drive }), createApi: () => stale, recordError });
+    expect(recorded).toEqual(["conn-a:drive_sync_reconnect_required", "conn-a:drive_change_feed_reset"]);
+    expect(expired.tables.connections![0]!.cursor_json).toMatchObject({ start_page_token: "start-1" });
+  });
+
   it("leaves a connection revoked when it is disconnected during a poll", async () => {
     const db = seed();
     addFolder(db, "conn-a", "f-1");

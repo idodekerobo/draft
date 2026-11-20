@@ -12,6 +12,7 @@ import { AgentRunTokenError, verifyAgentRunToken } from "../runs/run-token";
 import { describeTools, filterByConnections, type RegisteredTool, type ToolRegistry } from "./tool-registry";
 import { toolConnectionProvidersOrNone } from "../../ingestion/gmail/access";
 import { userInvokeDeps } from "./user-gateway";
+import { recordError } from "../../errors/record-error";
 
 export interface RunGatewayDeps {
   client: SupabaseClient;
@@ -56,7 +57,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
     try {
       providers = await connectionProviders(run.workspaceId, run.onBehalfOf);
     } catch (error) {
-      console.error(JSON.stringify({ source: "run_gateway", event: "personal_connections_lookup_failed", runId: run.id, error: error instanceof Error ? error.message : String(error) }));
+      await recordError({ client: deps.client, workspaceId: run.workspaceId, agentRunId: run.id, operation: "read", code: "tool_connections_lookup_failed", message: "Looking up the caller's connections failed, so connection-gated tools are hidden", detail: { surface: "run_gateway" }, error });
       providers = new Set();
     }
     return {

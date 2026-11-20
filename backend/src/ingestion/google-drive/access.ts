@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { googleOAuthSettings, type GoogleOAuthSettings } from "../../config";
 import { CredentialError, resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
+import { recordError } from "../../errors/record-error";
 import { GoogleOAuthError, refreshGoogleAccessToken } from "../google/oauth";
 import { createDriveApi, type DriveApi } from "./api";
 
@@ -42,23 +43,31 @@ export async function driveAccessFor(
   if (!settings) return { ok: false, code: "google_oauth_not_configured", message: "Google sign-in is not set up on this Draft server." };
 
   const now = deps.now ?? (() => new Date());
-  const markDegraded = async () => {
+  const markDegraded = async (reason: string, cause?: unknown) => {
+    const wasActive = connection.status === "active";
     const { error: updateError } = await client
       .from("connections")
       .update({ status: "degraded", last_error_at: now().toISOString() })
-      .eq("id", connection.id);
+      .eq("id", connection.id)
+      .in("status", ["active", "degraded"]);
     if (updateError) throw updateError;
+    if (wasActive) {
+      await recordError({
+        client, workspaceId, connectionId: connection.id, operation: "auth", code: "drive_access_degraded",
+        message: "Google Drive access needs a Google reconnect", detail: { reason }, error: cause,
+      });
+    }
     return { ok: false as const, code: "google_reconnect_required" as const, message: RECONNECT_MESSAGE };
   };
 
-  if (!connection.credential_id) return markDegraded();
+  if (!connection.credential_id) return markDegraded("missing_credential");
 
   let refreshToken: string;
   try {
     const credential = await resolveProviderCredentialById(workspaceId, "google_drive", connection.credential_id, client);
     refreshToken = credential.refresh_token;
   } catch (cause) {
-    if (cause instanceof CredentialError) return markDegraded();
+    if (cause instanceof CredentialError) return markDegraded("credential_unusable", cause);
     throw cause;
   }
 
@@ -66,7 +75,7 @@ export async function driveAccessFor(
   try {
     accessToken = (await refreshGoogleAccessToken(settings, refreshToken, deps.fetchImpl ?? fetch)).accessToken;
   } catch (cause) {
-    if (cause instanceof GoogleOAuthError && cause.code === "invalid_grant") return markDegraded();
+    if (cause instanceof GoogleOAuthError && cause.code === "invalid_grant") return markDegraded("invalid_grant", cause);
     throw cause;
   }
 
@@ -74,7 +83,8 @@ export async function driveAccessFor(
     const { error: updateError } = await client
       .from("connections")
       .update({ status: "active", last_success_at: now().toISOString() })
-      .eq("id", connection.id);
+      .eq("id", connection.id)
+      .eq("status", "degraded");
     if (updateError) throw updateError;
   }
 

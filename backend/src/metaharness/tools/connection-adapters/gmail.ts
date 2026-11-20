@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ToolCaller } from "draft-core/tools";
+import { recordError } from "../../../errors/record-error";
 import { googleOAuthSettings, type GoogleOAuthSettings } from "../../../config";
 import { gmailAccessFor } from "../../../ingestion/gmail/access";
 import { GmailApiError, type GmailApi } from "../../../ingestion/gmail/api";
@@ -84,15 +85,17 @@ export function createGmailAdapter(client: SupabaseClient, deps: GmailDeps = {})
   async function withGmail(caller: ToolCaller, work: (api: GmailApi) => Promise<ToolHandlerResult>): Promise<ToolHandlerResult> {
     const userId = caller.onBehalfOf;
     if (!userId) return refuse("gmail_requires_person", "Gmail needs a person's own login.");
-    const access = await gmailAccessFor(client, caller.workspaceId, userId, { settings, fetchImpl: deps.fetch ?? fetch });
-    if (!access.ok) return refuse(access.code, access.message);
     try {
+      const access = await gmailAccessFor(client, caller.workspaceId, userId, { settings, fetchImpl: deps.fetch ?? fetch });
+      if (!access.ok) return refuse(access.code, access.message);
       return await work(access.api);
     } catch (cause) {
-      if (!(cause instanceof GmailApiError)) throw cause;
+      if (cause instanceof GmailApiError) {
       if (cause.code === "forbidden" || cause.code === "not_found") return refuse("gmail_not_found", "This message does not exist or you cannot open it.");
       if (cause.code === "rate_limited") return refuse("gmail_rate_limited", "Gmail is limiting requests right now. Try again in a minute.");
       if (cause.code === "unauthorized") return refuse("google_reconnect_required", "Reconnect Google");
+      }
+      await recordError({ client, workspaceId: caller.workspaceId, operation: "execution", code: "gmail_tool_failed", message: "A Gmail tool failed unexpectedly", error: cause });
       throw cause;
     }
   }

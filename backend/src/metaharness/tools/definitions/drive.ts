@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { googleOAuthSettings, type GoogleOAuthSettings } from "../../../config";
+import { recordError } from "../../../errors/record-error";
 import { driveAccessFor } from "../../../ingestion/google-drive/access";
 import { DriveApiError } from "../../../ingestion/google-drive/api";
 import { renderDriveFile } from "../../../ingestion/google-drive/render-file";
@@ -142,9 +143,9 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
     // A disconnected owner cannot take new versions; the stored copy is all there is.
     if (owner.status !== "active" && owner.status !== "degraded") return "unavailable";
     if (!takeLiveFetch(askerId, now().getTime())) return "unavailable";
-    const access = await driveAccessFor(client, workspaceId, askerId, { settings, fetchImpl: deps.fetch ?? fetch, now });
-    if (!access.ok) return "unavailable";
     try {
+      const access = await driveAccessFor(client, workspaceId, askerId, { settings, fetchImpl: deps.fetch ?? fetch, now });
+      if (!access.ok) return "unavailable";
       const file = await access.api.getFile(fileId);
       const rendered = await renderDriveFile(access.api, file);
       if (!rendered) return "unavailable";
@@ -153,6 +154,10 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       await writeDriveFile(client, { workspaceId, connectionId: owner.id, ownerUserId: owner.connected_by_user_id, file, rendered, folderPath, now: now() });
       return "changed";
     } catch (cause) {
+      // A file the asker cannot open is an expected answer; anything else is a failure worth seeing.
+      if (!(cause instanceof DriveApiError && (cause.code === "not_found" || cause.code === "forbidden"))) {
+        await recordError({ client, workspaceId, connectionId: owner.id, operation: "read", code: "drive_live_fetch_failed", message: "Refreshing a Drive file from Google failed", detail: { file_id: fileId }, error: cause });
+      }
       if (cause instanceof DriveApiError) return "unavailable";
       throw cause;
     }

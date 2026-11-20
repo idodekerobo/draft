@@ -36,7 +36,7 @@ export async function createGoogleConnectSession(
     .eq("connected_by_user_id", userId)
     .eq("status", "active");
   if (existingError) {
-    recordRouteError({ workspaceId, operation: "auth", errorCode: "gmail_connect_lookup_failed", error: existingError });
+    recordRouteError({ workspaceId, operation: "auth", errorCode: "google_connect_lookup_failed", error: existingError });
     return Response.json({ error: "lookup_failed" }, { status: 500 });
   }
   const activeProviders = new Set(((existing ?? []) as Array<{ provider: string }>).map((row) => row.provider));

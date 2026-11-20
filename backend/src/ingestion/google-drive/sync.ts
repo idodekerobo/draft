@@ -41,6 +41,7 @@ export interface DriveSyncDependencies {
   createApi: (accessToken: string) => DriveApi;
   now: () => Date;
   recordSkip: (connection: DriveSyncConnection, fileId: string, reason: DriveSkipReason, error: unknown) => void;
+  recordError?: typeof recordRouteError;
 }
 
 const defaultDependencies: DriveSyncDependencies = {
@@ -449,7 +450,15 @@ async function refreshRecentComments(ctx: PassContext, after: string | undefined
   return rows.length < COMMENT_REFRESH_PER_POLL ? undefined : rows.at(-1)?.external_id;
 }
 
-async function markNeedsReconnect(connection: DriveSyncConnection, cursor: DriveCursor, client: SupabaseClient, now: Date) {
+async function markNeedsReconnect(connection: DriveSyncConnection, cursor: DriveCursor, client: SupabaseClient, now: Date, deps: DriveSyncDependencies, reason: string, cause?: unknown) {
+  (deps.recordError ?? recordRouteError)({
+    workspaceId: connection.workspace_id,
+    connectionId: connection.id,
+    operation: "ingestion",
+    errorCode: "drive_sync_reconnect_required",
+    detail: { reason },
+    error: cause,
+  });
   const { error } = await client
     .from("connections")
     .update({ status: "degraded", last_error_at: now.toISOString(), cursor_json: { ...cursor, reauth_required: true } })
@@ -479,7 +488,7 @@ export async function syncDriveConnection(
   if (cursor.reauth_required && row.status === "degraded") return;
   delete cursor.reauth_required;
   if (!row.credential_id) {
-    await markNeedsReconnect(connection, cursor, client, now);
+    await markNeedsReconnect(connection, cursor, client, now, deps, "missing_credential");
     return;
   }
 
@@ -495,7 +504,7 @@ export async function syncDriveConnection(
       (refreshError instanceof GoogleOAuthError && refreshError.code === "invalid_grant") ||
       (refreshError instanceof CredentialError && refreshError.reason !== "decrypt_failed");
     if (grantGone) {
-      await markNeedsReconnect(connection, cursor, client, now);
+      await markNeedsReconnect(connection, cursor, client, now, deps, "invalid_grant", refreshError);
       return;
     }
     throw refreshError;
@@ -535,6 +544,13 @@ export async function syncDriveConnection(
       } catch (changesError) {
         if (!isDriveError(changesError, "invalid_page_token")) throw changesError;
         // The saved position expired: take a new one and backfill every folder again.
+        (deps.recordError ?? recordRouteError)({
+          workspaceId: connection.workspace_id,
+          connectionId: connection.id,
+          operation: "ingestion",
+          errorCode: "drive_change_feed_reset",
+          error: changesError,
+        });
         next.start_page_token = await api.getStartPageToken();
         cursor.backfill = undefined;
       }
@@ -561,10 +577,10 @@ export async function syncDriveConnection(
     if (updateError) throw updateError;
   } catch (syncError) {
     if (isDriveError(syncError, "unauthorized")) {
-      await markNeedsReconnect(connection, cursor, client, now);
+      await markNeedsReconnect(connection, cursor, client, now, deps, "unauthorized", syncError);
       return;
     }
-    recordRouteError({
+    (deps.recordError ?? recordRouteError)({
       workspaceId: connection.workspace_id,
       connectionId: connection.id,
       operation: "ingestion",

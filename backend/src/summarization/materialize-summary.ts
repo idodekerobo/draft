@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
 import { upsertConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
 import type { CapturedSessionRow } from "../types/tables";
+import { recordError } from "../errors/record-error";
 import type { SessionSummaryPayload } from "./types";
 
 const MAX_SUMMARY_ATTEMPTS = 3;
@@ -58,7 +59,7 @@ async function sessionReadGmail(session: CapturedSessionRow, client: SupabaseCli
     .eq("args_json->>provider", "gmail")
     .limit(1);
   if (error) {
-    console.error("materializeSessionSummary: Gmail usage lookup failed", error);
+    await recordError({ client, workspaceId: session.workspace_id, operation: "read", code: "session_gmail_usage_lookup_failed", message: "Checking whether a session read Gmail failed; its summary stays private", detail: { captured_session_id: session.id }, error });
     return true;
   }
   return (data ?? []).length > 0;

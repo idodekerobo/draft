@@ -317,7 +317,7 @@ async function loadGmailOwners(workspaceId: string, userIds: string[]): Promise<
     .in("connected_by_user_id", userIds)
     .in("status", ["active", "degraded"]);
   if (error) {
-    console.error(JSON.stringify({ source: "routines", event: "gmail_owner_lookup_failed", workspaceId, error: error.message }));
+    await recordError({ workspaceId, operation: "read", code: "routine_gmail_owner_lookup_failed", message: "Loading which routine owners have Gmail failed", error });
     return new Set();
   }
   return new Set(((data ?? []) as Array<{ connected_by_user_id: string | null }>).flatMap((row) => (row.connected_by_user_id ? [row.connected_by_user_id] : [])));

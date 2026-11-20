@@ -152,6 +152,20 @@ describe("drive.read", () => {
     expect(urls).toEqual([]);
   });
 
+  it("records a failed live fetch and serves the stored copy as stale", async () => {
+    const db = seed({ lastSuccessAt: "2026-11-20T11:00:00.000Z" });
+    db.tables.errors = [];
+    const failing = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.host === "oauth2.googleapis.com") return Response.json({ access_token: "access", expires_in: 3600 });
+      return new Response("boom", { status: 400 });
+    }) as unknown as typeof fetch;
+    const { call } = setup(db, failing);
+    const result = await call("drive.read", { file_id: "file-1" });
+    expect(result.output).toMatchObject({ source: "stored", stale: true });
+    expect(db.tables.errors).toEqual([expect.objectContaining({ workspace_id: WS, connection_id: "conn-owner", detail_json: expect.objectContaining({ code: "drive_live_fetch_failed", file_id: "file-1" }) })]);
+  });
+
   it("caps live fetches at 10 per user per minute", async () => {
     const urls: string[] = [];
     const db = seed({ lastSuccessAt: "2026-11-20T11:00:00.000Z" });
@@ -209,8 +223,11 @@ describe("Drive tool visibility", () => {
   it("hides them with no Drive connection or a failed lookup", async () => {
     const none = await toolConnectionProviders(fakeClient(fakeDb({ connections: [] })), WS, ASKER);
     expect(filterByConnections(tools, none)).toEqual([]);
-    const failed = await toolConnectionProvidersOrNone(failingOn(fakeClient(seed()), "connections"), WS, ASKER, "test");
+    const db = seed();
+    db.tables.errors = [];
+    const failed = await toolConnectionProvidersOrNone(failingOn(fakeClient(db), "connections"), WS, ASKER, "test");
     expect(filterByConnections(tools, failed)).toEqual([]);
+    expect(db.tables.errors).toEqual([expect.objectContaining({ workspace_id: WS, detail_json: expect.objectContaining({ code: "tool_connections_lookup_failed", surface: "test" }) })]);
   });
 
   it("summarizes the first changed line", () => {
