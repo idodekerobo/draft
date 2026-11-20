@@ -25,6 +25,8 @@ const MAX_DEFERRED = 200;
 const RECENT_COMMENT_DAYS = 7;
 const COMMENT_REFRESH_PER_POLL = 5;
 const SHEET_READS_PER_MINUTE = 50;
+// A disconnect during a poll must win over the poll's final status write.
+const LIVE_STATUSES = ["active", "degraded"];
 
 export interface DriveSyncConnection {
   id: string;
@@ -400,7 +402,8 @@ async function markNeedsReconnect(connection: DriveSyncConnection, cursor: Drive
     .from("connections")
     .update({ status: "degraded", last_error_at: now.toISOString(), cursor_json: { ...cursor, reauth_required: true } })
     .eq("id", connection.id)
-    .eq("workspace_id", connection.workspace_id);
+    .eq("workspace_id", connection.workspace_id)
+    .in("status", LIVE_STATUSES);
   if (error) throw error;
 }
 
@@ -501,7 +504,8 @@ export async function syncDriveConnection(
       .from("connections")
       .update({ status: "active", last_success_at: now.toISOString(), cursor_json: next })
       .eq("id", connection.id)
-      .eq("workspace_id", connection.workspace_id);
+      .eq("workspace_id", connection.workspace_id)
+      .in("status", LIVE_STATUSES);
     if (updateError) throw updateError;
   } catch (syncError) {
     if (isDriveError(syncError, "unauthorized")) {

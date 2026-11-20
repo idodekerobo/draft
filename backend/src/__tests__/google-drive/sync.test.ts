@@ -337,6 +337,27 @@ describe("syncDriveConnection", () => {
     expect(refreshed).toBe(0);
   });
 
+  it("leaves a connection revoked when it is disconnected during a poll", async () => {
+    const db = seed();
+    addFolder(db, "conn-a", "f-1");
+    const drive = new FakeDrive();
+    drive.add({ id: "doc-1", parents: ["f-1"] });
+    const api = drive.api();
+    const revoking = { ...api, getStartPageToken: async () => {
+      db.tables.connections![0]!.status = "revoked";
+      return api.getStartPageToken();
+    } };
+    await sync.syncDriveConnection({ id: "conn-a", workspace_id: "ws-1" }, fakeClient(db), { ...deps({ "conn-a": drive }), createApi: () => revoking });
+    expect(db.tables.connections![0]!.status).toBe("revoked");
+
+    db.tables.connections![0]!.status = "active";
+    await sync.syncDriveConnection({ id: "conn-a", workspace_id: "ws-1" }, fakeClient(db), deps({}, [], async () => {
+      db.tables.connections![0]!.status = "revoked";
+      throw new GoogleOAuthError("expired", "invalid_grant");
+    }));
+    expect(db.tables.connections![0]!.status).toBe("revoked");
+  });
+
   it("skips a file it may not read and keeps going", async () => {
     const db = seed();
     addFolder(db, "conn-a", "f-1");
