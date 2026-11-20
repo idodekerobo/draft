@@ -11,7 +11,7 @@ import { filterByConnections } from "../metaharness/tools/tool-registry";
 export interface McpGateway {
   deps: InvokeToolDeps;
   resolveWorkspaceId: (userId: string) => Promise<string | null>;
-  /** The caller's own live connection providers. Left out, no connection-gated tool is offered. */
+  /** The caller's providers from toolConnectionProviders. Left out, no connection-gated tool is offered. */
   connectionProviders?: (workspaceId: string, userId: string) => Promise<ReadonlySet<string>>;
 }
 

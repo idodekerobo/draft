@@ -10,7 +10,7 @@ import { toMcpResult } from "./mcp-result";
 import { remoteToolsForRun } from "./remote-mcp";
 import { AgentRunTokenError, verifyAgentRunToken } from "../runs/run-token";
 import { describeTools, filterByConnections, type RegisteredTool, type ToolRegistry } from "./tool-registry";
-import { personalConnectionProvidersOrNone } from "../../ingestion/gmail/access";
+import { toolConnectionProvidersOrNone } from "../../ingestion/gmail/access";
 import { userInvokeDeps } from "./user-gateway";
 
 export interface RunGatewayDeps {
@@ -37,7 +37,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
   const audit = auditToDatabase(deps.client);
   const remoteTools = deps.remoteTools ?? ((run: AgentRunSpec) => remoteToolsForRun(deps.client, run));
   const connectionProviders = deps.connectionProviders
-    ?? ((workspaceId: string, userId: string) => personalConnectionProvidersOrNone(deps.client, workspaceId, userId, "run_gateway"));
+    ?? ((workspaceId: string, userId: string) => toolConnectionProvidersOrNone(deps.client, workspaceId, userId, "run_gateway"));
 
   /** Draft's tools plus the ones this run reaches through its connections. */
   async function depsFor(run: AgentRunSpec): Promise<InvokeToolDeps> {

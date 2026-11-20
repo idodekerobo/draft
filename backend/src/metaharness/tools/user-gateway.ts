@@ -19,7 +19,7 @@ export function userInvokeDeps(client: SupabaseClient, registry: ToolRegistry): 
   return { registry, audit: auditToDatabase(client), authorizeUser: authorizeWorkspaceMember };
 }
 
-/** The tools a person may call, with the JSON schema of each input. `providers` are the person's own live connections. */
+/** The tools a person may call, with the JSON schema of each input. `providers` come from toolConnectionProviders. */
 export function listUserTools(deps: InvokeToolDeps, providers: ReadonlySet<string>): Response {
   return Response.json({ tools: describeTools(filterByConnections(deps.registry.listForUser(), providers)) });
 }

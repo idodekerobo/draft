@@ -35,6 +35,8 @@ export const DRAFT_TOOLS = [
   { name: "connections.read", access: "read" },
   { name: "connections.search", access: "read" },
   { name: "connections.post", access: "write" },
+  { name: "drive.read", access: "read" },
+  { name: "drive.search", access: "read" },
   { name: "github.credential", access: "read" },
   { name: "people.find", access: "read" },
   { name: "people.create", access: "write" },
@@ -82,6 +84,8 @@ export interface DraftToolLimits {
   "connections.search": Record<string, never>;
   /** Slack is the only provider that posts today, so `channels` is a Slack channel id or name. */
   "connections.post": { channels?: "joined" | ReadonlyArray<string>; maxPerRun?: number };
+  "drive.read": Record<string, never>;
+  "drive.search": Record<string, never>;
   "github.credential": { repos?: ReadonlyArray<string>; access?: "read" | "write" };
   "people.find": Record<string, never>;
   "people.create": { maxPerRun?: number };

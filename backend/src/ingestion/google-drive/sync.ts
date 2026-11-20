@@ -5,7 +5,7 @@ import { CredentialError, resolveProviderCredentialById } from "../../credential
 import { recordRouteError } from "../../errors/route-error";
 import { GoogleOAuthError, refreshGoogleAccessToken } from "../google/oauth";
 import { createDriveApi, DriveApiError, FOLDER_MIME, NATIVE_MIME_TYPES, type DriveApi, type DriveChange, type DriveFile } from "./api";
-import { renderDriveFile, sheetReadsFor } from "./render-file";
+import { renderDriveFile, sheetReadsFor, type RenderedFile } from "./render-file";
 import {
   createFolderResolver,
   listLiveWorkspaceFolders,
@@ -180,13 +180,41 @@ async function processFile(ctx: PassContext, file: DriveFile, match: FolderMatch
   }
   if (!rendered) return;
 
-  const { error } = await ctx.client.rpc("write_drive_source_item", {
-    p_workspace_id: ctx.connection.workspace_id,
-    p_connection_id: ctx.connection.id,
+  await writeDriveFile(ctx.client, {
+    workspaceId: ctx.connection.workspace_id,
+    connectionId: ctx.connection.id,
+    ownerUserId: ctx.ownerUserId,
+    file,
+    rendered,
+    folderPath: [match.folder.name, ...match.path].join("/"),
+    now: ctx.now,
+  });
+}
+
+export function driveVersionKey(rendered: RenderedFile): string {
+  return createHash("sha256").update(`${rendered.markdown}:${rendered.commentsHash}`).digest("hex").slice(0, 32);
+}
+
+export interface DriveFileWrite {
+  workspaceId: string;
+  connectionId: string;
+  ownerUserId: string | null;
+  file: DriveFile;
+  rendered: RenderedFile;
+  folderPath: string | null;
+  now: Date;
+}
+
+// Sync and live reads both store a file through here, so a version key means the same thing in both.
+export async function writeDriveFile(client: SupabaseClient, write: DriveFileWrite): Promise<{ item_id: string; changed: boolean }> {
+  const { file, rendered } = write;
+  const { data, error } = await client.rpc("write_drive_source_item", {
+    p_workspace_id: write.workspaceId,
+    p_connection_id: write.connectionId,
     p_item_type: "document",
     p_external_id: file.id,
-    p_external_version: createHash("sha256").update(`${rendered.markdown}:${rendered.commentsHash}`).digest("hex").slice(0, 32),
-    p_occurred_at: file.modifiedTime ?? ctx.now.toISOString(),
+    p_external_version: driveVersionKey(rendered),
+    p_occurred_at: file.modifiedTime ?? write.now.toISOString(),
     p_content_markdown: rendered.markdown,
     p_content_hash: createHash("sha256").update(rendered.markdown).digest("hex"),
     p_metadata_json: {
@@ -194,7 +222,7 @@ async function processFile(ctx: PassContext, file: DriveFile, match: FolderMatch
       file_id: file.id,
       mime_type: file.mimeType ?? null,
       drive_id: file.driveId ?? null,
-      folder_path: [match.folder.name, ...match.path].join("/"),
+      folder_path: write.folderPath,
       web_view_link: file.webViewLink ?? null,
       modified_time: file.modifiedTime ?? null,
       last_modified_by: file.lastModifyingUser?.displayName ?? null,
@@ -203,10 +231,11 @@ async function processFile(ctx: PassContext, file: DriveFile, match: FolderMatch
     },
     p_sanitized_raw_json: rendered.structured,
     p_visibility: "shared",
-    p_owner_user_id: ctx.ownerUserId,
+    p_owner_user_id: write.ownerUserId,
     p_representation_kind: "source",
   });
   if (error) throw error;
+  return data as { item_id: string; changed: boolean };
 }
 
 // Returns true when the file was rendered or deferred, so callers can count it against the poll budget.

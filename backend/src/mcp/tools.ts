@@ -3,7 +3,7 @@ import { createDraftToolRegistry } from "../metaharness/tools/definitions";
 import { userInvokeDeps } from "../metaharness/tools/user-gateway";
 import { registerGatewayTools, type McpGateway } from "./gateway-tools";
 import { serviceClient } from "../db/client";
-import { personalConnectionProvidersOrNone } from "../ingestion/gmail/access";
+import { toolConnectionProvidersOrNone } from "../ingestion/gmail/access";
 
 // Built with each server, which is built per request, so nothing is shared between callers.
 function gatewayFor(override?: McpGateway): McpGateway {
@@ -11,7 +11,7 @@ function gatewayFor(override?: McpGateway): McpGateway {
     override ?? {
       deps: userInvokeDeps(serviceClient, createDraftToolRegistry(serviceClient)),
       resolveWorkspaceId: resolveCallerWorkspaceId,
-      connectionProviders: (workspaceId, userId) => personalConnectionProvidersOrNone(serviceClient, workspaceId, userId, "mcp"),
+      connectionProviders: (workspaceId, userId) => toolConnectionProvidersOrNone(serviceClient, workspaceId, userId, "mcp"),
     }
   );
 }
