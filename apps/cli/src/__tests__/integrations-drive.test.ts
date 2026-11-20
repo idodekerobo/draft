@@ -5,9 +5,9 @@ import { integrationsSubcommandHelp } from "../integrations/help.ts";
 function harness() {
   const lines: string[] = [];
   const deps: DriveFoldersDeps = {
-    list: mock(async () => ({ ok: true, value: { status: "active", last_success_at: "2026-11-20T07:00:00Z", folders: [{ id: "row-1", folder_kind: "folder", google_folder_id: "folder-1", name: "Plans" }] } })),
-    add: mock(async () => ({ ok: true, value: { folder: { id: "row-1" } } })),
-    remove: mock(async () => ({ ok: true, value: { ok: true } })),
+    list: mock(async () => ({ ok: true as const, value: { status: "active", last_success_at: "2026-11-20T07:00:00Z", folders: [{ id: "row-1", folder_kind: "folder", google_folder_id: "folder-1", name: "Plans" }] } })),
+    add: mock(async () => ({ ok: true as const, value: { folder: { id: "row-1" } } })),
+    remove: mock(async () => ({ ok: true as const, value: { ok: true } })),
     stdout: (text) => { lines.push(text); },
   };
   return { deps, lines };
