@@ -141,6 +141,8 @@ export interface FolderMatch {
 export interface FolderResolver {
   match(file: DriveFile): Promise<FolderMatch | null>;
   contains(file: DriveFile): Promise<boolean>;
+  /** "unknown" when an ancestor folder could not be read, so a synced folder above it may still hold the file. */
+  holds(file: DriveFile): Promise<"yes" | "no" | "unknown">;
 }
 
 export type DriveFileCache = Map<string, DriveFile | null>;
@@ -165,23 +167,37 @@ export function createFolderResolver(
     return file;
   }
 
-  async function match(file: DriveFile): Promise<FolderMatch | null> {
+  async function walk(file: DriveFile): Promise<{ match: FolderMatch | null; complete: boolean }> {
     const sharedDrive = file.driveId ? byGoogleId.get(file.driveId) : undefined;
     const path: string[] = [];
     let parentId = file.parents?.[0];
+    let complete = true;
     for (let depth = 0; parentId && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
       const folder = byGoogleId.get(parentId);
-      if (folder) return { folder, path };
+      if (folder) return { match: { folder, path }, complete };
       if (sharedDrive && parentId === sharedDrive.googleFolderId) break;
       const parent = await load(parentId);
-      if (!parent) break;
+      if (!parent) {
+        complete = false;
+        break;
+      }
       path.unshift(parent.name ?? "");
       parentId = parent.parents?.[0];
     }
-    return sharedDrive ? { folder: sharedDrive, path } : null;
+    // Stopped at the depth limit before reaching the top.
+    if (parentId && !sharedDrive) complete = false;
+    return { match: sharedDrive ? { folder: sharedDrive, path } : null, complete };
   }
 
-  return { match, contains: async (file) => (await match(file)) !== null };
+  const match = async (file: DriveFile) => (await walk(file)).match;
+  return {
+    match,
+    contains: async (file) => (await match(file)) !== null,
+    holds: async (file) => {
+      const result = await walk(file);
+      return result.match ? "yes" : result.complete ? "no" : "unknown";
+    },
+  };
 }
 
 // True when a synced Google Drive folder of any live Drive connection in the workspace holds the file.

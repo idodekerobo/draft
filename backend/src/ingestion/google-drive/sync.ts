@@ -146,9 +146,32 @@ async function deleteFile(ctx: PassContext, fileId: string): Promise<void> {
   if (error) throw error;
 }
 
-async function workspaceHolds(ctx: PassContext, file: DriveFile, others: SyncedGoogleDriveFolder[]): Promise<boolean> {
-  if (others.length === 0) return false;
-  return createFolderResolver(ctx.api, others, ctx.fileCache).contains(file);
+async function capturedByOtherConnection(ctx: PassContext, fileId: string): Promise<boolean> {
+  const { data, error } = await ctx.client
+    .from("source_items")
+    .select("connection_id")
+    .eq("workspace_id", ctx.connection.workspace_id)
+    .eq("external_id", fileId)
+    .neq("connection_id", ctx.connection.id)
+    .neq("lifecycle_status", "deleted");
+  if (error) throw error;
+  const ids = [...new Set(((data ?? []) as Array<{ connection_id: string }>).map((row) => row.connection_id))];
+  if (ids.length === 0) return false;
+  const { data: live, error: liveError } = await ctx.client
+    .from("connections")
+    .select("id")
+    .in("id", ids)
+    .in("status", LIVE_STATUSES);
+  if (liveError) throw liveError;
+  return ((live ?? []) as unknown[]).length > 0;
+}
+
+// This connection's folders no longer hold the file. Another live connection that captured it decides
+// for itself, and a teammate's folder this login cannot fully see may still hold it.
+async function deleteUnlessHeldElsewhere(ctx: PassContext, file: DriveFile, others: SyncedGoogleDriveFolder[]): Promise<void> {
+  if (await capturedByOtherConnection(ctx, file.id)) return;
+  if (others.length > 0 && (await createFolderResolver(ctx.api, others, ctx.fileCache).holds(file)) !== "no") return;
+  await deleteFile(ctx, file.id);
 }
 
 async function otherConnectionsFolders(ctx: PassContext): Promise<SyncedGoogleDriveFolder[]> {
@@ -260,9 +283,7 @@ async function handleFile(ctx: PassContext, change: DriveChange): Promise<boolea
     await processFile(ctx, file, match);
     return true;
   }
-  if ((await hasStoredRows(ctx, file.id)) && !(await workspaceHolds(ctx, file, await otherConnectionsFolders(ctx)))) {
-    await deleteFile(ctx, file.id);
-  }
+  if (await hasStoredRows(ctx, file.id)) await deleteUnlessHeldElsewhere(ctx, file, await otherConnectionsFolders(ctx));
   return false;
 }
 
@@ -282,9 +303,8 @@ async function cleanRemovedFolders(ctx: PassContext, after: string | null): Prom
   for (const row of rows) {
     try {
       const file = await ctx.api.getFile(row.external_id);
-      if (file.trashed || (!(await ctx.resolver.contains(file)) && !(await workspaceHolds(ctx, file, others)))) {
-        await deleteFile(ctx, row.external_id);
-      }
+      if (file.trashed) await deleteFile(ctx, row.external_id);
+      else if (!(await ctx.resolver.contains(file))) await deleteUnlessHeldElsewhere(ctx, file, others);
     } catch (fileError) {
       if (isDriveError(fileError, "not_found")) await handleGone(ctx, row.external_id);
       else if (isDriveError(fileError, "forbidden")) ctx.deps.recordSkip(ctx.connection, row.external_id, "forbidden", fileError);

@@ -255,6 +255,7 @@ describe("syncDriveConnection", () => {
     const drive = new FakeDrive();
     drive.add({ id: "doc-1", parents: ["f-2"] });
     drive.add({ id: "doc-2", parents: ["nowhere"] });
+    drive.add({ id: "nowhere", mimeType: FOLDER_MIME });
     db.tables.source_items!.push({ id: "item-y", workspace_id: "ws-1", connection_id: "conn-a", external_id: "doc-2", external_version: "v1", lifecycle_status: "active", content_markdown: "y" });
     drive.changePages = [{
       changes: [
@@ -270,6 +271,31 @@ describe("syncDriveConnection", () => {
     expect(db.tables.source_items!.find((row) => row.id === "item-y")!.lifecycle_status).toBe("deleted");
   });
 
+  it("keeps a file another live connection captured, or that may sit under a teammate's folder this login cannot read", async () => {
+    const db = seed([
+      connection("conn-a", "user-a", { cursor_json: { start_page_token: "t-1", backfill: { seen: 0, folders: { "f-1": { done: true } } } } }),
+      connection("conn-b", "user-b"),
+    ]);
+    addFolder(db, "conn-a", "f-1");
+    addFolder(db, "conn-b", "f-2");
+    db.tables.source_items!.push(
+      { id: "b-old", workspace_id: "ws-1", connection_id: "conn-b", external_id: "doc-1", external_version: "v0", lifecycle_status: "superseded", content_markdown: "b" },
+      { id: "a-new", workspace_id: "ws-1", connection_id: "conn-a", external_id: "doc-1", external_version: "v1", lifecycle_status: "active", content_markdown: "a" },
+      { id: "a-hidden", workspace_id: "ws-1", connection_id: "conn-a", external_id: "doc-2", external_version: "v1", lifecycle_status: "active", content_markdown: "h" },
+    );
+    const drive = new FakeDrive();
+    drive.add({ id: "doc-1", parents: ["somewhere"] });
+    drive.add({ id: "somewhere", mimeType: FOLDER_MIME });
+    // doc-2's parent folder is not visible to user-a, so the walk toward f-2 stops there.
+    drive.add({ id: "doc-2", parents: ["hidden-sub"] });
+    drive.changePages = [{ changes: [{ fileId: "doc-1", file: drive.files.get("doc-1") }, { fileId: "doc-2", file: drive.files.get("doc-2") }], newStartPageToken: "t-2" }];
+
+    await run(db, "conn-a", { "conn-a": drive });
+
+    expect(db.tables.source_items!.find((row) => row.id === "a-new")!.lifecycle_status).toBe("active");
+    expect(db.tables.source_items!.find((row) => row.id === "a-hidden")!.lifecycle_status).toBe("active");
+  });
+
   it("cleans old unchanged files after folder removal, across bounded polls, and keeps another synced folder's files", async () => {
     const db = seed([
       connection("conn-a", "user-a", { cursor_json: { start_page_token: "t-1", backfill: { seen: 0, folders: { "f-1": { done: true } } } } }),
@@ -277,6 +303,7 @@ describe("syncDriveConnection", () => {
     ]);
     addFolder(db, "conn-b", "f-2");
     const drive = new FakeDrive();
+    drive.add({ id: "f-1", mimeType: FOLDER_MIME });
     for (let index = 0; index < 105; index++) {
       const id = `doc-${String(index).padStart(3, "0")}`;
       drive.add({ id, parents: [index === 0 ? "f-2" : "f-1"], modifiedTime: "2020-01-01T00:00:00Z" });
