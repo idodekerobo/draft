@@ -28,8 +28,7 @@ export function AgentPanel({ agent, seq, children }: { agent: SessionAgentSummar
     <span className="ui-stream__tool">Agent</span>
     {agent.name && <span className="ui-stream__summary">@{agent.name} </span>}
     {agent.description && <span className="ui-stream__summary ui-stream__summary--title">{agent.description}</span>}
-    <span className="ui-muted"> · {agent.state} · {agent.steps} {agent.steps === 1 ? "step" : "steps"}</span>
-    {agent.isError && <span className="ui-error"> · failed</span>}
+    <span className="ui-muted"> · {agent.isError ? "failed" : agent.async && agent.state === "idle" ? "completed" : agent.state} · {agent.steps} {agent.steps === 1 ? "step" : "steps"}</span>
   </>}>
     {() => <>{agent.agentId ? <AgentTranscript agent={agent} /> : <p className="ui-muted">Waiting for the agent transcript…</p>}{children}</>}
   </Disclosure>;

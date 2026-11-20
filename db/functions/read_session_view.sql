@@ -81,7 +81,8 @@ begin
     group by payload->>'agent_id'
   ), spawns_all as (
     select e.seq, e.payload->'input' as input, r.payload as result,
-      substring(r.payload->>'content' from 'agent_?[iI]d:\s*([A-Za-z0-9_-]+)') as id
+      coalesce(r.payload->'agent_result'->>'id', e.payload->'input'->>'resume',
+        substring(r.payload->>'content' from 'agent_?[iI]d:\s*([A-Za-z0-9_-]+)')) as id
     from session_events e left join lateral (
       select payload from session_events where session_id = p_session_id and seq <= h and kind = 'tool_result'
         and payload->>'tool_use_id' = e.payload->>'tool_use_id' order by seq desc limit 1
@@ -101,10 +102,14 @@ begin
   ) select coalesce(jsonb_agg(jsonb_build_object(
       'key', case when id is not null then 'agent:' || id else 'spawn:' || host_seq end,
       'agentId', id, 'hostSeq', host_seq, 'firstSeq', coalesce(first_seq, host_seq), 'lastSeq', coalesce(last_seq, host_seq),
-      'name', input->>'name', 'description', input->>'description', 'model', input->>'model', 'steps', steps,
-      'isError', coalesce((result->>'is_error')::boolean, false),
+      'name', input->>'name', 'description', coalesce(input->>'description', input->>'subagent_type'),
+      'model', coalesce(result->'agent_result'->>'model', input->>'model'), 'steps', steps,
+      'async', coalesce((result->'agent_result'->>'async')::boolean, false),
+      'isError', coalesce((lifecycle.payload->'agent_lifecycle'->>'isError')::boolean, (result->>'is_error')::boolean, false),
       'state', case when s.status = 'ended' or result->>'is_error' = 'true' then 'idle'
-        when nullif(input->>'name', '') is null and result is not null then 'idle'
+        when lifecycle.payload is not null then lifecycle.payload->'agent_lifecycle'->>'state'
+        when nullif(input->>'name', '') is null and result is not null
+          and coalesce((result->'agent_result'->>'async')::boolean, false) = false then 'idle'
         when coalesce((select max(seq) from session_events where session_id = p_session_id and seq <= h
           and kind = 'session_note' and nullif(payload->>'agent_id', '') is null
           and payload->'agent_message'->>'from' = catalog.input->>'name' and payload->'agent_message'->>'type' = 'idle'), 0)
@@ -112,7 +117,29 @@ begin
           and kind = 'session_note' and payload->>'agent_id' = catalog.id
           and payload->'agent_message'->>'from' is distinct from catalog.input->>'name'), 0)) then 'idle'
         else 'working' end
-    ) order by coalesce(host_seq, first_seq)), '[]') into agents from catalog;
+    ) order by coalesce(host_seq, first_seq)), '[]') into agents from catalog
+    left join lateral (
+      select case when e.payload->'agent_lifecycle' is not null then e.payload
+        when e.payload->'agent_result'->>'id' = catalog.id and nullif(catalog.input->>'name', '') is null
+          and e.payload->'agent_result'->>'async' = 'false'
+          then jsonb_build_object('agent_lifecycle', jsonb_build_object('state', 'idle', 'isError', coalesce((e.payload->>'is_error')::boolean, false)))
+        when e.payload->'agent_message'->>'type' = 'idle' and nullif(e.payload->>'agent_id', '') is null
+          then jsonb_build_object('agent_lifecycle', jsonb_build_object('state', 'idle', 'isError', false))
+        else jsonb_build_object('agent_lifecycle', jsonb_build_object('state', 'working', 'isError', false)) end as payload
+      from session_events e
+      where e.session_id = p_session_id and e.seq <= h
+        and (e.payload->'agent_lifecycle'->>'id' = catalog.id
+          or e.payload->'agent_result'->>'id' = catalog.id
+          or (e.payload->>'agent_id' = catalog.id and e.kind in ('tool_use', 'tool_result', 'assistant_text', 'thinking'))
+          or (nullif(e.payload->>'agent_id', '') is null and e.payload->'agent_message'->>'from' = catalog.input->>'name'
+            and e.payload->'agent_message'->>'type' = 'idle')
+          or (e.payload->>'agent_id' = catalog.id and e.payload->'agent_message'->>'from' is distinct from catalog.input->>'name'
+            and e.payload->'agent_message' is not null))
+        and (coalesce(e.payload->>'timestamp', e.created_at::text)::timestamptz, e.seq) >= (
+          select coalesce(start.payload->>'timestamp', start.created_at::text)::timestamptz, start.seq
+          from session_events start where start.session_id = p_session_id and start.seq = catalog.latest_spawn_seq)
+      order by coalesce(e.payload->>'timestamp', e.created_at::text)::timestamptz desc, e.seq desc limit 1
+    ) lifecycle on true;
   return response || jsonb_build_object('snapshot', jsonb_build_object('session', to_jsonb(s), 'approvals', approvals, 'agents', agents));
 end;
 $$;

@@ -174,6 +174,7 @@ describe("parseLiveLine: messages from other agents", () => {
         timestamp: "2026-11-14T23:10:53.146Z",
         text: "Message from general-purpose",
         agent_message: { from: "general-purpose", type: "handback", text: report },
+        agent_lifecycle: { id: "af7d88e9d3a006be7", state: "idle", isError: false },
       },
     };
     const attachment = (extra: Record<string, unknown> = {}) => ({
@@ -252,5 +253,31 @@ describe("parseLiveLine: size limits", () => {
     const [event] = parse(user("z".repeat(150_000)));
     expect((event!.payload.text as string).length).toBe(100_000);
     expect(event!.payload.truncated).toBe(true);
+  });
+});
+
+describe("async agent lifecycle", () => {
+  it("retains structured async launch metadata", () => {
+    const events = parse(user([{ type: "tool_result", tool_use_id: "spawn", content: "Launched" }], {
+      toolUseResult: { agentId: "a1", isAsync: true, status: "async_launched", resolvedModel: "opus" },
+    }));
+    expect(events[0]!.payload.agent_result).toEqual({ id: "a1", async: true, model: "opus" });
+  });
+  it("reads a metadata handback before excluding unrelated metadata", () => {
+    const events = parse(user("report", { isMeta: true, origin: { kind: "peer", from: "a1", name: "general-purpose", handback: true, handbackReportText: "Done" } }));
+    expect(events[0]!.payload.agent_lifecycle).toEqual({ id: "a1", state: "idle", isError: false });
+    expect(events[0]!.kind).toBe("session_note");
+    expect(parse(user("hidden", { isMeta: true }))).toEqual([]);
+  });
+  it("records completion and failure notifications without displaying them as user input", () => {
+    for (const status of ["completed", "failed", "stopped"]) {
+      const events = parse(user(`<task-notification><task-id>a1</task-id><status>${status}</status></task-notification>`, { isMeta: true, origin: { kind: "task-notification" } }));
+      expect(events[0]!.payload.agent_lifecycle).toEqual({ id: "a1", state: "idle", isError: status === "failed" });
+    }
+  });
+  it("only resumes on a successful result", () => {
+    const result = (is_error: boolean) => parse(user([{ type: "tool_result", tool_use_id: "send", content: "sent", is_error }], { toolUseResult: { success: true, resumedAgentId: "a1" } }));
+    expect(result(false)[0]!.payload.agent_lifecycle).toEqual({ id: "a1", state: "working", isError: false });
+    expect(result(true)[0]!.payload.agent_lifecycle).toBeUndefined();
   });
 });

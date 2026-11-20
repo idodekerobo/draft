@@ -14,7 +14,7 @@ export function TeamStrip({ members, onShow }: { members: TeamMember[]; onShow: 
             onClick={() => onShow(member)}
           >
             <span className={`ui-dot${member.state === "working" ? " ui-dot--pending" : ""}`} aria-hidden="true" />
-            <span className="ui-team__name">@{member.name}</span>
+            <span className="ui-team__name">{member.named === false ? "" : "@"}{member.name}</span>
             <span className="ui-muted">{member.state}</span>
           </button>
         </li>

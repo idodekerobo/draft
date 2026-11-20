@@ -251,6 +251,8 @@ export interface LiveSessionEventPayload {
   input_truncated?: boolean;
   content?: string;
   is_error?: boolean;
+  agent_result?: { id: string; async: boolean; model: string | null };
+  agent_lifecycle?: { id: string; state: "working" | "idle"; isError: boolean };
   /** permission_request and permission_resolved */
   requestId?: string;
   /** permission_resolved: decided, answered_locally, hook_gone or expired. */
@@ -344,6 +346,7 @@ export interface SessionTranscriptPage {
 }
 
 export interface SessionAgentSummary {
+  async: boolean;
   key: string;
   agentId: string | null;
   hostSeq: number | null;

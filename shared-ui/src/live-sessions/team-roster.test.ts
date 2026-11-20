@@ -44,3 +44,13 @@ describe("teamRoster", () => {
     expect(teamRoster(events)).toMatchObject([{ name: "a", state: "working" }]);
   });
 });
+
+it("shows an unnamed async agent while working and restores the same chip on resume", () => {
+  const events = [event("tool_use", { name: "Agent", tool_use_id: "async", input: { description: "Read Drive" } }),
+    event("tool_result", { tool_use_id: "async", agent_result: { id: "a1", async: true, model: "opus" } })];
+  expect(teamRoster(events)).toMatchObject([{ key: "agent:a1", name: "Read Drive", named: false, state: "working" }]);
+  events.push(event("session_note", { agent_lifecycle: { id: "a1", state: "idle", isError: false } }));
+  expect(teamRoster(events)).toEqual([]);
+  events.push(event("tool_result", { agent_lifecycle: { id: "a1", state: "working", isError: false } }));
+  expect(teamRoster(events)).toMatchObject([{ key: "agent:a1", state: "working" }]);
+});
