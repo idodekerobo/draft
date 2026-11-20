@@ -69,6 +69,7 @@ function neverCalledDeps(): DispatchDependencies {
   return {
     materializeSlackBatches: mock(shouldNotBeCalled) as unknown as DispatchDependencies["materializeSlackBatches"],
     runSlackBackfillDispatch: mock(shouldNotBeCalled) as unknown as DispatchDependencies["runSlackBackfillDispatch"],
+    syncDriveConnection: mock(shouldNotBeCalled) as unknown as DispatchDependencies["syncDriveConnection"],
     launchSynthesisRun: mock(shouldNotBeCalled) as unknown as DispatchDependencies["launchSynthesisRun"],
     getPendingSynthesisSourceItemIds: mock(shouldNotBeCalled) as unknown as DispatchDependencies["getPendingSynthesisSourceItemIds"],
     getLatestSynthesisRun: mock(async () => null) as unknown as DispatchDependencies["getLatestSynthesisRun"],
@@ -151,6 +152,24 @@ describe("dispatchScheduledTask", () => {
     ).rejects.toThrow(/unsupported provider/);
 
     expect(deps.materializeSlackBatches).not.toHaveBeenCalled();
+  });
+
+  it("routes ingest_source to the Drive sync for a google_drive connection", async () => {
+    const task = baseTask({
+      task_type: "ingest_source",
+      connection_id: "conn-3",
+      schedule_kind: "interval",
+      cron_expression: null,
+      interval_seconds: 120,
+    });
+    const connection = { id: "conn-3", workspace_id: task.workspace_id, provider: "google_drive", status: "active" };
+    const client = fakeClient(task, connection);
+    const deps = neverCalledDeps();
+    deps.syncDriveConnection = mock(async () => undefined) as unknown as DispatchDependencies["syncDriveConnection"];
+
+    await dispatchScheduledTask({ task, occurrenceAt: task.next_due_at!, config: fakeConfig, client }, deps);
+
+    expect(deps.syncDriveConnection).toHaveBeenCalledWith(connection, client);
   });
 
   it("routes ingest_source to the Slack handler based on connection provider", async () => {
