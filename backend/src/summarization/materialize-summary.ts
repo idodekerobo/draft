@@ -40,6 +40,26 @@ function errorMessage(error: unknown): string {
   }
 }
 
+// A session that called a Gmail tool may quote mail in its summary, so it stays
+// private to its owner. A failed lookup fails closed.
+async function sessionReadGmail(session: CapturedSessionRow, client: SupabaseClient): Promise<boolean> {
+  if (session.user_id === null) return false;
+  const { data, error } = await client
+    .from("agent_query_log")
+    .select("command")
+    .eq("workspace_id", session.workspace_id)
+    .eq("user_id", session.user_id)
+    .gte("occurred_at", session.started_at)
+    .lte("occurred_at", session.ended_at ?? new Date().toISOString())
+    .or("command.like.mcp.gmail.%,command.like.gmail.%")
+    .limit(1);
+  if (error) {
+    console.error("materializeSessionSummary: Gmail usage lookup failed", error);
+    return true;
+  }
+  return (data ?? []).length > 0;
+}
+
 // The `WHERE summary_status = 'leased'` guard on every update protects
 // against a late/duplicate callback stomping a session a second worker
 // already reclaimed after lease expiry.
@@ -57,6 +77,7 @@ export async function materializeSessionSummary(
 
     const contentMarkdown = renderSummaryContentMarkdown(result.payload);
     const contentHash = sha256(contentMarkdown);
+    const readGmail = await sessionReadGmail(session, client);
 
     await upsertSourceItem(client, {
       workspace_id: session.workspace_id,
@@ -75,6 +96,7 @@ export async function materializeSessionSummary(
       source_time_end: session.ended_at ?? session.started_at,
       time_basis: "source_event",
       captured_session_id: session.id,
+      ...(readGmail ? { visibility: "private" as const, owner_user_id: session.user_id } : {}),
       metadata_json: {
         agent_session_id: session.id,
         provider: session.provider,
