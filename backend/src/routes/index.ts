@@ -8,6 +8,8 @@ import * as codexCredential from "./codex-credential";
 import * as connections from "./connections";
 import * as githubCallback from "./github-callback";
 import * as githubInstall from "./github-install";
+import * as googleCallback from "./google-callback";
+import * as googleConnect from "./google-connect";
 import * as health from "./health";
 import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
@@ -70,6 +72,9 @@ export const routes = {
   "/workspaces/:id/github/install-sessions": { POST: withCors(githubInstall.createPOST), OPTIONS },
   "/workspaces/:id/github/install-sessions/:code": { GET: withCors(githubInstall.pollGET), OPTIONS },
   "/workspaces/github/callback": { GET: githubCallback.GET },
+  "/workspaces/:id/google/connect-sessions": { POST: withCors(googleConnect.createPOST), OPTIONS },
+  "/workspaces/:id/google/connect-sessions/:code": { GET: withCors(googleConnect.pollGET), OPTIONS },
+  "/workspaces/google/callback": { GET: googleCallback.GET },
   "/workspaces/:id/sessions/tokens": { POST: sessionTokens.POST },
   "/workspaces/:id/sessions/tokens/:credentialId": { DELETE: sessionTokens.DELETE },
   "/workspaces/:id/sessions": { GET: sessions.GET },

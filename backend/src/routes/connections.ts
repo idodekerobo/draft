@@ -38,6 +38,7 @@ import { ingestGranolaNote } from "../ingestion/granola/normalize";
 import type { ConnectionProvider } from "../types/enums";
 import type { ConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
+import { releaseGoogleCredential } from "../ingestion/google/release-credential";
 import { registerSessionSummaryTask } from "../summarization/register-session-summaries";
 
 // Providers where a workspace may hold more than one live connection at
@@ -95,7 +96,7 @@ type ConnectBody =
   | ClaudeCodeConnectBody
   | ClaudeSessionConnectBody
   | GranolaConnectBody;
-type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github" | "claude_session" | "granola";
+type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github" | "claude_session" | "granola" | "gmail";
 
 interface SlackConnectResponse {
   ok: true;
@@ -205,7 +206,8 @@ function isSupportedProvider(value: unknown): value is SupportedProvider {
     value === "claude_code" ||
     value === "github" ||
     value === "claude_session" ||
-    value === "granola"
+    value === "granola" ||
+    value === "gmail"
   );
 }
 
@@ -1182,6 +1184,20 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
   });
   if (!result.ok) return errorResponse("disconnect_failed", 500, result.error, req.params.id);
   if (result.outcome === "not_owner") return errorResponse("not_connection_owner", 403, undefined, req.params.id);
+
+  if (req.params.provider === "gmail" && result?.outcome === "disconnected" && result.connection_id) {
+    try {
+      await releaseGoogleCredential({ client: serviceClient, workspaceId: req.params.id, connectionId: result.connection_id });
+    } catch (cleanupError) {
+      recordRouteError({
+        workspaceId: req.params.id,
+        connectionId: result.connection_id,
+        operation: "auth",
+        errorCode: "google_credential_release_failed",
+        error: cleanupError,
+      });
+    }
+  }
 
   return Response.json({ ok: true });
 });
