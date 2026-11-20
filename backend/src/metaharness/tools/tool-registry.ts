@@ -30,6 +30,8 @@ export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   modelVisible?: boolean;
   /** True when the tool removes something, so a client should ask before calling it. */
   destructive?: boolean;
+  /** Shown only to a person who has their own live connection to this provider. */
+  requiresConnection?: ConnectionGatedProvider;
   input: S;
   /** For a tool that takes a `provider` input: the provider a call is for, so a run needs a permission for that provider. */
   providerOf?: (input: z.output<S>) => string | undefined;
@@ -48,6 +50,13 @@ export class ToolUserError extends Error {
   }
 }
 
+export type ConnectionGatedProvider = "gmail";
+
+/** Drops each tool that needs a connection the person does not have. */
+export function filterByConnections<T extends Pick<RegisteredTool, "requiresConnection">>(tools: ReadonlyArray<T>, providers: ReadonlySet<string>): T[] {
+  return tools.filter((tool) => !tool.requiresConnection || providers.has(tool.requiresConnection));
+}
+
 /** The permission a run holds for a tool, with its limits, or null when it holds none. */
 export type RunPermission = { limits?: unknown } | null;
 
@@ -62,6 +71,7 @@ export interface RegisteredTool {
   mcp: boolean;
   modelVisible: boolean;
   destructive: boolean;
+  requiresConnection?: ConnectionGatedProvider;
   inputSchema: z.ZodType;
   /** Null when the input is valid and inside the limits, otherwise the reason. Parsing errors are reported by `parse`. */
   parse: (raw: unknown) => { ok: true; value: unknown } | { ok: false; issues: string[] };
@@ -86,6 +96,7 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     mcp: spec.mcp ?? false,
     modelVisible: spec.modelVisible ?? true,
     destructive: spec.destructive ?? false,
+    ...(spec.requiresConnection ? { requiresConnection: spec.requiresConnection } : {}),
     inputSchema: spec.input,
     providerOf: spec.providerOf ? (value) => spec.providerOf!(value as z.output<S>) : undefined,
     permission: (run, value) => findToolPermission(run, spec.name, value !== undefined ? spec.providerOf?.(value as z.output<S>) : undefined),

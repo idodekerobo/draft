@@ -82,7 +82,7 @@ export function createGmailTools(client: SupabaseClient, deps: GmailToolDeps = {
   }
 
   const search = defineTool({
-    name: "gmail.search", mcp: true,
+    name: "gmail.search", mcp: true, requiresConnection: "gmail",
     description: "Search the Gmail of the person you work for, with Gmail search syntax (from:, subject:, has:attachment, ...). Returns message ids, senders, subjects and snippets, newest first. Read a message or thread with gmail.read. Only that person's own mailbox; nothing is stored.",
     input: z.object({
       query: z.string().min(1).max(500).describe("Gmail search syntax, as in the Gmail search box."),
@@ -112,7 +112,7 @@ export function createGmailTools(client: SupabaseClient, deps: GmailToolDeps = {
   });
 
   const read = defineTool({
-    name: "gmail.read", mcp: true,
+    name: "gmail.read", mcp: true, requiresConnection: "gmail",
     description: "Read one Gmail message (message_id) or a whole thread (thread_id) from the mailbox of the person you work for. Bodies are plain text, cut to max_bytes; when truncated, pass next_cursor back as cursor with the same id for the rest. Lists attachments for gmail.attachment.",
     input: z.object({
       message_id: z.string().min(1).max(200).optional(),
@@ -155,7 +155,7 @@ export function createGmailTools(client: SupabaseClient, deps: GmailToolDeps = {
   });
 
   const attachment = defineTool({
-    name: "gmail.attachment", mcp: true,
+    name: "gmail.attachment", mcp: true, requiresConnection: "gmail",
     description: "Download a Gmail attachment listed by gmail.read, as base64, max_bytes at a time. When truncated, pass next_cursor back as cursor with the same ids for the next part. Attachments over 10 MB are refused.",
     input: z.object({
       message_id: z.string().min(1).max(200),

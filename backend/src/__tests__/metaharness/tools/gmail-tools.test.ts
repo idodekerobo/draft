@@ -10,6 +10,7 @@ const { parseAgentRunId, parseContextVersionId, parseScheduledTaskId, parseIsoTi
 const { personCaller, runCaller } = await import("draft-core/tools");
 const { encryptCredentialPayload, CURRENT_CREDENTIAL_KEY_VERSION } = await import("../../../credentials/crypto");
 const { createGmailTools } = await import("../../../metaharness/tools/definitions/gmail");
+const { personalConnectionProviders, personalConnectionProvidersOrNone } = await import("../../../ingestion/gmail/access");
 const { invokeTool } = await import("../../../metaharness/tools/invoke-tool");
 const { ToolRegistry } = await import("../../../metaharness/tools/tool-registry");
 const { fakeClient, fakeDb } = await import("../../routines/fake-client");
@@ -136,5 +137,24 @@ describe("Gmail tools", () => {
     expect(first).toMatchObject({ status: "ok", output: { filename: "deck.pdf", mime_type: "application/pdf", size: 3000, offset: 0, truncated: true } });
     const second = await invoke(person(OWNER), "gmail.attachment", { message_id: "m-1", attachment_id: "att-1", max_bytes: 2048, cursor: first.output.next_cursor });
     expect(second).toMatchObject({ status: "ok", output: { offset: 2048, truncated: false, next_cursor: null } });
+  });
+});
+
+describe("personalConnectionProviders", () => {
+  it("counts only the user's own live connections", async () => {
+    const client = fakeClient(fakeDb({
+      connections: [
+        { id: "c-1", workspace_id: WS, provider: "gmail", connected_by_user_id: TEAMMATE, status: "active" },
+        { id: "c-2", workspace_id: WS, provider: "fireflies", connected_by_user_id: OWNER, status: "degraded" },
+        { id: "c-3", workspace_id: WS, provider: "granola", connected_by_user_id: OWNER, status: "revoked" },
+      ],
+    }));
+    expect([...(await personalConnectionProviders(client, WS, OWNER))]).toEqual(["fireflies"]);
+    expect([...(await personalConnectionProviders(client, WS, TEAMMATE))]).toEqual(["gmail"]);
+  });
+
+  it("gives no providers when the lookup fails", async () => {
+    const broken = { from: () => { throw new Error("db down"); } } as never;
+    expect((await personalConnectionProvidersOrNone(broken, WS, OWNER, "test")).size).toBe(0);
   });
 });

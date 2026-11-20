@@ -12,7 +12,7 @@ const WS = "11111111-1111-4111-8111-111111111111";
 const RUN_ID = "22222222-2222-4222-8222-222222222222";
 const FAR_FUTURE = Date.now() + 60_000;
 
-async function setup(permissions: AnyDraftToolPermission[], status = "running", run: Partial<Pick<AgentRunSpec, "kind" | "onBehalfOf">> = {}) {
+async function setup(permissions: AnyDraftToolPermission[], status = "running", run: Partial<Pick<AgentRunSpec, "kind" | "onBehalfOf">> = {}, connectionProviders?: (workspaceId: string, userId: string) => Promise<ReadonlySet<string>>) {
   const db = createFakeContextDb({ "a.md": "A" });
   const spec: AgentRunSpec = {
     id: parseAgentRunId(RUN_ID),
@@ -30,7 +30,7 @@ async function setup(permissions: AnyDraftToolPermission[], status = "running", 
     output: { type: "text" },
   };
   await createAgentRun(db.client, { spec, idempotencyKey: "k", status: status as never });
-  const gateway = createRunGateway({ client: db.client, secret: () => SECRET, registry: createDraftToolRegistry(db.client) });
+  const gateway = createRunGateway({ client: db.client, secret: () => SECRET, registry: createDraftToolRegistry(db.client), connectionProviders });
   const token = (overrides: Partial<{ runId: string; workspaceId: string; expiresAt: number; scope: AgentRunTokenScope }> = {}) =>
     createAgentRunToken(
       {
@@ -188,5 +188,18 @@ describe("run gateway for a session that acts for its owner", () => {
       const { gateway, request } = await setup([{ tool: "context.read" }], "running", run);
       expect(await names(await gateway.listTools(request("/x", { method: "GET" }), RUN_ID))).toEqual(["context.read"]);
     }
+  });
+
+  it("offers the Gmail tools only when the owner has their own Gmail connection", async () => {
+    const TEAMMATE = "44444444-4444-4444-8444-444444444444";
+    const byUser = async (_workspaceId: string, userId: string) => new Set(userId === TEAMMATE ? ["gmail"] : []);
+    const hidden = await setup([{ tool: "context.read" }], "running", { kind: "interactive", onBehalfOf: OWNER }, byUser);
+    expect((await names(await hidden.gateway.listTools(hidden.request("/x", { method: "GET" }), RUN_ID))).filter((name) => name.startsWith("gmail."))).toEqual([]);
+
+    const shown = await setup([{ tool: "context.read" }], "running", { kind: "interactive", onBehalfOf: OWNER }, async () => new Set(["gmail"]));
+    expect(await names(await shown.gateway.listTools(shown.request("/x", { method: "GET" }), RUN_ID))).toEqual(expect.arrayContaining(["gmail.search", "gmail.read", "gmail.attachment"]));
+
+    const failed = await setup([{ tool: "context.read" }], "running", { kind: "interactive", onBehalfOf: OWNER }, async () => { throw new Error("db down"); });
+    expect((await names(await failed.gateway.listTools(failed.request("/x", { method: "GET" }), RUN_ID))).some((name) => name.startsWith("gmail."))).toBe(false);
   });
 });

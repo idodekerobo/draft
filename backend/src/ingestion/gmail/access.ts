@@ -81,3 +81,25 @@ export async function gmailAccessFor(
 
   return { ok: true, api: createGmailApi(accessToken, deps.fetchImpl ?? fetch) };
 }
+
+/** Providers of the user's own live connections in this workspace. A teammate's connection never counts. */
+export async function personalConnectionProviders(client: SupabaseClient, workspaceId: string, userId: string): Promise<Set<string>> {
+  const { data, error } = await client
+    .from("connections")
+    .select("provider")
+    .eq("workspace_id", workspaceId)
+    .eq("connected_by_user_id", userId)
+    .in("status", ["active", "degraded"]);
+  if (error) throw error;
+  return new Set(((data ?? []) as Array<{ provider: string }>).map((row) => row.provider));
+}
+
+/** The same, but a failed lookup gives no providers, so tools that need one stay hidden. */
+export async function personalConnectionProvidersOrNone(client: SupabaseClient, workspaceId: string, userId: string, surface: string): Promise<Set<string>> {
+  try {
+    return await personalConnectionProviders(client, workspaceId, userId);
+  } catch (error) {
+    console.error(JSON.stringify({ source: surface, event: "personal_connections_lookup_failed", workspaceId, error: error instanceof Error ? error.message : String(error) }));
+    return new Set();
+  }
+}

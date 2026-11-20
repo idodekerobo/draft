@@ -4,6 +4,7 @@ import { callUserTool, listUserTools, userInvokeDeps } from "../metaharness/tool
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
+import { personalConnectionProvidersOrNone } from "../ingestion/gmail/access";
 import { callSurface } from "../observability/is-agent-request";
 
 type ToolsRequest = Bun.BunRequest<"/workspaces/:id/tools">;
@@ -19,7 +20,7 @@ function userDeps(): InvokeToolDeps {
 export const toolsGET = withAuth<ToolsRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
-  return listUserTools(userDeps());
+  return listUserTools(userDeps(), await personalConnectionProvidersOrNone(serviceClient, req.params.id, caller.userId, "user_tools"));
 });
 
 // Access to the workspace is checked inside the call, by the same rule MCP uses.

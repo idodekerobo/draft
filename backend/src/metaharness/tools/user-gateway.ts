@@ -5,7 +5,7 @@ import { assertWorkspaceAccess } from "../../auth/workspace-access";
 import { auditToDatabase } from "../runs/agent-run-store";
 import { parseToolArgs, toHttpResponse } from "./http-result";
 import { invokeTool, type AuthorizationDenial, type InvokeToolDeps } from "./invoke-tool";
-import { describeTools, type ToolRegistry } from "./tool-registry";
+import { describeTools, filterByConnections, type ToolRegistry } from "./tool-registry";
 
 /** A signed-in person may call a tool only if they belong to the workspace's team. This is the one place that rule is applied. */
 async function authorizeWorkspaceMember(caller: PersonCaller): Promise<AuthorizationDenial | null> {
@@ -19,9 +19,9 @@ export function userInvokeDeps(client: SupabaseClient, registry: ToolRegistry): 
   return { registry, audit: auditToDatabase(client), authorizeUser: authorizeWorkspaceMember };
 }
 
-/** The tools a person may call, with the JSON schema of each input. */
-export function listUserTools(deps: InvokeToolDeps): Response {
-  return Response.json({ tools: describeTools(deps.registry.listForUser()) });
+/** The tools a person may call, with the JSON schema of each input. `providers` are the person's own live connections. */
+export function listUserTools(deps: InvokeToolDeps, providers: ReadonlySet<string>): Response {
+  return Response.json({ tools: describeTools(filterByConnections(deps.registry.listForUser(), providers)) });
 }
 
 export interface UserToolCall {

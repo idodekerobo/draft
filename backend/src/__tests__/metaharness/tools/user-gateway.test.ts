@@ -218,12 +218,19 @@ describe("user tool endpoint: the call itself", () => {
   });
 
   it("lists the tools a person may call, each with an input schema, and none that are run-only", async () => {
-    const { tools } = (await listUserTools(deps).json()) as { tools: Array<{ name: string; inputSchema: { type: string } }> };
+    const { tools } = (await listUserTools(deps, new Set()).json()) as { tools: Array<{ name: string; inputSchema: { type: string } }> };
     const names = tools.map((tool) => tool.name);
     for (const name of ["context.read", "context.list", "context.export", "sources.search", "sources.read", "skills.list", "skills.read", "skills.add", "skills.update", "skills.delete", "routines.list"]) {
       expect(names).toContain(name);
     }
     expect(names).not.toContain("context.write");
     expect(tools.every((tool) => tool.inputSchema.type === "object")).toBe(true);
+  });
+
+  it("lists the Gmail tools only for a person with their own Gmail connection", async () => {
+    const listed = async (providers: string[]) =>
+      ((await listUserTools(deps, new Set(providers)).json()) as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
+    expect((await listed([])).some((name) => name.startsWith("gmail."))).toBe(false);
+    expect(await listed(["gmail"])).toEqual(expect.arrayContaining(["gmail.search", "gmail.read", "gmail.attachment"]));
   });
 });
