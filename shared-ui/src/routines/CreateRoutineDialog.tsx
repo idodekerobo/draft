@@ -16,12 +16,13 @@ import type { CreateRoutineInput, RoutineAgentStatus, RoutineEventName, Routines
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
 /** Asks what the routine does, which agent runs it, when, and what it may reach. Nothing is saved until Create. */
-export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedProviders, onConnect, renderAgentSetup, refreshAgents, returnFocusTo }: {
+export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedProviders, gmailConnected, onConnect, renderAgentSetup, refreshAgents, returnFocusTo }: {
   onClose: () => void;
   onCreate: (input: CreateRoutineInput) => Promise<void>;
   /** Whether each agent is connected for this workspace's routines, by harness id. */
   agents?: Partial<Record<string, RoutineAgentStatus>>;
   connectedProviders?: RoutinesResponse["connectedProviders"];
+  gmailConnected?: RoutinesResponse["gmailConnected"];
   /** Opens Connections, for a trigger or ability whose connection is missing. */
   onConnect?: () => void;
   /** Help to connect an agent, shown while it blocks Create. Call `refresh` after a connection changes. Null for an agent with none. */
@@ -76,6 +77,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
         reasoningEffort: agent.effort,
         when: onSchedule ? { schedule: scheduleInput(schedule) } : { schedule: null, events },
         ...(capabilities.canNotify ? { canNotify: true } : {}),
+        ...(capabilities.canReadGmail ? { canReadGmail: true } : {}),
         ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
         ...(capabilities.github ? { github: capabilities.github } : {}),
         builtInTools: capabilities.builtInTools,
@@ -133,7 +135,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
                 fieldError={fieldError}
                 schedule={<ScheduleFields value={schedule} onChange={setSchedule} disabled={saving} fieldError={fieldError} zones={zones} />}
               />
-              <AbilityFields harness={agent.harness} value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
+              <AbilityFields harness={agent.harness} value={capabilities} onChange={setCapabilities} disabled={saving} fieldError={fieldError} connectedProviders={connectedProviders} gmailConnected={gmailConnected} onConnect={onConnect} />
             </div>
             {onSchedule && isHeavyCadence(schedule.preset) && (
               <p className="ui-routines__notice" role="status">Hourly runs use your agent plan every hour.</p>

@@ -14,6 +14,7 @@ const FIELD_MESSAGES: Record<string, string> = {
   reasoningEffort: "Choose a reasoning effort from the list.",
   events: "Choose a valid event.",
   canNotify: "Choose whether it may message teammates.",
+  canReadGmail: "Choose whether it may read your Gmail.",
   postChannels: "Choose up to 20 channels.",
   github: "Choose repositories Draft can reach.",
 };
@@ -34,6 +35,7 @@ export class RoutineError extends Error {
 export function toRoutineError(code: string, field?: string): RoutineError {
   if (code === "codex_not_connected" || code === "codex_needs_reconnect") return new RoutineError("Connect Codex for routines first.", "harness");
   if (code === "claude_not_connected" || code === "claude_needs_reconnect") return new RoutineError("Connect Claude Code for routines first.", "harness");
+  if (code === "gmail_not_connected") return new RoutineError("Connect your Gmail in Connections first.", "canReadGmail");
   if (code === "too_far_ahead") return new RoutineError(`That time is more than ${ROUTINE_ONCE_MAX_DAYS} days away. Pick a closer time.`, "when");
   if (code === "in_the_past") return new RoutineError("That time has already passed. Pick a later time.", "when");
   if (field === "limit") return new RoutineError("This workspace has reached its limit of routines. Delete one or ask Draft for more.");

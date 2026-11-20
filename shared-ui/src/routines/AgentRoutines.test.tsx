@@ -54,8 +54,8 @@ const runs: RoutineRun[] = [
   { id: "run-1", status: "completed", startedAt: "2026-10-26T09:00:00.000Z", endedAt: "2026-10-26T09:03:00.000Z" },
 ];
 
-function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string; track?: import("../analytics/events").TrackFn; runRoutine?: (id: string) => Promise<RoutineRunOutcome> } = {}) {
-  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents, connectedProviders: options.connectedProviders };
+function setup(options: { connectedProviders?: RoutinesResponse["connectedProviders"]; gmailConnected?: boolean; onReconnect?: () => void; canEdit?: boolean; routines?: Routine[]; createRoutine?: DraftApi["createRoutine"]; updateRoutine?: DraftApi["updateRoutine"]; deleteRoutine?: DraftApi["deleteRoutine"]; agents?: RoutinesResponse["agents"]; renderAgentSetup?: (harness: string, status: RoutineAgentStatus, refresh: () => void) => ReactNode; initialOpenId?: string; track?: import("../analytics/events").TrackFn; runRoutine?: (id: string) => Promise<RoutineRunOutcome> } = {}) {
+  const response: RoutinesResponse = { routines: options.routines ?? [agentRoutine()], canEdit: options.canEdit ?? true, agents: options.agents, connectedProviders: options.connectedProviders, gmailConnected: options.gmailConnected };
   const getRoutineRuns = mock(async () => runs);
   const createRoutine = mock(options.createRoutine ?? (async (input: CreateRoutineInput) => agentRoutine({ id: "new", title: input.title, agent: { prompt: input.prompt, harness: "claude", model: input.model, createdByName: "Maya", lastRun: null } })));
   const updateRoutine = mock(options.updateRoutine ?? (async () => response.routines[0]!));
@@ -157,6 +157,36 @@ describe("creating a routine", () => {
     expect(createRoutine.mock.calls[0]![0]).toMatchObject({ title: "Launch watch", prompt: "List launch risks.", harness: "claude", model: null, when: { schedule: { preset: "daily", time: "08:30" } } });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("button", { name: "Launch watch" })).toBeTruthy();
+  });
+
+  it("offers Read my Gmail off by default and sends it only when turned on", async () => {
+    const { createRoutine } = setup({ routines: [], gmailConnected: true });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Edit access" }));
+    const gmail = within(dialog).getByLabelText("Read my Gmail") as HTMLInputElement;
+    expect(gmail.checked).toBe(false);
+    fireEvent.click(gmail);
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Inbox watch" } });
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "Flag urgent mail." } });
+
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
+    await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
+    expect(createRoutine.mock.calls[0]![0]).toMatchObject({ canReadGmail: true });
+  });
+
+  it("shows Gmail as not connected with a Connect action when the viewer has no Gmail", async () => {
+    const onReconnect = mock(() => {});
+    setup({ routines: [], gmailConnected: false, onReconnect });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Gmail not connected")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Edit access" }));
+    expect(within(dialog).queryByLabelText("Read my Gmail")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Connect Gmail" }));
+    expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the dialog open and shows the error beside the field", async () => {

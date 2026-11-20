@@ -10,6 +10,8 @@ import type { AgentRoutine } from "./types";
 /** What a routine may do beyond reading context. Every ability is off until a person turns it on. */
 export interface CapabilityValue {
   canNotify: boolean;
+  /** Searches and reads the owner's own Gmail. */
+  canReadGmail: boolean;
   /** Null when the routine may not post in Slack. */
   postChannels: "joined" | string[] | null;
   /** Null when the routine may not touch GitHub. */
@@ -18,14 +20,15 @@ export interface CapabilityValue {
   builtInTools: string[];
 }
 
-export const capabilitiesOf = (agent: Pick<AgentRoutine, "canNotify" | "postChannels" | "github" | "builtInTools"> | null): CapabilityValue => ({
+export const capabilitiesOf = (agent: Pick<AgentRoutine, "canNotify" | "canReadGmail" | "postChannels" | "github" | "builtInTools"> | null): CapabilityValue => ({
   canNotify: agent?.canNotify ?? false,
+  canReadGmail: agent?.canReadGmail ?? false,
   postChannels: agent?.postChannels ?? null,
   github: agent?.github ?? null,
   builtInTools: agent?.builtInTools ?? [],
 });
 
-export const NO_CAPABILITIES: CapabilityValue = { canNotify: false, postChannels: null, github: null, builtInTools: [] };
+export const NO_CAPABILITIES: CapabilityValue = { canNotify: false, canReadGmail: false, postChannels: null, github: null, builtInTools: [] };
 
 const sameTools = (a: string[], b: string[]) => a.length === b.length && a.every((tool) => b.includes(tool));
 
@@ -39,6 +42,7 @@ const sameChannels = (a: CapabilityValue["postChannels"], b: CapabilityValue["po
 export function capabilityChanges(original: CapabilityValue, next: CapabilityValue): Partial<CapabilityValue> {
   const changes: Partial<CapabilityValue> = {};
   if (next.canNotify !== original.canNotify) changes.canNotify = next.canNotify;
+  if (next.canReadGmail !== original.canReadGmail) changes.canReadGmail = next.canReadGmail;
   if (!sameChannels(original.postChannels, next.postChannels)) changes.postChannels = next.postChannels;
   if (!sameGithub(original.github, next.github)) changes.github = next.github;
   if (!sameTools(original.builtInTools, next.builtInTools)) changes.builtInTools = next.builtInTools;
@@ -55,6 +59,7 @@ export const capabilitiesValid = (value: CapabilityValue) => channelsValid(value
 export function accessLines(value: CapabilityValue): string[] {
   const lines = ["Reads your team’s context and shared sources"];
   if (value.canNotify) lines.push("Messages teammates on Slack");
+  if (value.canReadGmail) lines.push("Searches and reads your Gmail");
   if (value.postChannels === "joined") lines.push("Posts in any Slack channel Draft is in");
   else if (value.postChannels?.length) lines.push(`Posts in ${value.postChannels.join(", ")}`);
   const toolLabels = Object.values(ROUTINE_BUILT_IN_TOOLS).flat().filter((entry) => value.builtInTools.includes(entry.tool)).map((entry) => entry.label.toLowerCase());
@@ -173,7 +178,7 @@ function GithubRepoPicker({ value, onChange, disabled }: { value: NonNullable<Ca
 /** What a new routine may do: everything its connections offer, except GitHub, which needs repos picked first. */
 export function defaultCapabilities(connectedProviders?: ReadonlyArray<string>, harness = "claude"): CapabilityValue {
   const slack = !!connectedProviders?.includes("slack");
-  return { canNotify: slack, postChannels: slack ? "joined" : null, github: null, builtInTools: defaultRoutineBuiltInTools(harness) };
+  return { canNotify: slack, canReadGmail: false, postChannels: slack ? "joined" : null, github: null, builtInTools: defaultRoutineBuiltInTools(harness) };
 }
 
 /** A checkbox that can show a mixed state, which HTML sets only from script. */
@@ -239,7 +244,7 @@ function slackShort(value: CapabilityValue): string {
  * What the routine may do, grouped by connection. Collapsed it shows one row of what is on; expanded,
  * each connection's actions can be changed. A connection that is missing offers to connect it.
  */
-export function AbilityFields({ value, onChange, disabled, fieldError, connectedProviders, onConnect, harness = "claude" }: {
+export function AbilityFields({ value, onChange, disabled, fieldError, connectedProviders, gmailConnected, onConnect, harness = "claude" }: {
   /** The routine's harness, whose built-in tools it lists. */
   harness?: string;
   value: CapabilityValue;
@@ -247,11 +252,15 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
   disabled: boolean;
   fieldError: (field: string) => ReactNode;
   connectedProviders?: ReadonlyArray<string>;
+  /** The viewer's own Gmail, which is personal and never comes from connectedProviders. */
+  gmailConnected?: boolean;
   onConnect?: () => void;
 }) {
   const panelId = useId();
   const [open, setOpen] = useState(false);
   const connected = (provider: string) => !connectedProviders || connectedProviders.includes(provider) || (provider === "slack" ? !!value.postChannels || value.canNotify : !!value.github);
+  // A saved routine that already reads Gmail keeps its checkbox, so a person can turn it off.
+  const gmailReady = gmailConnected !== false || value.canReadGmail;
   const posting = value.postChannels !== null;
   const onlySome = Array.isArray(value.postChannels);
   const pill = (label: string, isConnected: boolean, on: string) => (
@@ -284,6 +293,7 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
           )}
           {pill("Slack", connected("slack"), slackShort(value))}
           {pill("GitHub", connected("github"), value.github ? (value.github.access === "write" ? "opens PRs" : "reads repos") : "")}
+          {pill("Gmail", gmailReady, value.canReadGmail ? "reads your mail" : "")}
         </ul>
       )}
 
@@ -344,11 +354,25 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
             </>
           ) : missing("GitHub")}
         </div>
+
+        <div className="ui-routines__provider-group" role="group" aria-label="Gmail">
+          <p className="ui-routines__provider-name">Gmail</p>
+          {gmailReady ? (
+            <>
+              <label className="ui-routines__check">
+                <input type="checkbox" checked={value.canReadGmail} disabled={disabled} onChange={(event) => onChange({ ...value, canReadGmail: event.target.checked })} />
+                Read my Gmail
+              </label>
+              <p className="ui-routines__secondary">Searches and reads your own Gmail only when it runs. Draft stores nothing.</p>
+            </>
+          ) : missing("Gmail")}
+        </div>
       </div>
       {/* Outside the panel, so an error still shows while the panel is collapsed. */}
       {fieldError("postChannels")}
       {fieldError("canNotify")}
       {fieldError("github")}
+      {fieldError("canReadGmail")}
       {/* A collapsed section still has to say why Save is off. */}
       {!open && !capabilitiesValid(value) && <p className="ui-routines__error" role="alert">Open Edit access to finish choosing channels or repos.</p>}
     </div>
