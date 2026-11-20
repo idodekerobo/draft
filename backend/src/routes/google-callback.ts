@@ -155,7 +155,7 @@ export async function handleGoogleCallback(
       message: "Draft has read-only access. You can return to Draft now.",
       next: {
         heading: "What happens next",
-        message: "Your agent searches and reads your mail only when you ask. Draft stores nothing.",
+        message: "Your agent searches and reads your mail only when you ask. Draft stores nothing. If Claude Code was already open, restart it or run /mcp to see the Gmail tools.",
       },
     });
   } catch (error) {

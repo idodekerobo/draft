@@ -287,10 +287,15 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .from("connections")
     .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, cursor_json, updated_at, connected_by_user_id")
     .eq("workspace_id", req.params.id)
-    .in("provider", [...SINGLETON_CONNECTION_PROVIDERS]);
+    .in("provider", [...SINGLETON_CONNECTION_PROVIDERS, "gmail"]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
 
-  const rows = (data ?? []) as ListedConnectionRow[];
+  const allRows = (data ?? []) as ListedConnectionRow[];
+  // Gmail is private: a person sees only their own row, never a teammate's.
+  const gmailRows = allRows.filter(
+    (connection) => connection.provider === "gmail" && connection.connected_by_user_id === caller.userId,
+  );
+  const rows = allRows.filter((connection) => connection.provider !== "gmail");
   const foldedRows = rows.filter((connection) => !isMultiAccountProvider(connection.provider));
   const multiAccountRows = rows.filter((connection) => isMultiAccountProvider(connection.provider));
 
@@ -352,6 +357,18 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
       ...(connection.provider === "granola"
         ? { account_kind: connection.connected_by_user_id ? ("personal" as const) : ("workspace" as const) }
         : {}),
+    });
+  }
+
+  for (const connection of gmailRows) {
+    connections.push({
+      id: connection.id,
+      provider: connection.provider,
+      status: connection.status,
+      display_name: connection.display_name,
+      last_success_at: connection.last_success_at,
+      last_error_at: connection.last_error_at,
+      is_mine: true,
     });
   }
 

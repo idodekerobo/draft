@@ -7,7 +7,7 @@ let agentQueries: Array<{ workspace_id: string; user_id: string; occurred_at: st
 
 interface Connection {
   id: string;
-  provider: "slack" | "fireflies" | "linear" | "github" | "claude_session" | "granola";
+  provider: "slack" | "fireflies" | "linear" | "github" | "claude_session" | "granola" | "gmail";
   credential_id: string | null;
   connection_key: string;
   status: string;
@@ -2122,6 +2122,29 @@ describe("granola connections", () => {
     expect(granolaRows.find((r) => r.id === "granola-mine")).toMatchObject({ is_mine: true, account_kind: "personal" });
     expect(granolaRows.find((r) => r.id === "granola-teammate")).toMatchObject({ is_mine: false, account_kind: "personal" });
     expect(granolaRows.find((r) => r.id === "granola-workspace")).toMatchObject({ is_mine: false, account_kind: "workspace" });
+  });
+
+  it("GET lists only the caller's own gmail row", async () => {
+    const gmailRow = (id: string, userId: string): (typeof state.connections)[number] => ({
+      id,
+      provider: "gmail",
+      credential_id: null,
+      connection_key: `${id}-key`,
+      status: "active",
+      display_name: `${id}@example.com`,
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: userId,
+    });
+    state.connections = [gmailRow("gmail-mine", caller.userId), gmailRow("gmail-teammate", "user-2")];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { connections: Array<Record<string, unknown>> };
+    const gmailRows = body.connections.filter((c) => c.provider === "gmail");
+
+    expect(gmailRows).toEqual([expect.objectContaining({ id: "gmail-mine", status: "active", is_mine: true })]);
   });
 
   it("disconnects only the caller's own personal Granola connection, leaving a teammate's untouched", async () => {
