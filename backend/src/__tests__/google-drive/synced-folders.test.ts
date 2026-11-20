@@ -86,7 +86,7 @@ describe("synced Google Drive folders", () => {
     const db = seed();
     await routes.addDriveFolder("ws-1", "user-a", { folderKind: "folder", googleFolderId: "f-1", name: "Plans" }, deps(db));
     await routes.addDriveFolder("ws-1", "user-b", { folderKind: "folder", googleFolderId: "f-2", name: "Other" }, deps(db));
-    const body = await (await routes.listDriveFolders("ws-1", "user-a", deps(db))).json();
+    const body = await (await routes.listDriveFolders("ws-1", "user-a", deps(db))).json() as { folders: unknown; status: string };
     expect(body.folders).toEqual([{ id: expect.any(String), folder_kind: "folder", google_folder_id: "f-1", name: "Plans" }]);
     expect(body.status).toBe("active");
   });
@@ -103,7 +103,7 @@ describe("synced Google Drive folders", () => {
         ],
       }),
     });
-    const body = await (await routes.listDriveFolderOptions("ws-1", "user-a", "root", deps(db, api))).json();
+    const body = await (await routes.listDriveFolderOptions("ws-1", "user-a", "root", deps(db, api))).json() as { options: unknown };
     expect(body.options).toEqual([
       { folder_kind: "folder", google_folder_id: "f-1", name: "Plans", synced: true, synced_by_you: false, synced_by: "Bo" },
       { folder_kind: "folder", google_folder_id: "f-2", name: "Notes", synced: false, synced_by_you: false, synced_by: null },
