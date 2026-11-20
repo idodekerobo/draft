@@ -62,6 +62,9 @@ When you add a concept, add it here first.
 
 - **Connection**: the user-facing word for a provider a person can connect; the linked account is stored in table `connections`.
 - **Source item**: one piece of ingested content (a meeting, a message, a captured session). Table `source_items`.
+- **Synced Google Drive folder**: a Google Drive folder or shared drive a person chose; Draft syncs every native
+  file in it into company context. One per folder per workspace; the connection that added it owns it. Table
+  `synced_google_drive_folders`.
 - **Context**: the company brain: synthesized documents by dimension, versioned in `workspace_context_versions`.
 - **Synthesis**: the run that updates context. UI: "Context update".
 - **Summarization**: the run that summarizes captured sessions. UI: "Session summaries".
