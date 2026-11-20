@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { CopyButton } from "../onboarding/components";
 import { ProviderLogo } from "./ProviderLogo";
 import { mcpSetupSnippets } from "./mcp";
@@ -36,6 +36,12 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
   unavailableHint?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const actionRef = useRef<HTMLSpanElement>(null);
+  // The row's buttons can change on close (Connect becomes Disconnect), so focus whichever is there next frame.
+  const close = () => {
+    setOpen(false);
+    requestAnimationFrame(() => actionRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+  };
   const connected = status.state === "connected";
   const statusText = status.detail || DEFAULT_STATUS_TEXT[status.state];
   const subline = tool.scope === "personal"
@@ -52,7 +58,7 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
           {subline && <small>{subline}</small>}
         </span>
         <span className="ui-tool-row__status" role="status">{statusText}</span>
-        <span className="ui-tool-row__action">
+        <span className="ui-tool-row__action" ref={actionRef}>
           {connected && managePanel && (
             <button type="button" className="ui-btn" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Close" : managePanel.label}</button>
           )}
@@ -65,8 +71,8 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
         </span>
       </div>
       {!connected && !panel && unavailableHint && <p className="ui-tool-row__hint">{unavailableHint}</p>}
-      {open && !connected && panel && <div className="ui-tool-row__panel">{panel(() => setOpen(false))}</div>}
-      {open && connected && managePanel && <div className="ui-tool-row__panel">{managePanel.render(() => setOpen(false))}</div>}
+      {open && !connected && panel && <div className="ui-tool-row__panel">{panel(close)}</div>}
+      {open && connected && managePanel && <div className="ui-tool-row__panel">{managePanel.render(close)}</div>}
     </li>
   );
 }

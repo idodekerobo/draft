@@ -36,6 +36,17 @@ export interface WebhookConnectionResult extends ActionResult {
   webhookSecret?: string;
 }
 
+export interface GoogleConnectStart extends ActionResult {
+  code?: string;
+  authUrl?: string;
+}
+
+export interface GoogleConnectPoll {
+  status: "pending" | "connected" | "error";
+  /** Friendly text the server wrote for a failed connect. */
+  message?: string;
+}
+
 export type GithubInstallPhase = "idle" | "awaiting_approval" | "connected" | "error";
 
 export interface IntegrationActions {
@@ -48,6 +59,8 @@ export interface IntegrationActions {
   connectFireflies: (input: { apiKey: string }) => Promise<WebhookConnectionResult>;
   connectGranola: (input: { apiKey: string; accountKind: "personal" | "workspace" }) => Promise<ActionResult>;
   connectLinear: (input: { apiKey: string }) => Promise<ActionResult>;
+  startGoogleConnect: () => Promise<GoogleConnectStart>;
+  pollGoogleConnect: (code: string) => Promise<GoogleConnectPoll>;
   connectSessionTracking: () => Promise<ActionResult>;
   selectSessionRepoFolder: () => Promise<{ folderPath?: string }>;
   enableSessionCaptureForRepo: (input: { folderPath: string }) => Promise<ActionResult>;

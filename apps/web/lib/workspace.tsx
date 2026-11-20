@@ -127,6 +127,20 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
           return { ok: false, channelIds: [], failed: [], error: errorMessage(error, "Could not update Slack channels.") };
         }
       },
+      startGoogleConnect: async () => {
+        try {
+          const body = await apiFetch<{ code: string; authUrl: string }>(`/workspaces/${workspaceId}/google/connect-sessions`, { method: "POST" });
+          return { ok: true, ...body };
+        } catch (error) {
+          return { ok: false, error: error instanceof ApiError ? error.code : undefined };
+        }
+      },
+      pollGoogleConnect: async (code) => {
+        const body = await apiFetch<{ status: "pending" | "connected" | "error"; errorMessage?: string }>(
+          `/workspaces/${workspaceId}/google/connect-sessions/${encodeURIComponent(code)}`,
+        );
+        return { status: body.status, message: body.errorMessage };
+      },
       // Folder actions need a desktop.
       connectSessionTracking: () => connect<{ ok: true }>({ provider: "claude_session" }, "Could not turn on coding sessions."),
       selectSessionRepoFolder: async () => ({}),

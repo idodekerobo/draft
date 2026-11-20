@@ -399,6 +399,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // (already fetched once above) instead of a second round trip.
           firefliesConnections: normalizeHostedConnectionList("fireflies", cloudConnections ?? []),
           granolaConnections: normalizeHostedConnectionList("granola", cloudConnections ?? []),
+          gmailConnections: (Array.isArray(cloudConnections) ? cloudConnections : []).flatMap((row: unknown) => {
+            const connection = row as { provider?: unknown; status?: unknown; display_name?: unknown };
+            if (connection.provider !== "gmail") return [];
+            return [{
+              provider: "gmail" as const,
+              status: typeof connection.status === "string" ? connection.status : null,
+              display_name: typeof connection.display_name === "string" ? connection.display_name : null,
+            }];
+          }),
         };
       },
 
@@ -579,6 +588,26 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch (err) {
           return { ok: false, error: err instanceof Error ? err.message : "Could not connect Linear." };
         }
+      },
+
+      startGoogleConnect: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
+        try {
+          const body = await fetchServerJSON<{ code: string; authUrl: string }>(`workspaces/${workspaceId}/google/connect-sessions`, { method: "POST" });
+          return { ok: true, ...body };
+        } catch (err) {
+          return { ok: false, error: err instanceof ServerError ? err.code : undefined };
+        }
+      },
+
+      pollGoogleConnect: async ({ code }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
+        const body = await fetchServerJSON<{ status: "pending" | "connected" | "error"; errorMessage?: string }>(
+          `workspaces/${workspaceId}/google/connect-sessions/${encodeURIComponent(code)}`,
+        );
+        return { status: body.status, message: body.errorMessage };
       },
 
       connectClaudeCode: async ({ token }) => {

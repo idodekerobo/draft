@@ -8,7 +8,7 @@ import { webToolStatuses } from "@/lib/tool-statuses";
 import { useWorkspace } from "@/lib/workspace";
 import { WebToolList } from "@/components/WebToolList";
 
-type Provider = "github" | "slack" | "linear" | "fireflies" | "granola" | "claude_session";
+type Provider = "github" | "slack" | "linear" | "fireflies" | "granola" | "claude_session" | "google";
 
 interface ConnectRequestInfo {
   provider: Provider;
@@ -25,6 +25,7 @@ const TOOL_BY_PROVIDER: Partial<Record<Provider, ToolId>> = {
   fireflies: "fireflies",
   granola: "granola",
   claude_session: "coding-sessions",
+  google: "gmail",
 };
 const POLL_MS = 3_000;
 

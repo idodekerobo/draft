@@ -39,3 +39,27 @@ export function toolStatusesFromConnections(personal: NormalizedConnection[], te
   }
   return statuses;
 }
+
+type GmailRow = { provider: "gmail"; status?: unknown; display_name?: unknown };
+
+/** The caller's own Gmail rows. The connections list never carries a teammate's Gmail. */
+function gmailRows(raw: unknown[]): GmailRow[] {
+  return raw.filter((row): row is GmailRow => {
+    const candidate = row as { provider?: unknown; status?: unknown } | null;
+    return typeof candidate === "object" && candidate !== null && candidate.provider === "gmail" && candidate.status !== "revoked";
+  });
+}
+
+/** True when the caller has Gmail connected, including when it needs a reconnect. */
+export function hasGmailConnection(raw: unknown[]): boolean {
+  return gmailRows(raw).length > 0;
+}
+
+export function gmailToolStatus(raw: unknown[]): ToolStatus {
+  const rows = gmailRows(raw);
+  if (rows.length === 0) return { state: "disconnected" };
+  if (rows.some((row) => row.status === "degraded" || row.status === "error")) return { state: "error", detail: "Reconnect needed" };
+  if (rows.some((row) => row.status === "pending")) return { state: "pending", detail: "Waiting for Google" };
+  const name = rows.map((row) => row.display_name).find((value): value is string => typeof value === "string" && value.length > 0);
+  return { state: "connected", detail: name ? `Connected · ${name}` : "Connected" };
+}

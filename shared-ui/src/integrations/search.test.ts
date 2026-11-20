@@ -13,6 +13,12 @@ describe("connection search", () => {
     expect(filterToolGroups(grouped, "codex").flatMap((section) => section.tools.map((tool) => tool.id))).toEqual(["claude-code"]);
   });
 
+  test("finds Gmail by gmail, google or email", () => {
+    for (const query of ["gmail", "Google", "email"]) {
+      expect(filterToolGroups(grouped, query).flatMap((section) => section.tools.map((tool) => tool.id))).toEqual(["gmail"]);
+    }
+  });
+
   test("keeps section grouping and removes empty sections", () => {
     const result = filterToolGroups(grouped, "fire");
     expect(result).toHaveLength(1);

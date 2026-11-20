@@ -7,6 +7,7 @@ import { PROVIDER_LOGO_DATA } from "./provider-logo-assets";
 
 const LOGOS: Partial<Record<ToolId, { src: string; monochrome?: boolean }>> = {
   slack: { src: PROVIDER_LOGO_DATA.slack, monochrome: true },
+  gmail: { src: PROVIDER_LOGO_DATA.google },
   github: { src: PROVIDER_LOGO_DATA.github, monochrome: true },
   linear: { src: PROVIDER_LOGO_DATA.linear, monochrome: true },
   fireflies: { src: PROVIDER_LOGO_DATA.fireflies },

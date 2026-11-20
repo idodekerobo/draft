@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { toolStatusesFromConnections } from "./tool-status";
+import { gmailToolStatus, hasGmailConnection, toolStatusesFromConnections } from "./tool-status";
 
 describe("toolStatusesFromConnections", () => {
   test("personal tools use only the caller's own connection", () => {
@@ -27,5 +27,24 @@ describe("toolStatusesFromConnections", () => {
       [],
     );
     expect(statuses.granola).toEqual({ state: "connected", detail: "Workspace key" });
+  });
+});
+
+describe("gmailToolStatus", () => {
+  test("connected shows the word Connected with the mailbox", () => {
+    expect(gmailToolStatus([{ provider: "gmail", status: "active", display_name: "me@company.com" }])).toEqual({ state: "connected", detail: "Connected · me@company.com" });
+    expect(gmailToolStatus([{ provider: "gmail", status: "active", display_name: null }])).toEqual({ state: "connected", detail: "Connected" });
+  });
+
+  test("a degraded row asks for a reconnect", () => {
+    expect(gmailToolStatus([{ provider: "gmail", status: "degraded" }])).toEqual({ state: "error", detail: "Reconnect needed" });
+    expect(hasGmailConnection([{ provider: "gmail", status: "degraded" }])).toBe(true);
+  });
+
+  test("no live Gmail row is not connected", () => {
+    expect(gmailToolStatus([])).toEqual({ state: "disconnected" });
+    expect(gmailToolStatus([{ provider: "slack", status: "active" }])).toEqual({ state: "disconnected" });
+    expect(gmailToolStatus([{ provider: "gmail", status: "revoked" }])).toEqual({ state: "disconnected" });
+    expect(hasGmailConnection([{ provider: "gmail", status: "revoked" }])).toBe(false);
   });
 });

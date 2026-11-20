@@ -1,7 +1,7 @@
 export type Platform = "web" | "desktop";
-export type ToolId = "fireflies" | "granola" | "claude-code" | "slack" | "github" | "linear" | "coding-sessions";
+export type ToolId = "fireflies" | "granola" | "gmail" | "claude-code" | "slack" | "github" | "linear" | "coding-sessions";
 /** "sessions" is omitted from the onboarding group lists, which keep their current tools. */
-export type ToolGroup = "meetings" | "agent" | "team" | "sessions";
+export type ToolGroup = "meetings" | "email" | "agent" | "team" | "sessions";
 /** Page headings. Data flowing into Draft, and Draft feeding an agent. */
 export type ToolSection = "sources" | "agent";
 
@@ -19,6 +19,7 @@ export interface ToolEntry {
 export const TOOL_REGISTRY: ToolEntry[] = [
   { id: "fireflies", name: "Fireflies", description: "Meeting notes from your Fireflies account", group: "meetings", scope: "personal", platforms: ["web", "desktop"], popularity: 80 },
   { id: "granola", name: "Granola", description: "Meeting notes from your Granola account", group: "meetings", scope: "personal", platforms: ["web", "desktop"], popularity: 60 },
+  { id: "gmail", name: "Gmail", description: "Your agent can search it. Nothing stored.", group: "email", scope: "personal", platforms: ["web", "desktop"], popularity: 75 },
   { id: "claude-code", name: "Claude Code, Codex or Cursor", description: "Gives your agent your team's context", group: "agent", scope: "personal", platforms: ["web", "desktop"], popularity: 100 },
   { id: "slack", name: "Slack", description: "Reads the channels you choose", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 100 },
   { id: "github", name: "GitHub", description: "Reads pull requests and commits", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 90 },
@@ -26,10 +27,10 @@ export const TOOL_REGISTRY: ToolEntry[] = [
   { id: "coding-sessions", name: "Coding sessions", description: "Captures finished Claude Code sessions from your repos", group: "sessions", scope: "workspace", platforms: ["web"], popularity: 50 },
 ];
 
-const GROUP_ORDER: ToolGroup[] = ["meetings", "agent", "team", "sessions"];
+const GROUP_ORDER: ToolGroup[] = ["meetings", "email", "agent", "team", "sessions"];
 
 export const SECTIONS: Array<{ id: ToolSection; label: string; groups: ToolGroup[] }> = [
-  { id: "sources", label: "Sources", groups: ["meetings", "team", "sessions"] },
+  { id: "sources", label: "Sources", groups: ["meetings", "email", "team", "sessions"] },
   { id: "agent", label: "Use Draft in your agent", groups: ["agent"] },
 ];
 
@@ -60,6 +61,7 @@ const TOOL_ALIASES: Partial<Record<ToolId, string[]>> = {
   "claude-code": ["claude", "codex", "cursor", "agent"],
   "coding-sessions": ["sessions", "terminal"],
   github: ["gh"],
+  gmail: ["google", "email"],
 };
 
 export function filterToolGroups(
