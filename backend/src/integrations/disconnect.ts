@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
 import { recordRouteError } from "../errors/route-error";
+import { removeAllSyncedGoogleDriveFolders } from "../ingestion/google-drive/synced-folders";
 import { releaseGoogleCredential } from "../ingestion/google/release-credential";
 import { stopSlackListener } from "../ingestion/slack/bootstrap";
 import { deleteGranolaWebhookEndpoint } from "../ingestion/granola/webhook-endpoints";
@@ -33,7 +34,14 @@ export async function disconnectConnection(
 
   if (provider === "slack") await stopSlackListener(result.connection_id);
   if (provider === "granola") await deleteGranolaWebhookBestEffort(client, input.workspaceId, result.connection_id);
-  if (provider === "gmail") await releaseGoogleBestEffort(client, input.workspaceId, result.connection_id);
+  if (provider === "google_drive") {
+    try {
+      await removeAllSyncedGoogleDriveFolders(client, input.workspaceId, result.connection_id);
+    } catch (error) {
+      recordRouteError({ workspaceId: input.workspaceId, connectionId: result.connection_id, operation: "auth", errorCode: "drive_synced_folders_cleanup_failed", error });
+    }
+  }
+  if (provider === "gmail" || provider === "google_drive") await releaseGoogleBestEffort(client, input.workspaceId, result.connection_id);
   return { ok: true, outcome };
 }
 

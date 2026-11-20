@@ -4,7 +4,8 @@ import { googleOAuthSettings, type GoogleOAuthSettings } from "../config";
 import { CURRENT_CREDENTIAL_KEY_VERSION, encryptCredentialPayload } from "../credentials/crypto";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
-import { exchangeGoogleCode, GMAIL_READONLY_SCOPE, GoogleOAuthError, verifyGoogleIdToken } from "../ingestion/google/oauth";
+import { DRIVE_READONLY_SCOPE, exchangeGoogleCode, GMAIL_READONLY_SCOPE, GoogleOAuthError, verifyGoogleIdToken } from "../ingestion/google/oauth";
+import { registerDriveSyncTask } from "../ingestion/google-drive/register-task";
 import { upsertConnection } from "../ingestion/upsert-source-item";
 import { oauthResultResponse } from "./oauth-result-page";
 import type { ConnectionRow } from "../types/tables";
@@ -22,6 +23,7 @@ export interface GoogleCallbackDependencies {
   exchangeCode: typeof exchangeGoogleCode;
   verifyIdToken: typeof verifyGoogleIdToken;
   upsertConnection: typeof upsertConnection;
+  registerDriveSyncTask: typeof registerDriveSyncTask;
   db: SupabaseClient;
 }
 
@@ -30,11 +32,15 @@ const defaultDependencies: GoogleCallbackDependencies = {
   exchangeCode: exchangeGoogleCode,
   verifyIdToken: verifyGoogleIdToken,
   upsertConnection,
+  registerDriveSyncTask,
   db: serviceClient,
 };
 
 // Each granted Google product gets its own connection; all share one credential row.
-const PRODUCTS = [{ provider: "gmail", scope: GMAIL_READONLY_SCOPE }] as const;
+const PRODUCTS = [
+  { provider: "gmail", scope: GMAIL_READONLY_SCOPE, label: "Gmail", noun: "mailbox", codePrefix: "gmail", teammateCode: "gmail_mailbox_already_connected" },
+  { provider: "google_drive", scope: DRIVE_READONLY_SCOPE, label: "Google Drive", noun: "Google account", codePrefix: "drive", teammateCode: "drive_account_already_connected" },
+] as const;
 
 class ConnectRejected extends Error {
   constructor(readonly code: string, message: string) {
@@ -82,7 +88,7 @@ export async function handleGoogleCallback(
     }
     const granted = PRODUCTS.filter((product) => tokens.scopes.includes(product.scope));
     if (granted.length === 0) {
-      throw new ConnectRejected("google_scope_missing", "Gmail access was not granted. Allow it and try again.");
+      throw new ConnectRejected("google_scope_missing", "Gmail or Google Drive access was not granted. Allow at least one and try again.");
     }
     const identity = await deps.verifyIdToken(tokens.idToken, settings.clientId);
 
@@ -98,12 +104,18 @@ export async function handleGoogleCallback(
       "id" | "provider" | "connection_key" | "credential_id" | "connected_by_user_id" | "status"
     >[];
 
-    const sameAccount = live.find((row) => row.connection_key === identity.sub);
-    if (sameAccount && sameAccount.connected_by_user_id !== session.userId) {
-      throw new ConnectRejected("gmail_mailbox_already_connected", "This mailbox is already connected by a teammate.");
-    }
-    if (live.some((row) => row.connected_by_user_id === session.userId && row.connection_key !== identity.sub)) {
-      throw new ConnectRejected("gmail_already_connected", "You already have a mailbox connected for Gmail. Disconnect it first.");
+    for (const product of granted) {
+      const ofProduct = live.filter((row) => row.provider === product.provider);
+      const sameAccount = ofProduct.find((row) => row.connection_key === identity.sub);
+      if (sameAccount && sameAccount.connected_by_user_id !== session.userId) {
+        throw new ConnectRejected(product.teammateCode, `This ${product.noun} is already connected by a teammate.`);
+      }
+      if (ofProduct.some((row) => row.connected_by_user_id === session.userId && row.connection_key !== identity.sub)) {
+        throw new ConnectRejected(
+          `${product.codePrefix}_already_connected`,
+          `You already have a ${product.noun} connected for ${product.label}. Disconnect it first.`,
+        );
+      }
     }
 
     const encrypted = encryptCredentialPayload(
@@ -136,7 +148,7 @@ export async function handleGoogleCallback(
     }
 
     for (const product of granted) {
-      await deps.upsertConnection(deps.db, {
+      const connection = await deps.upsertConnection(deps.db, {
         workspace_id: session.workspaceId,
         provider: product.provider,
         connection_key: identity.sub,
@@ -146,17 +158,24 @@ export async function handleGoogleCallback(
         credential_id: credentialId,
         connected_by_user_id: session.userId,
       });
+      if (product.provider === "google_drive") {
+        await deps.registerDriveSyncTask({ id: connection.id, workspace_id: connection.workspace_id }, deps.db);
+      }
     }
 
     resolveGoogleOAuthSession(state, { status: "connected" });
+    const hasDrive = granted.some((product) => product.provider === "google_drive");
+    const hasGmail = granted.some((product) => product.provider === "gmail");
+    const next = [
+      hasGmail ? "Your agent searches and reads your mail only when you ask. Draft stores no mail." : null,
+      hasDrive ? "Choose the Google Drive folders to sync in Connections. Every file in them goes into company context." : null,
+      hasGmail ? "If Claude Code was already open, restart it or run /mcp to see the Gmail tools." : null,
+    ].filter(Boolean).join(" ");
     return oauthResultResponse({
       kind: "success",
-      heading: "Gmail connected",
+      heading: `${granted.map((product) => product.label).join(" and ")} connected`,
       message: "Draft has read-only access. You can return to Draft now.",
-      next: {
-        heading: "What happens next",
-        message: "Your agent searches and reads your mail only when you ask. Draft stores nothing. If Claude Code was already open, restart it or run /mcp to see the Gmail tools.",
-      },
+      next: { heading: "What happens next", message: next },
     });
   } catch (error) {
     if (error instanceof ConnectRejected) return fail(error.code, error.message);

@@ -25,21 +25,21 @@ export async function createGoogleConnectSession(
   const settings = deps.settings();
   if (!settings) return Response.json({ error: "google_oauth_not_configured" }, { status: 503 });
 
-  // A degraded connection may connect again to fix an expired grant; the
-  // callback upserts the same row.
+  // A degraded connection may connect again to fix an expired grant, and a
+  // person with only one Google product may connect again to add the other.
   const { data: existing, error: existingError } = await deps.db
     .from("connections")
-    .select("id")
+    .select("provider")
     .eq("workspace_id", workspaceId)
-    .eq("provider", "gmail")
+    .in("provider", ["gmail", "google_drive"])
     .eq("connected_by_user_id", userId)
-    .eq("status", "active")
-    .limit(1);
+    .eq("status", "active");
   if (existingError) {
     recordRouteError({ workspaceId, operation: "auth", errorCode: "gmail_connect_lookup_failed", error: existingError });
     return Response.json({ error: "lookup_failed" }, { status: 500 });
   }
-  if ((existing ?? []).length > 0) {
+  const activeProviders = new Set(((existing ?? []) as Array<{ provider: string }>).map((row) => row.provider));
+  if (activeProviders.has("gmail") && activeProviders.has("google_drive")) {
     return Response.json({ error: "google_already_connected" }, { status: 409 });
   }
 

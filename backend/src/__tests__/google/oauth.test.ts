@@ -3,6 +3,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import {
   buildGoogleAuthUrl,
   exchangeGoogleCode,
+  DRIVE_READONLY_SCOPE,
   GMAIL_READONLY_SCOPE,
   GoogleOAuthError,
   generatePkcePair,
@@ -34,10 +35,9 @@ describe("buildGoogleAuthUrl", () => {
     expect(url.searchParams.get("login_hint")).toBe("me@x.com");
   });
 
-  it("requests exactly the Gmail-only scopes", () => {
+  it("requests exactly the Gmail and Google Drive read-only scopes", () => {
     const url = new URL(buildGoogleAuthUrl(settings, { state: "s", codeChallenge: "c" }));
-    expect(url.searchParams.get("scope")?.split(" ")).toEqual(["openid", "email", GMAIL_READONLY_SCOPE]);
-    expect(url.searchParams.get("scope")).not.toContain("drive");
+    expect(url.searchParams.get("scope")?.split(" ")).toEqual(["openid", "email", GMAIL_READONLY_SCOPE, DRIVE_READONLY_SCOPE]);
   });
 
   it("omits login_hint when unknown", () => {

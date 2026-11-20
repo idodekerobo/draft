@@ -95,7 +95,7 @@ type ConnectBody =
   | ClaudeCodeConnectBody
   | ClaudeSessionConnectBody
   | GranolaConnectBody;
-type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github" | "claude_session" | "granola" | "gmail";
+type SupportedProvider = "slack" | "fireflies" | "linear" | "claude_code" | "github" | "claude_session" | "granola" | "gmail" | "google_drive";
 
 interface SlackConnectResponse {
   ok: true;
@@ -206,7 +206,8 @@ function isSupportedProvider(value: unknown): value is SupportedProvider {
     value === "github" ||
     value === "claude_session" ||
     value === "granola" ||
-    value === "gmail"
+    value === "gmail" ||
+    value === "google_drive"
   );
 }
 
@@ -286,15 +287,16 @@ export const GET = withAuth<ConnectionsRequest>(async (req, caller) => {
     .from("connections")
     .select("id, provider, status, display_name, last_success_at, last_error_at, config_json, cursor_json, updated_at, connected_by_user_id")
     .eq("workspace_id", req.params.id)
-    .in("provider", [...SINGLETON_CONNECTION_PROVIDERS, "gmail"]);
+    .in("provider", [...SINGLETON_CONNECTION_PROVIDERS, "gmail", "google_drive"]);
   if (error) return errorResponse("lookup_failed", 500, error, req.params.id);
 
   const allRows = (data ?? []) as ListedConnectionRow[];
-  // Gmail is private: a person sees only their own row, never a teammate's.
+  // Google rows are per person: a person sees only their own Gmail and Google Drive rows.
+  const isGoogle = (provider: string) => provider === "gmail" || provider === "google_drive";
   const gmailRows = allRows.filter(
-    (connection) => connection.provider === "gmail" && connection.connected_by_user_id === caller.userId,
+    (connection) => isGoogle(connection.provider) && connection.connected_by_user_id === caller.userId,
   );
-  const rows = allRows.filter((connection) => connection.provider !== "gmail");
+  const rows = allRows.filter((connection) => !isGoogle(connection.provider));
   const foldedRows = rows.filter((connection) => !isMultiAccountProvider(connection.provider));
   const multiAccountRows = rows.filter((connection) => isMultiAccountProvider(connection.provider));
 
@@ -1186,10 +1188,12 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
   if (denied) return denied;
 
   // Granola can have two live rows at once, so DELETE needs to say which.
-  // Defaults to "personal" when omitted; no other provider sends this.
+  // Defaults to "personal" when omitted. Google rows are always the caller's own.
   let accountKind: string | null = null;
   if (req.params.provider === "granola") {
     accountKind = new URL(req.url).searchParams.get("account_kind") === "workspace" ? "workspace" : "personal";
+  } else if (req.params.provider === "gmail" || req.params.provider === "google_drive") {
+    accountKind = "personal";
   }
 
   const result = await disconnectConnection(serviceClient, {

@@ -38,15 +38,26 @@ describe("createGoogleConnectSession", () => {
     expect(pollGoogleConnectSession("ws-1", "user-1", body.code).status).toBe(200);
   });
 
-  it("refuses a new connect when the user already has an active Gmail connection", async () => {
+  it("refuses a new connect when the user already has both Google products active", async () => {
+    const db = createFakeDb({
+      connections: [
+        { id: "c1", workspace_id: "ws-1", provider: "gmail", connected_by_user_id: "user-1", status: "active" },
+        { id: "c2", workspace_id: "ws-1", provider: "google_drive", connected_by_user_id: "user-1", status: "active" },
+      ],
+    });
+    const response = await createGoogleConnectSession("ws-1", "user-1", { settings: () => settings, db: db.client });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "google_already_connected" });
+  });
+
+  it("lets a Gmail-only person connect again to add Google Drive", async () => {
     const db = createFakeDb({
       connections: [
         { id: "c1", workspace_id: "ws-1", provider: "gmail", connected_by_user_id: "user-1", status: "active" },
       ],
     });
     const response = await createGoogleConnectSession("ws-1", "user-1", { settings: () => settings, db: db.client });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "google_already_connected" });
+    expect(response.status).toBe(200);
   });
 
   it("ignores a teammate's Gmail connection", async () => {

@@ -73,10 +73,14 @@ export function normalizeBackfillSummary(value: unknown): HostedConnectionBackfi
 
 function normalizedProvider(value: unknown): HostedConnectionProvider | null {
   if (value === "claude_code") return "claude-code";
-  if (value === "gmail") return "google";
+  if (value === "gmail" || value === "google_drive") return "google";
   return HOSTED_CONNECTION_PROVIDERS.includes(value as HostedConnectionProvider)
     ? value as HostedConnectionProvider
     : null;
+}
+
+function isLive(raw: RawHostedConnectionSummary): boolean {
+  return raw.status === "active" || raw.status === "degraded";
 }
 
 function stringOrNull(value: unknown): string | null {
@@ -176,7 +180,10 @@ export function normalizeHostedConnections(
     const raw = rawSummary(value);
     if (!raw) continue;
     const provider = normalizedProvider(raw.provider);
-    if (provider && !byProvider.has(provider)) byProvider.set(provider, raw);
+    if (!provider) continue;
+    // Google has one row per product: a live Gmail or Google Drive row makes Google connected.
+    const current = byProvider.get(provider);
+    if (!current || (provider === "google" && !isLive(current) && isLive(raw))) byProvider.set(provider, raw);
   }
   return HOSTED_CONNECTION_PROVIDERS.map((provider) =>
     normalizeHostedConnection(provider, byProvider.get(provider))

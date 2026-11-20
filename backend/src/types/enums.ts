@@ -46,6 +46,7 @@ export type ConnectionProvider =
   | "linear"
   | "github"
   | "gmail"
+  | "google_drive"
   | "claude_session"
   | "codex_session"
   | "manual_upload"

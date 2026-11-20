@@ -36,6 +36,21 @@ describe("Google in listIntegrations", () => {
     expect((await listIntegrations(fakeClient(db), WS, ME)).find((item) => item.provider === "slack")!.destination).toBe("company_context");
   });
 
+  it("counts the caller's Google Drive row for Google, and lists Google Drive as company context for the workspace", async () => {
+    const db = fakeDb({ connections: [connection("google_drive", "active", OTHER)] });
+    const forMe = await listIntegrations(fakeClient(db), WS, ME);
+    expect(forMe.find((item) => item.provider === "google")!.status).toBe("not_connected");
+    expect(forMe.find((item) => item.provider === "google_drive")).toMatchObject({
+      status: "connected",
+      connectedByYou: false,
+      destination: "company_context",
+      connect: { cli: "draft connections connect google" },
+    });
+    const forThem = await listIntegrations(fakeClient(db), WS, OTHER);
+    expect(forThem.find((item) => item.provider === "google")!.status).toBe("connected");
+    expect(forThem.find((item) => item.provider === "google_drive")!.connectedByYou).toBe(true);
+  });
+
   it("stores a google connect request and closes it once the requester connects Gmail", async () => {
     const db = fakeDb({ connections: [] });
     const result = await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps);
