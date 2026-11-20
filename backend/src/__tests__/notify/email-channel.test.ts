@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { parsePersonId, parseWorkspaceId } from "draft-core/run-spec";
 import type { NotifyChannelId } from "draft-core/notify";
-import { emailChannel, providerIdempotencyKey } from "../../notify/email";
+import { emailChannel } from "../../notify/email";
 import { sendNotification } from "../../notify/send";
 import { markReachable, type NotifyChannel } from "../../notify/types";
 import { fakeClient, fakeDb } from "../routines/fake-client";
@@ -26,7 +26,7 @@ function setup(status: string | null = "confirmed", key: string | null = "re_key
 describe("the email channel", () => {
   it("emails the verified address from the Draft sender with a prefixed subject", async () => {
     const { channel, calls } = setup();
-    expect(await channel.send(person, { text: "Your research is ready", subject: "Research" })).toEqual({ channel: "email", status: "sent" });
+    expect(await channel.send(person, { text: "Your research is ready", subject: "Research" })).toMatchObject({ channel: "email", status: "sent" });
     expect(calls[0]!.body).toMatchObject({ from: "Draft <notifications@notify.draftai.us>", to: ["iza@example.com"], subject: "Draft: Research", text: "Your research is ready" });
   });
 
@@ -57,23 +57,14 @@ describe("the email channel", () => {
     expect(await setup(null).channel.send(person, { text: "x" })).toEqual({ channel: "email", status: "failed", code: "not_reachable" });
   });
 
-  it("uses the same provider key for the same caller key, and different keys across people and workspaces", () => {
-    const other = markReachable({ ...person, id: parsePersonId("cccccccc-cccc-4ccc-8ccc-cccccccccccc") });
-    const elsewhere = markReachable({ ...person, workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222") });
-    expect(providerIdempotencyKey(person, "k")).toBe(providerIdempotencyKey(person, "k"));
-    expect(providerIdempotencyKey(person, "k")).not.toBe(providerIdempotencyKey(other, "k"));
-    expect(providerIdempotencyKey(person, "k")).not.toBe(providerIdempotencyKey(elsewhere, "k"));
-    expect(providerIdempotencyKey(person, "k")).toHaveLength(64);
-  });
-
-  it("sends the caller's idempotency key on every send, and a fresh one when none is given", async () => {
+  it("uses the delivery id as the provider idempotency key, on every attempt, and returns the provider id", async () => {
     const { channel, calls } = setup();
-    await channel.send(person, { text: "a", idempotencyKey: "meeting-1" });
-    await channel.send(person, { text: "a", idempotencyKey: "meeting-1" });
+    expect(await channel.send(person, { text: "a" }, { deliveryId: "delivery-1" })).toEqual({ channel: "email", status: "sent", providerMessageId: "em_1" });
+    await channel.send(person, { text: "a" }, { deliveryId: "delivery-1" });
     await channel.send(person, { text: "a" });
     await channel.send(person, { text: "a" });
     const keys = calls.map((call) => call.headers["Idempotency-Key"]);
-    expect(keys[0]).toBe(keys[1]);
+    expect(keys.slice(0, 2)).toEqual(["delivery-1", "delivery-1"]);
     expect(keys[2]).not.toBe(keys[3]);
   });
 

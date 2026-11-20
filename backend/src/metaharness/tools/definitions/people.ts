@@ -2,11 +2,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
-import { isNotifyChannelId, NOTIFY_CHANNELS, type NotifyChannelId } from "draft-core/notify";
+import { isNotifyChannelId, NOTIFY_CHANNELS, type NotifyChannelId, type NotifyResult } from "draft-core/notify";
 import { recordError } from "../../../errors/record-error";
 import { attributionLine } from "../../../notify/attribution";
 import { isFailure, resolvePerson } from "../../../notify/resolve-person";
-import { defaultChannels, sendNotification } from "../../../notify/send";
+import { deliverNotification, originTaskId } from "../../../notify/deliver";
+import { htmlToText, MAX_EMAIL_HTML_CHARS, renderEmail } from "../../../notify/email-render";
+import { defaultChannels } from "../../../notify/send";
 import type { NotifyChannel } from "../../../notify/types";
 import { createPerson } from "../../../people/create";
 import { notifyAdminsOfPending } from "../../../people/notify-admins";
@@ -178,17 +180,32 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     name: "people.notify",
     mcp: true,
     description:
-      "Send a short message to one teammate, by their id from people.find. Only active teammates can be messaged, and only on channels where Draft can reach them. " +
+      "Send a message to one teammate, by their id from people.find. Only active teammates can be messaged, and only on channels where Draft can reach them. " +
       "Read recent messages with connections.read first and do not repeat a message already sent. " +
-      "The message starts with a line saying a Draft agent sent it; you cannot change that line. Write only the body. Message only the people your instructions name. " +
-      "The result has one entry per channel: sent, or failed with not_reachable or provider_error. A failure on one channel does not stop the others.",
+      "A line saying which Draft agent or person sent it ends the message; you cannot change that line. Write only the body. Message only the people your instructions name. " +
+      "Channels: slack (a direct message) and email (to the teammate's verified address; you never supply an address). Omit channels to use the person's own. " +
+      "Write `text`, or `html` for a richer email, or both. If you send only `html`, Draft makes the plain text from it. Slack uses the text and ignores `subject` and `html`. " +
+      "For email, `subject` is a short, factual topic such as 'Your meeting follow-ups', 'Review needed for the launch plan' or 'Weekly research update'. Draft adds the 'Draft: ' prefix once, so do not write it. " +
+      "Without a subject, a text-only email is titled 'Draft: New message'. Recurring routines should reuse the same subject pattern each run. " +
+      "Pass `idempotencyKey` (for example 'meeting-123-followups') when a retry must not send twice: the same key with the same content returns the same notification and sends nothing new, and the same key with different content is refused. " +
+      "The result has a notificationId and one entry per channel: sent, or failed with not_reachable or provider_error. For email, sent means the provider accepted it, not that it arrived: call people.notification_status with the notificationId to check. A failure on one channel does not stop the others.",
     input: z.object({
       personId: z.string().uuid(),
-      text: z.string().min(1).max(2000),
+      text: z.string().min(1).max(2000).optional().describe("The message as plain text. Required unless html is given."),
+      html: z.string().min(1).max(MAX_EMAIL_HTML_CHARS).optional().describe("Email only. A richer body. Plain text is made from it when text is omitted."),
+      subject: z.string().min(1).max(140).optional().describe("Email only. A short, factual topic, without the 'Draft: ' prefix."),
       link: z.string().url().optional(),
+      idempotencyKey: z.string().min(1).max(128).optional().describe("A stable key for this message, so a retry does not send twice."),
       channels: z.array(z.enum(NOTIFY_CHANNELS)).min(1).optional().describe("Where to send. Omit to use the person's own channels."),
     }),
-    auditArguments: (input) => ({ personId: input.personId, textBytes: Buffer.byteLength(input.text, "utf8"), link: input.link, channels: input.channels }),
+    auditArguments: (input) => ({
+      personId: input.personId,
+      textBytes: input.text ? Buffer.byteLength(input.text, "utf8") : 0,
+      htmlBytes: input.html ? Buffer.byteLength(input.html, "utf8") : 0,
+      subjectChars: input.subject?.length ?? 0,
+      link: input.link,
+      channels: input.channels,
+    }),
     handler: async ({ input, caller }) => {
       const workspaceId = callerWorkspaceId(caller);
 
@@ -209,12 +226,39 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
         if (limited) return limited;
       }
 
-      const line = await attributionLine(client, caller);
-      const agentRunId = caller.origin.kind === "run" ? caller.origin.run.id : null;
-      const logFailure = (channel: NotifyChannelId, error: unknown) =>
-        recordError({ client, workspaceId, agentRunId, operation: "execution", code: "notify_send_failed", message: `people.notify failed on ${channel}`, detail: { channel, personId: person.id }, error });
-      const result = await sendNotification(channels, person, { text: input.text, attribution: line, ...(input.link ? { link: input.link } : {}) }, input.channels?.filter(isNotifyChannelId), logFailure);
-      return { status: "ok", output: result, summary: result.results.map((entry) => `${entry.channel}: ${entry.status}`).join(", ") };
+      const text = input.text ?? (input.html ? htmlToText(input.html) : "");
+      const content = renderEmail({ subject: input.subject, text, html: input.html });
+      if (!content.ok) {
+        const why = { empty_body: "Give text, html, or both.", subject_too_long: "The subject is too long.", text_too_long: "The text is too long.", html_too_long: "The html is too long." }[content.code];
+        return refuse("invalid_input", why);
+      }
+
+      const origin = caller.origin;
+      const agentRunId = origin.kind === "run" ? origin.run.id : null;
+      const logFailure = (code: string, error: unknown) =>
+        recordError({ client, workspaceId, agentRunId, operation: "execution", code, message: `people.notify: ${code}`, detail: { personId: person.id }, error });
+      try {
+        const delivered = await deliverNotification(client, channels, person, {
+          subject: input.subject,
+          text,
+          html: input.html,
+          link: input.link,
+          idempotencyKey: input.idempotencyKey,
+          attribution: await attributionLine(client, caller),
+          requested: input.channels?.filter(isNotifyChannelId),
+          origin: {
+            senderUserId: origin.kind === "run" ? origin.run.onBehalfOf : origin.userId,
+            agentRunId,
+            scheduledTaskId: origin.kind === "run" ? await originTaskId(client, origin.run) : null,
+          },
+        });
+        if (!delivered.ok) return refuse("idempotency_conflict", "That idempotencyKey was already used with different content. Use a new key for a different message.");
+        const output: NotifyResult = { notificationId: delivered.notificationId, results: delivered.results };
+        return { status: "ok", output, summary: delivered.results.map((entry) => `${entry.channel}: ${entry.status}`).join(", ") };
+      } catch (error) {
+        await logFailure("notify_record_failed", error);
+        return refuse("notify_failed", "The message could not be saved, so nothing was sent. Try again.");
+      }
     },
   });
 

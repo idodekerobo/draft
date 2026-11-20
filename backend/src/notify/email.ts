@@ -1,22 +1,18 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ChannelSendResult, NotifyMessage } from "draft-core/notify";
+import type { NotifyMessage } from "draft-core/notify";
 import { resendSettings } from "../config";
 import type { PersonIdentityRow } from "../types/tables";
 import { EMAIL_SENDERS } from "./constants";
 import { renderEmail } from "./email-render";
 import { sendResendEmail, type ResendDeps } from "./resend";
-import type { NotifyChannel, ReachablePerson } from "./types";
+import type { ChannelOutcome, NotifyChannel, ReachablePerson, SendContext } from "./types";
 
 export interface EmailChannelDeps extends ResendDeps {
   apiKey?: () => string | undefined;
 }
 
 const TRUSTED = ["confirmed", "from_connection"];
-
-/** Resend remembers keys across the whole account, so the key is tied to the workspace and person, then hashed to a fixed length. */
-export const providerIdempotencyKey = (person: ReachablePerson, callerKey: string) =>
-  createHash("sha256").update(`${person.workspaceId}:${person.id}:${callerKey}`).digest("hex");
 
 /** The person's verified email address, or null. The address comes from the checked person, never from the caller. */
 export async function verifiedEmail(client: SupabaseClient, person: ReachablePerson): Promise<string | null> {
@@ -41,7 +37,7 @@ export function emailChannel(client: SupabaseClient, deps: EmailChannelDeps = {}
   return {
     id: "email",
     canReach: async (person) => Boolean(apiKey()) && (await verifiedEmail(client, person)) !== null,
-    async send(person, message: NotifyMessage): Promise<ChannelSendResult> {
+    async send(person, message: NotifyMessage, context?: SendContext): Promise<ChannelOutcome> {
       const key = apiKey();
       const to = key ? await verifiedEmail(client, person) : null;
       if (!key || !to) return { channel: "email", status: "failed", code: "not_reachable" };
@@ -49,8 +45,9 @@ export function emailChannel(client: SupabaseClient, deps: EmailChannelDeps = {}
       const rendered = renderEmail({ subject: message.subject, text: message.link ? `${message.text ?? ""}\n${message.link}` : message.text, html: message.html, footer: message.attribution });
       if (!rendered.ok) throw new Error(`email_content_invalid: ${rendered.code}`);
 
-      await sendResendEmail(key, { from: EMAIL_SENDERS.notification, to: [to], ...rendered.email }, providerIdempotencyKey(person, message.idempotencyKey ?? randomUUID()), deps);
-      return { channel: "email", status: "sent" };
+      // Resend remembers a key for 24 hours across the whole account. A delivery id is unique, and a retry reuses it.
+      const { id } = await sendResendEmail(key, { from: EMAIL_SENDERS.notification, to: [to], ...rendered.email }, context?.deliveryId ?? randomUUID(), deps);
+      return { channel: "email", status: "sent", providerMessageId: id };
     },
   };
 }

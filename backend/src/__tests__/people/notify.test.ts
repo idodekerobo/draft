@@ -43,9 +43,11 @@ const newDb = () =>
       scheduled_tasks: [{ id: TASK, workspace_id: WS, config_json: { title: "Meeting follow-up" } }],
       agent_run_tool_calls: [],
       errors: [],
+      notifications: [],
+      notification_deliveries: [],
       agent_runs: [{ id: RUN, workspace_id: WS, scheduled_task_id: TASK }],
     },
-    { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]] }, uuidTables: ["people"] },
+    { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]], notifications: [["workspace_id", "idempotency_key"]] }, uuidTables: ["people", "notifications", "notification_deliveries"] },
   );
 
 function recordingChannel(result: ChannelSendResult = { channel: "slack", status: "sent" }, reachable = true) {
@@ -61,11 +63,27 @@ function recordingChannel(result: ChannelSendResult = { channel: "slack", status
   return { channel, sent };
 }
 
-function setup(options: { db?: ReturnType<typeof newDb>; channel?: NotifyChannel } = {}) {
+/** A fake client whose inserts into one table fail, as a database outage would. */
+function clientFor(db: ReturnType<typeof newDb>, failInsertInto?: string) {
+  const client = fakeClient(db);
+  if (!failInsertInto) return client;
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop !== "from") return Reflect.get(target, prop, receiver);
+      return (table: string) => {
+        const query = target.from(table);
+        if (table !== failInsertInto) return query;
+        return new Proxy(query, { get: (q, p, r) => (p === "insert" ? () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "db down" } }) }) }) : Reflect.get(q, p, r)) });
+      };
+    },
+  });
+}
+
+function setup(options: { db?: ReturnType<typeof newDb>; channel?: NotifyChannel; email?: NotifyChannel; failInsertInto?: string } = {}) {
   const db = options.db ?? newDb();
   const recorder = recordingChannel();
   const channel = options.channel ?? recorder.channel;
-  const registry = new ToolRegistry(createPeopleTools(fakeClient(db), { channels: { slack: channel } as Record<NotifyChannelId, NotifyChannel> }));
+  const registry = new ToolRegistry(createPeopleTools(clientFor(db, options.failInsertInto), { channels: { slack: channel, ...(options.email ? { email: options.email } : {}) } as Record<NotifyChannelId, NotifyChannel> }));
   const call = (caller: ToolCaller, tool: string, args: unknown) => invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, caller, tool, args);
   return { db, call, sent: recorder.sent };
 }
@@ -198,6 +216,119 @@ describe("people.notify", () => {
     const { channel } = recordingChannel({ channel: "slack", status: "sent" }, false);
     const { call } = setup({ channel });
     expect(await call(asUser(), "people.notify", { personId: IZA, text: "x" })).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "failed", code: "not_reachable" }] } });
+  });
+});
+
+function emailRecorder(outcome: ChannelSendResult & { providerMessageId?: string } = { channel: "email" as NotifyChannelId, status: "sent", providerMessageId: "em_1" }) {
+  const sent: Array<{ message: NotifyMessage; deliveryId?: string }> = [];
+  const channel: NotifyChannel = { id: "email" as NotifyChannelId, canReach: async () => true, send: async (_person, message, context) => { sent.push({ message, deliveryId: context?.deliveryId }); return outcome; } };
+  return { channel, sent };
+}
+
+describe("notification records", () => {
+  it("saves the agent's own text, private, with its sender and origin, and one sent delivery per channel", async () => {
+    const { channel: email, sent } = emailRecorder();
+    const db = newDb();
+    const { call } = setup({ db, email });
+    const out = await call(asRun(toMembers), "people.notify", { personId: UZO, text: "Your items.", subject: "Draft: Meeting follow-ups", channels: ["slack", "email"] });
+    expect(out).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] } });
+    const notificationId = (out as { output: { notificationId: string } }).output.notificationId;
+    expect(db.tables.notifications).toHaveLength(1);
+    expect(db.tables.notifications![0]).toMatchObject({ id: notificationId, recipient_person_id: UZO, sender_user_id: OWNER, kind: "message", subject: "Meeting follow-ups", body_text: "Your items.", visibility: "private", agent_run_id: RUN, scheduled_task_id: TASK });
+    expect(db.tables.notifications![0]!.body_text).not.toContain("Draft agent");
+    expect(db.tables.notification_deliveries!.map((row) => [row.channel, row.status])).toEqual([["slack", "sent"], ["email", "sent"]]);
+    expect(db.tables.notification_deliveries![1]).toMatchObject({ provider_message_id: "em_1", attempt_count: 1 });
+    expect(sent[0]!.deliveryId).toBe(db.tables.notification_deliveries![1]!.id as string);
+    expect(JSON.stringify(out)).not.toContain("em_1");
+  });
+
+  it("makes the stored text and subject from html and the text", async () => {
+    const { channel: email } = emailRecorder();
+    const db = newDb();
+    const { call } = setup({ db, email });
+    await call(asUser(), "people.notify", { personId: IZA, html: "<p>Hello <b>there</b></p>", channels: ["email"] });
+    expect(db.tables.notifications![0]).toMatchObject({ body_text: "Hello there", body_html: "<p>Hello <b>there</b></p>", subject: "Hello there", sender_user_id: OWNER, agent_run_id: null });
+  });
+
+  it("refuses a call with no body", async () => {
+    const db = newDb();
+    const { call } = setup({ db });
+    expect(await call(asUser(), "people.notify", { personId: IZA, subject: "x" })).toMatchObject({ status: "refused", code: "invalid_input" });
+    expect(db.tables.notifications).toHaveLength(0);
+  });
+
+  it("marks a delivery failed with a bounded, redacted detail when a channel throws", async () => {
+    const broken: NotifyChannel = { id: "slack", canReach: async () => true, send: async () => { throw new Error(`token=abc123 ${"x".repeat(600)}`); } };
+    const db = newDb();
+    const { call } = setup({ db, channel: broken });
+    await call(asUser(), "people.notify", { personId: IZA, text: "x" });
+    const row = db.tables.notification_deliveries![0]!;
+    expect(row).toMatchObject({ status: "failed", error_code: "provider_error" });
+    expect(String(row.error_detail).length).toBeLessThanOrEqual(500);
+    expect(String(row.error_detail)).not.toContain("abc123");
+  });
+
+  it("records a channel that cannot reach the person as a failed delivery", async () => {
+    const { channel } = recordingChannel({ channel: "slack", status: "sent" }, false);
+    const db = newDb();
+    const { call } = setup({ db, channel });
+    await call(asUser(), "people.notify", { personId: IZA, text: "x" });
+    expect(db.tables.notification_deliveries![0]).toMatchObject({ status: "failed", error_code: "not_reachable", attempt_count: 0 });
+  });
+
+  it("returns the same notification and sends nothing new for the same key and content", async () => {
+    const { call, sent, db } = setup();
+    const first = await call(asUser(), "people.notify", { personId: IZA, text: "once", idempotencyKey: "meeting-1" });
+    const second = await call(asUser(), "people.notify", { personId: IZA, text: "once", idempotencyKey: "meeting-1" });
+    expect((second as { output: unknown }).output).toEqual((first as { output: unknown }).output);
+    expect(sent).toHaveLength(1);
+    expect(db.tables.notifications).toHaveLength(1);
+    expect(db.tables.notification_deliveries).toHaveLength(1);
+  });
+
+  it("refuses the same key with different content or another recipient", async () => {
+    const { call, sent } = setup();
+    await call(asUser(), "people.notify", { personId: IZA, text: "once", idempotencyKey: "k" });
+    expect(await call(asUser(), "people.notify", { personId: IZA, text: "changed", idempotencyKey: "k" })).toMatchObject({ status: "refused", code: "idempotency_conflict" });
+    expect(await call(asUser(), "people.notify", { personId: UZO, text: "once", idempotencyKey: "k" })).toMatchObject({ status: "refused", code: "idempotency_conflict" });
+    expect(sent).toHaveLength(1);
+  });
+
+  it("sends only the channels a saved notification has no delivery for", async () => {
+    const { channel: email, sent: emailSent } = emailRecorder();
+    const slack = recordingChannel();
+    const db = newDb();
+    const { call } = setup({ db, channel: slack.channel, email });
+    await call(asUser(), "people.notify", { personId: IZA, text: "hi", idempotencyKey: "k", channels: ["slack"] });
+    const hash = db.tables.notifications![0]!.content_hash;
+    // The retry asks for both channels, so its content differs and is refused. Rebuild the saved row as if the first try had asked for both and stopped after Slack.
+    db.tables.notifications![0]!.content_hash = (await import("node:crypto")).createHash("sha256").update(JSON.stringify([IZA, "hi", "hi", null, null, ["email", "slack"]])).digest("hex");
+    expect(hash).not.toBe(db.tables.notifications![0]!.content_hash);
+    const retry = await call(asUser(), "people.notify", { personId: IZA, text: "hi", idempotencyKey: "k", channels: ["slack", "email"] });
+    expect(retry).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] } });
+    expect(slack.sent).toHaveLength(1);
+    expect(emailSent).toHaveLength(1);
+    expect(db.tables.notification_deliveries).toHaveLength(2);
+  });
+
+  it("derives a key for a run so an identical message in one run is saved once, and not for a person", async () => {
+    const run = setup();
+    await run.call(asRun(toMembers), "people.notify", { personId: IZA, text: "same" });
+    await run.call(asRun(toMembers), "people.notify", { personId: IZA, text: "same" });
+    expect(run.db.tables.notifications).toHaveLength(1);
+    expect(run.sent).toHaveLength(1);
+    const person = setup();
+    await person.call(asUser(), "people.notify", { personId: IZA, text: "same" });
+    await person.call(asUser(), "people.notify", { personId: IZA, text: "same" });
+    expect(person.db.tables.notifications).toHaveLength(2);
+  });
+
+  it("sends nothing and logs when the notification cannot be saved", async () => {
+    const db = newDb();
+    const { call, sent } = setup({ db, failInsertInto: "notifications" });
+    expect(await call(asUser(), "people.notify", { personId: IZA, text: "x" })).toMatchObject({ status: "refused", code: "notify_failed" });
+    expect(sent).toHaveLength(0);
+    expect(db.tables.errors!.some((row) => (row.detail_json as { code?: string }).code === "notify_record_failed")).toBe(true);
   });
 });
 

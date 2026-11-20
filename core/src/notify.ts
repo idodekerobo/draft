@@ -29,4 +29,5 @@ export type ChannelSendResult =
   | { channel: NotifyChannelId; status: "sent" }
   | { channel: NotifyChannelId; status: "failed"; code: "not_reachable" | "provider_error" };
 
-export type NotifyResult = { results: ReadonlyArray<ChannelSendResult> };
+/** `notificationId` is Draft's own id for the notification. Use it to check delivery later. */
+export type NotifyResult = { notificationId?: string; results: ReadonlyArray<ChannelSendResult> };

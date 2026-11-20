@@ -1,10 +1,10 @@
-/** What Draft says about an email. Higher rank is later in the life of a message, and a status never moves down. */
-export const EMAIL_STATUSES = ["accepted", "delayed", "delivered", "failed", "bounced", "complained"] as const;
+/** The words `notification_deliveries.status` uses. `sent` means the provider accepted it. Higher rank is later, and a status never moves down. */
+export const EMAIL_STATUSES = ["queued", "sent", "delayed", "delivered", "failed", "bounced", "complained"] as const;
 export type EmailStatus = (typeof EMAIL_STATUSES)[number];
 
-const RANK: Record<EmailStatus, number> = { accepted: 0, delayed: 1, delivered: 2, failed: 3, bounced: 3, complained: 3 };
+const RANK: Record<EmailStatus, number> = { queued: 0, sent: 1, delayed: 2, delivered: 3, failed: 4, bounced: 4, complained: 4 };
 
-/** Maps Resend's `last_event`. Open and click imply delivery. Anything unknown stays `accepted`. */
+/** Maps Resend's `last_event`. Open and click imply delivery. Anything unknown stays `sent`. */
 export function emailStatusFromResend(lastEvent: string | null | undefined): EmailStatus {
   switch (lastEvent) {
     case "delivered":
@@ -22,7 +22,7 @@ export function emailStatusFromResend(lastEvent: string | null | undefined): Ema
     case "suppressed":
       return "failed";
     default:
-      return "accepted";
+      return "sent";
   }
 }
 
