@@ -36,6 +36,8 @@ describe("integration safe output", () => {
       "expired",
       "forbidden",
       "github_installation_conflict",
+      "google_already_connected",
+      "google_oauth_not_configured",
       "interrupted",
       "invalid_connect_usage",
       "invalid_credential_input",

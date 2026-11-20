@@ -9,6 +9,7 @@ import { runClaudeCodeConnect } from "../integrations/providers/claude-code.ts";
 import { runSlackConnect } from "../integrations/providers/slack.ts";
 import { runFirefliesConnect } from "../integrations/providers/fireflies.ts";
 import { runGranolaConnect } from "../integrations/providers/granola.ts";
+import { runGoogleConnect } from "../integrations/providers/google.ts";
 import { CredentialInputError, parseCredentialSourceOptions, type CredentialSource } from "../integrations/credentials.ts";
 
 interface ParsedListArgs {
@@ -30,12 +31,12 @@ function parseListArgs(args: string[]): ParsedListArgs {
     : { json, error: true };
 }
 
-function parseGithubConnectArgs(args: string[]): ParsedGithubConnectArgs {
+function parseGithubConnectArgs(args: string[], provider: "github" | "google" = "github"): ParsedGithubConnectArgs {
   const jsonCount = args.filter((arg) => arg === "--json").length;
   const noOpenCount = args.filter((arg) => arg === "--no-open").length;
   const json = jsonCount > 0;
   const noOpen = noOpenCount > 0;
-  const valid = args[0] === "github" &&
+  const valid = args[0] === provider &&
     jsonCount <= 1 &&
     noOpenCount <= 1 &&
     args.slice(1).every((arg) => arg === "--json" || arg === "--no-open");
@@ -258,6 +259,13 @@ async function runIntegrationsConnect(rawArgs: string[]): Promise<number> {
   }
   // The provider goes first so each provider's own parser below sees the grammar it was written for.
   const args = [taken.provider, ...taken.rest];
+  // Google sign-in always happens in the browser, so agents and people share one flow.
+  if (args[0] === "google") {
+    const parsed = parseGithubConnectArgs(args, "google");
+    const output = createIntegrationOutput({ json: parsed.json });
+    if (parsed.error) return output.error("invalid_usage");
+    return runGoogleConnect({ noOpen: parsed.noOpen }, output);
+  }
   // Agents and scripts get a link to open. An explicit credential flag keeps the
   // existing key-reading flow, so a human who passes one still gets it.
   const agentMode = !hasExplicitCredentialSource(args) && (args.includes("--json") || !isInteractiveTerminal());

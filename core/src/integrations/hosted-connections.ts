@@ -5,6 +5,7 @@ export const HOSTED_CONNECTION_PROVIDERS = [
   "fireflies",
   "granola",
   "claude-code",
+  "google",
 ] as const;
 
 export type HostedConnectionProvider = typeof HOSTED_CONNECTION_PROVIDERS[number];
@@ -72,6 +73,7 @@ export function normalizeBackfillSummary(value: unknown): HostedConnectionBackfi
 
 function normalizedProvider(value: unknown): HostedConnectionProvider | null {
   if (value === "claude_code") return "claude-code";
+  if (value === "gmail") return "google";
   return HOSTED_CONNECTION_PROVIDERS.includes(value as HostedConnectionProvider)
     ? value as HostedConnectionProvider
     : null;

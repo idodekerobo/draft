@@ -148,7 +148,6 @@ export async function handleGoogleCallback(
       });
     }
 
-    // TODO: complete the connect request here once connect links can start a Google sign-in.
     resolveGoogleOAuthSession(state, { status: "connected" });
     return oauthResultResponse({
       kind: "success",

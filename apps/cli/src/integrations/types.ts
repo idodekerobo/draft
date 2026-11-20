@@ -11,6 +11,7 @@ export const PROVIDER_LABELS: Record<HostedConnectionProvider, string> = {
   fireflies: "Fireflies",
   granola: "Granola",
   "claude-code": "Claude Code",
+  google: "Google",
 };
 
 export function isDisconnectProvider(value: string): value is DisconnectProvider {

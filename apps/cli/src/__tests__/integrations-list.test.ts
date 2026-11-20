@@ -358,7 +358,7 @@ describe("connections help and completion", () => {
     expect(bash.exitCode).toBe(0);
     expect(bash.stdout).toContain('commands="add auth context people routines activity sources sessions skills connections update uninstall completion"');
     expect(bash.stdout).toContain('compgen -W "list connect disconnect join leave read search post"');
-    expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola claude-code gmail google-drive"');
+    expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola claude-code google gmail google-drive"');
     expect(bash.stdout).toContain('compgen -W "list options create update delete run runs"');
     expect(bash.stdout).toContain('connections:connect) flags="--provider --json --wait --no-open');
     expect(bash.stdout).toContain('connections:list) flags="--provider --available --query --limit --cursor --json"');
