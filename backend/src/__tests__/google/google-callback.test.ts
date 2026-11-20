@@ -229,6 +229,26 @@ describe("handleGoogleCallback", () => {
     expect(db.tables.connections!.find((row) => row.provider === "google_drive")!.cursor_json).not.toHaveProperty("reauth_required");
   });
 
+  it("does not bring back a disconnected Drive on a Gmail sign-in, but does on a Drive sign-in", async () => {
+    const seedDb = () => createFakeDb({
+      connections: [
+        { id: "conn-2", workspace_id: "ws-1", provider: "google_drive", connection_key: "sub-1", connected_by_user_id: "user-1", status: "revoked" },
+      ],
+    });
+    const both = () => mock(async () => tokens({ scopes: ["openid", "email", GMAIL_READONLY_SCOPE, DRIVE_READONLY_SCOPE] }));
+
+    const gmailDb = seedDb();
+    const gmailDeps = makeDeps(gmailDb, { exchangeCode: both() });
+    await handleGoogleCallback(request(createGoogleOAuthSession("ws-1", "user-1", "v", "gmail")), gmailDeps);
+    expect(gmailDb.tables.connections!.find((row) => row.provider === "google_drive")!.status).toBe("revoked");
+    expect(gmailDb.tables.connections!.find((row) => row.provider === "gmail")!.status).toBe("active");
+    expect(gmailDeps.registerDriveSyncTask).not.toHaveBeenCalled();
+
+    const driveDb = seedDb();
+    await handleGoogleCallback(request(createGoogleOAuthSession("ws-1", "user-1", "v", "google_drive")), makeDeps(driveDb, { exchangeCode: both() }));
+    expect(driveDb.tables.connections!.find((row) => row.provider === "google_drive")!.status).toBe("active");
+  });
+
   it("refuses a Google account a teammate already connected for Drive", async () => {
     const db = createFakeDb({
       connections: [

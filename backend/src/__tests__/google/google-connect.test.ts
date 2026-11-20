@@ -9,7 +9,7 @@ process.env.GITHUB_APP_PRIVATE_KEY = process.env.GITHUB_APP_PRIVATE_KEY ?? "key"
 process.env.GITHUB_APP_WEBHOOK_SECRET = process.env.GITHUB_APP_WEBHOOK_SECRET ?? "secret";
 
 const { createGoogleConnectSession, pollGoogleConnectSession } = await import("../../routes/google-connect");
-const { createGoogleOAuthSession, resetGoogleOAuthSessionStore, resolveGoogleOAuthSession } = await import(
+const { createGoogleOAuthSession, getGoogleOAuthSession, resetGoogleOAuthSessionStore, resolveGoogleOAuthSession } = await import(
   "../../auth/google-oauth-state-store"
 );
 const { createFakeDb } = await import("./fake-db");
@@ -58,6 +58,13 @@ describe("createGoogleConnectSession", () => {
     });
     const response = await createGoogleConnectSession("ws-1", "user-1", { settings: () => settings, db: db.client });
     expect(response.status).toBe(200);
+  });
+
+  it("remembers which product the sign-in was started for", async () => {
+    const db = createFakeDb();
+    const response = await createGoogleConnectSession("ws-1", "user-1", { settings: () => settings, db: db.client }, "google_drive");
+    const { code } = (await response.json()) as { code: string };
+    expect(getGoogleOAuthSession(code)).toMatchObject({ status: "pending", product: "google_drive" });
   });
 
   it("ignores a teammate's Gmail connection", async () => {

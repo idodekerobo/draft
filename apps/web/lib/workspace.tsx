@@ -128,9 +128,9 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
           return { ok: false, channelIds: [], failed: [], error: errorMessage(error, "Could not update Slack channels.") };
         }
       },
-      startGoogleConnect: async () => {
+      startGoogleConnect: async (input) => {
         try {
-          const body = await apiFetch<{ code: string; authUrl: string }>(`/workspaces/${workspaceId}/google/connect-sessions`, { method: "POST" });
+          const body = await apiFetch<{ code: string; authUrl: string }>(`/workspaces/${workspaceId}/google/connect-sessions`, { method: "POST", body: JSON.stringify({ product: input?.product }) });
           return { ok: true, ...body };
         } catch (error) {
           return { ok: false, error: error instanceof ApiError ? error.code : undefined };

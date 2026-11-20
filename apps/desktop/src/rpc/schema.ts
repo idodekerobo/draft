@@ -331,7 +331,7 @@ export type AppRPCType = {
       connectLinear: { params: { apiKey: string }; response: ActionResult };
 
       /** Start a Google sign-in for the caller's own Gmail. Returns the code to poll and the page to open. */
-      startGoogleConnect: { params: void; response: ActionResult & { code?: string; authUrl?: string } };
+      startGoogleConnect: { params: { product?: "gmail" | "google_drive" }; response: ActionResult & { code?: string; authUrl?: string } };
 
       /** Poll a Google sign-in started by startGoogleConnect. */
       pollGoogleConnect: { params: { code: string }; response: { status: "pending" | "connected" | "error"; message?: string } };

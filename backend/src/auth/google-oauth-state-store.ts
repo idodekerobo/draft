@@ -6,17 +6,21 @@ export interface GoogleOAuthSessionResult {
   errorMessage?: string;
 }
 
+/** The one Google product a sign-in was started for. Unset when it was started for Google as a whole. */
+export type GoogleConnectProduct = "gmail" | "google_drive";
+
 interface PendingGoogleOAuthSession {
   workspaceId: string;
   userId: string;
   codeVerifier: string;
+  product?: GoogleConnectProduct;
   createdAt: number;
   result?: GoogleOAuthSessionResult;
 }
 
 export type GoogleOAuthSessionState =
   | { status: "expired_or_unknown" }
-  | { status: "pending"; workspaceId: string; userId: string; codeVerifier: string }
+  | { status: "pending"; workspaceId: string; userId: string; codeVerifier: string; product?: GoogleConnectProduct }
   | {
       status: "connected" | "error";
       workspaceId: string;
@@ -38,12 +42,12 @@ function sweepExpired(): void {
 
 // Process-local like github-install-store.ts: replace with shared storage
 // before scaling the backend horizontally.
-export function createGoogleOAuthSession(workspaceId: string, userId: string, codeVerifier: string): string {
+export function createGoogleOAuthSession(workspaceId: string, userId: string, codeVerifier: string, product?: GoogleConnectProduct): string {
   sweepExpired();
   for (let attempt = 0; attempt < 10; attempt++) {
     const state = randomBytes(16).toString("hex");
     if (!pending.has(state)) {
-      pending.set(state, { workspaceId, userId, codeVerifier, createdAt: now() });
+      pending.set(state, { workspaceId, userId, codeVerifier, createdAt: now(), ...(product ? { product } : {}) });
       return state;
     }
   }
@@ -69,6 +73,7 @@ export function getGoogleOAuthSession(state: string): GoogleOAuthSessionState {
       workspaceId: entry.workspaceId,
       userId: entry.userId,
       codeVerifier: entry.codeVerifier,
+      ...(entry.product ? { product: entry.product } : {}),
     };
   }
   return {

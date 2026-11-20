@@ -88,7 +88,8 @@ export interface IntegrationActions {
   connectFireflies: (input: { apiKey: string }) => Promise<WebhookConnectionResult>;
   connectGranola: (input: { apiKey: string; accountKind: "personal" | "workspace" }) => Promise<ActionResult>;
   connectLinear: (input: { apiKey: string }) => Promise<ActionResult>;
-  startGoogleConnect: () => Promise<GoogleConnectStart>;
+  /** product: the Google product this sign-in is for, so a product the person disconnected stays off. */
+  startGoogleConnect: (input?: { product?: "gmail" | "google_drive" }) => Promise<GoogleConnectStart>;
   pollGoogleConnect: (code: string) => Promise<GoogleConnectPoll>;
   listSyncedGoogleDriveFolders: () => Promise<SyncedGoogleDriveFoldersResult>;
   /** parent is "shared" for shared drives, "root" for My Drive, or a folder id. */

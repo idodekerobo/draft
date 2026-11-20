@@ -20,7 +20,7 @@ export function DesktopSharedProviders({ children }: { children: ReactNode }) {
     listDriveFolderOptions: (input) => rpc.request.listDriveFolderOptions(input),
     addSyncedGoogleDriveFolder: (input) => rpc.request.addSyncedGoogleDriveFolder(input),
     removeSyncedGoogleDriveFolder: (input) => rpc.request.removeSyncedGoogleDriveFolder(input),
-    startGoogleConnect: () => rpc.request.startGoogleConnect(),
+    startGoogleConnect: (input) => rpc.request.startGoogleConnect({ product: input?.product }),
     pollGoogleConnect: (code) => rpc.request.pollGoogleConnect({ code }),
     connectSessionTracking: async () => ({ ok: false, error: "Manage coding sessions with the Draft CLI." }),
     selectSessionRepoFolder: async () => ({}),

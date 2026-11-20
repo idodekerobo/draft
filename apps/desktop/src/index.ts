@@ -600,11 +600,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startGoogleConnect: async () => {
+      startGoogleConnect: async ({ product }) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          const body = await fetchServerJSON<{ code: string; authUrl: string }>(`workspaces/${workspaceId}/google/connect-sessions`, { method: "POST" });
+          const body = await fetchServerJSON<{ code: string; authUrl: string }>(`workspaces/${workspaceId}/google/connect-sessions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ product }),
+          });
           return { ok: true, ...body };
         } catch (err) {
           return { ok: false, error: err instanceof ServerError ? err.code : undefined };

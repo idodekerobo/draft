@@ -57,7 +57,7 @@ export function GoogleConnectPanel({ product = "gmail", hasGmail = false, needsR
     setError(null);
     setPhase("starting");
     try {
-      const start = await startGoogleConnect();
+      const start = await startGoogleConnect({ product: copy.source });
       if (!start.ok || !start.code || !start.authUrl) {
         setError(gmailErrorMessage(start.error, "Could not start the Google sign-in. Try again."));
         setPhase("idle");

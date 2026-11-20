@@ -86,8 +86,8 @@ export async function handleGoogleCallback(
     if (!tokens.refreshToken || !tokens.idToken) {
       throw new ConnectRejected("google_no_refresh_token", "Google did not return a refresh token. Try connecting again.");
     }
-    const granted = PRODUCTS.filter((product) => tokens.scopes.includes(product.scope));
-    if (granted.length === 0) {
+    const scoped = PRODUCTS.filter((product) => tokens.scopes.includes(product.scope));
+    if (scoped.length === 0) {
       throw new ConnectRejected("google_scope_missing", "Gmail or Google Drive access was not granted. Allow at least one and try again.");
     }
     const identity = await deps.verifyIdToken(tokens.idToken, settings.clientId);
@@ -96,13 +96,21 @@ export async function handleGoogleCallback(
       .from("connections")
       .select("id, provider, connection_key, credential_id, connected_by_user_id, status, cursor_json")
       .eq("workspace_id", session.workspaceId)
-      .in("provider", PRODUCTS.map((product) => product.provider))
-      .neq("status", "revoked");
+      .in("provider", PRODUCTS.map((product) => product.provider));
     if (rowsError) throw rowsError;
-    const live = (rows ?? []) as Pick<
+    const all = (rows ?? []) as Pick<
       ConnectionRow,
       "id" | "provider" | "connection_key" | "credential_id" | "connected_by_user_id" | "status" | "cursor_json"
     >[];
+    const live = all.filter((row) => row.status !== "revoked");
+    // Google returns every scope granted before, so a Gmail sign-in carries Drive too. A product the
+    // person disconnected comes back only when this sign-in was for it, or for Google as a whole.
+    const granted = scoped.filter((product) =>
+      !session.product || session.product === product.provider ||
+      !all.some((row) => row.provider === product.provider && row.connection_key === identity.sub && row.status === "revoked"));
+    if (granted.length === 0) {
+      throw new ConnectRejected("google_scope_missing", "Gmail or Google Drive access was not granted. Allow at least one and try again.");
+    }
 
     for (const product of granted) {
       const ofProduct = live.filter((row) => row.provider === product.provider);
