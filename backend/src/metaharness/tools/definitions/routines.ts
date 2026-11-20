@@ -73,6 +73,13 @@ async function refuseMissingConnections(workspaceId: string, needed: string[]): 
   return refuse(`${missing[0]}_not_connected`, `${missing.join(", ")} is not connected. Ask the person whether to connect it, then call connections.connect.`);
 }
 
+/** Gmail is personal, so only the owner's own live connection counts, never a teammate's. */
+async function refuseGmailNotConnected(client: SupabaseClient, workspaceId: string, owner: string): Promise<ToolHandlerResult | null> {
+  const { personalConnectionProviders } = await import("../../../ingestion/gmail/access");
+  if ((await personalConnectionProviders(client, workspaceId, owner)).has("gmail")) return null;
+  return refuse("gmail_not_connected", "Gmail is not connected for the routine's owner. Ask the person whether to connect it, then call connections.connect with provider google.");
+}
+
 /** The routine as routines.list shows it, so a write answers with exactly what was stored. */
 async function savedRoutine(workspaceId: string, callerId: string | undefined, taskId: string) {
   return (await (await scheduleService()).listRoutines(workspaceId, callerId)).find((routine) => routine.id === taskId) ?? null;
@@ -107,6 +114,7 @@ function givenAccess(patch: RoutinePatch, agent: AgentRoutineConfig | undefined)
   if (!agent) return {};
   return {
     ...(patch.canNotify !== undefined ? { canNotify: agent.canNotify } : {}),
+    ...(patch.canReadGmail !== undefined ? { canReadGmail: agent.canReadGmail } : {}),
     ...(patch.postChannels !== undefined ? { postChannels: agent.postChannels } : {}),
     ...(patch.github !== undefined ? { github: agent.github } : {}),
     ...(patch.builtInTools !== undefined ? { harness: agent.harness, builtInTools: agent.builtInTools } : {}),
@@ -157,6 +165,7 @@ async function createRoutine(client: SupabaseClient, actor: RoutineCaller, input
     ...(model !== undefined ? { model } : {}),
     reasoningEffort,
     canNotify: input.canNotify ?? from?.canNotify,
+    canReadGmail: input.canReadGmail ?? from?.canReadGmail,
     postChannels: input.postChannels ?? from?.postChannels,
     github: input.github ?? from?.github,
     builtInTools: input.builtInTools ?? (inherit ? effectiveBuiltInTools(inherit) : undefined),
@@ -166,6 +175,10 @@ async function createRoutine(client: SupabaseClient, actor: RoutineCaller, input
 
   const missing = await refuseMissingConnections(actor.workspaceId, routineProvidersForWhen(checked.when, config));
   if (missing) return missing;
+  if (config.canReadGmail) {
+    const gmailMissing = await refuseGmailNotConnected(client, actor.workspaceId, owner);
+    if (gmailMissing) return gmailMissing;
+  }
   const { routineAgentProblem } = await import("../../../routines/agent-status");
   const agentProblem = await routineAgentProblem(client, actor.workspaceId, config.harness);
   if (agentProblem) return refuse(agentProblem.code, agentProblem.message);
@@ -240,6 +253,7 @@ export function createRoutineTools(client: SupabaseClient) {
             access: {
               postChannels: "\"joined\" for any channel Draft's bot is in, or a list of channel names; null (update only) turns posting off",
               canNotify: "true lets it message teammates on Slack",
+              canReadGmail: "true lets it search and read the owner's own Gmail; refused with gmail_not_connected until the owner connects Google",
               builtInTools: "the agent's built-in tools it may use, from agents[].builtInTools; a new routine gets them all when left out",
               github: "{ repos: [\"owner/repo\"], access: \"read\" | \"write\" }; write lets it open pull requests; null (update only) turns it off",
               slackChannels: slack,
@@ -282,6 +296,10 @@ export function createRoutineTools(client: SupabaseClient) {
         // Only what this change adds is checked, so editing the title of a routine with a lost connection still works.
         const missing = await refuseMissingConnections(actor.workspaceId, routineProvidersForWhen(input.patch.when ?? {}, input.patch));
         if (missing) return missing;
+        if (input.patch.canReadGmail) {
+          const gmailMissing = await refuseGmailNotConnected(client, actor.workspaceId, task.task.created_by_user_id ?? owner);
+          if (gmailMissing) return gmailMissing;
+        }
         const { validatePatch } = await import("../../../routines/validate-patch");
         const config = task.task.task_type === "agent_routine" ? parseAgentRoutineConfig(task.task.config_json) : null;
         const patch = validatePatch(input.patch, task.definition.editable, config);

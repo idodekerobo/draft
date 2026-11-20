@@ -308,6 +308,23 @@ describe("routines.create from a person", () => {
   });
 });
 
+describe("routines with canReadGmail", () => {
+  const GMAIL_REFUSAL = "Gmail is not connected for the routine's owner. Ask the person whether to connect it, then call connections.connect with provider google.";
+  const daily = { schedule: { preset: "daily", time: "09:00", timezone: "UTC" } };
+
+  it("refuses create and update when the owner has no Gmail connection, even when a teammate has one", async () => {
+    seed("connections", [{ id: "c-1", workspace_id: WS, provider: "gmail", connected_by_user_id: STRANGER, status: "active" }]);
+    refusedWith(await call("routines.create", asOwner, { title: "Inbox", prompt: "Read mail.", harness: "claude", canReadGmail: true, when: daily }), "gmail_not_connected", GMAIL_REFUSAL);
+    refusedWith(await call("routines.update", asOwner, { taskId: P, patch: { canReadGmail: true } }), "gmail_not_connected", GMAIL_REFUSAL);
+  });
+
+  it("saves canReadGmail when the owner has their own Gmail connection", async () => {
+    seed("connections", [{ id: "c-1", workspace_id: WS, provider: "gmail", connected_by_user_id: OWNER, status: "degraded" }]);
+    expect((await call("routines.create", asOwner, { title: "Inbox", prompt: "Read mail.", harness: "claude", canReadGmail: true, when: daily })).status).toBe("ok");
+    expect(table("scheduled_tasks").find((task) => (task.config_json as Row).title === "Inbox")!.config_json).toMatchObject({ canReadGmail: true });
+  });
+});
+
 describe("the checks behind what a run may manage", () => {
   it("lets a run manage what its own chain made, including what a sibling run of the same routine made", async () => {
     seed("scheduled_tasks", [madeByRun(CHAIN_ROUTINE, PARENT, RUN_1)]);
