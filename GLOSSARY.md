@@ -87,3 +87,5 @@ When you add a concept, add it here first.
 - **Notification**: something Draft tells a person, in the app, by email or in Slack. Table `notifications`.
   Not an Event, an Approval, or an inbox event (`agent_event_inbox`).
 - **Digest**: a batched email of notifications, on a schedule the person sets.
+- **Delivery**: one attempt to send a notification on one channel (Slack or email), with its status. Table
+  `notification_deliveries`. One notification can have several deliveries. Not a Digest.
