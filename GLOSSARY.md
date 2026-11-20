@@ -77,3 +77,10 @@ When you add a concept, add it here first.
 - **Root conversation**: session events without a subagent identity, shown in the main session timeline.
 - **Subagent**: an agent transcript identified by `payload.agent_id` within one session; its display name is not its identity.
 - **Session view**: a scoped transcript page with supporting events and optional current state. Read-through sequence records how far a filtered read has examined the session, independently of displayed events.
+
+## Home and notifications
+
+- **Home**: the first screen after sign-in. It shows what needs a person, what Draft did, and a box to tell the agent what to do.
+- **Notification**: something Draft tells a person, in the app, by email or in Slack. Table `notifications`.
+  Not an Event, an Approval, or an inbox event (`agent_event_inbox`).
+- **Digest**: a batched email of notifications, on a schedule the person sets.
