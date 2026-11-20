@@ -3,6 +3,7 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import { auth } from "../auth/better-auth";
 import { loadConfig } from "../config";
 import { buildMcpServer } from "./tools";
+import { recordRouteError } from "../errors/route-error";
 
 const config = loadConfig();
 
@@ -17,7 +18,7 @@ const mcpHttpHandler = createMcpHandler((ctx) => {
 });
 
 /** Verifies the bearer token against Better Auth's JWKS and forwards the claims as MCP AuthInfo. */
-const protectedHandler = requireMcpAuth(
+const authenticatedHandler = requireMcpAuth(
   auth,
   async (request, claims) => {
     const sub = typeof claims.sub === "string" ? claims.sub : undefined;
@@ -35,6 +36,32 @@ const protectedHandler = requireMcpAuth(
   { resource: config.mcpResourceUrl, requiredScopes: ["read", "write"] },
 );
 
-export const GET = protectedHandler;
-export const POST = protectedHandler;
-export const DELETE = protectedHandler;
+async function loggedHandler(request: Request): Promise<Response> {
+  try {
+    const response = await authenticatedHandler(request);
+    if (response.status >= 400) {
+      recordRouteError({
+        workspaceId: null,
+        allowUnattributed: true,
+        operation: response.status === 401 || response.status === 403 ? "auth" : "read",
+        errorCode: "mcp_request_rejected",
+        detail: { method: request.method, status: response.status },
+      });
+    }
+    return response;
+  } catch (error) {
+    recordRouteError({
+      workspaceId: null,
+      allowUnattributed: true,
+      operation: "auth",
+      errorCode: "mcp_request_failed",
+      error,
+      detail: { method: request.method },
+    });
+    throw error;
+  }
+}
+
+export const GET = loggedHandler;
+export const POST = loggedHandler;
+export const DELETE = loggedHandler;
