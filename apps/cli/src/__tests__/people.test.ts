@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { rmSync } from "fs";
+import { rmSync, writeFileSync } from "fs";
+import { join } from "path";
 import { createMockBackend, refusal } from "./helpers/mock-backend.ts";
 import { makeHome, runCli, seedCliAuth } from "./helpers/cli-runner.ts";
 
@@ -17,6 +18,7 @@ afterEach(() => {
 });
 
 const ID = "11111111-1111-4111-8111-111111111111";
+const NOTIFICATION = "22222222-2222-4222-8222-222222222222";
 const uzo = { id: ID, displayName: "Uzo", status: "active", isUser: true, reachable: { slack: true } };
 const cory = { id: "22222222-2222-4222-8222-222222222222", displayName: "Cory Banks", status: "pending", isUser: false, reachable: { slack: false } };
 
@@ -170,6 +172,59 @@ describe("draft people notify", () => {
 
   test("needs a person and a message", async () => {
     expect((await run(["notify", "uzo"])).exitCode).toBe(2);
+  });
+
+  test("sends an email with a subject, an HTML file and a key, and points at the status command", async () => {
+    let seen: Record<string, unknown> = {};
+    const file = join(home, "notification.html");
+    writeFileSync(file, "<p>Here are your follow-ups</p>");
+    backend.state.toolOutputs["people.notify"] = (input) => { seen = input; return { notificationId: NOTIFICATION, results: [{ channel: "email", status: "sent" }] }; };
+    const result = await run(["notify", ID, "--channel", "email", "--subject", "Your meeting follow-ups", "--html-file", file, "--idempotency-key", "meeting-123-followups"]);
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({ personId: ID, html: "<p>Here are your follow-ups</p>", subject: "Your meeting follow-ups", idempotencyKey: "meeting-123-followups", channels: ["email"] });
+    expect(result.stdout).toContain("email: sent");
+    expect(result.stdout).toContain(`draft people notification-status ${NOTIFICATION}`);
+  });
+
+  test("takes several channels, and keeps the notification id in JSON output", async () => {
+    let seen: Record<string, unknown> = {};
+    backend.state.toolOutputs["people.notify"] = (input) => { seen = input; return { notificationId: NOTIFICATION, results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] }; };
+    const result = await run(["notify", ID, "hello", "--channel", "slack,email", "--json"]);
+    expect(seen).toMatchObject({ channels: ["slack", "email"] });
+    expect(JSON.parse(result.stdout)).toMatchObject({ notificationId: NOTIFICATION, results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] });
+  });
+
+  test("fails clearly when the HTML file cannot be read", async () => {
+    const result = await run(["notify", ID, "--html-file", join(home, "missing.html"), "--json"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("html_file_unreadable");
+  });
+
+  test("--help names text and HTML modes, the subject prefix, idempotency and the status command", async () => {
+    const result = await run(["notify", "--help"]);
+    expect(result.exitCode).toBe(0);
+    for (const phrase of ["--html-file", "Draft: ", "Draft: New message", "--idempotency-key", "notification-status", "plain text is made from the HTML"]) expect(result.stdout).toContain(phrase);
+  });
+});
+
+describe("draft people notification-status", () => {
+  test("prints one line per channel", async () => {
+    let seen: Record<string, unknown> = {};
+    backend.state.toolOutputs["people.notification_status"] = (input) => { seen = input; return { notificationId: NOTIFICATION, refreshed: true, deliveries: [{ channel: "email", status: "delivered", errorCode: null }, { channel: "slack", status: "failed", errorCode: "not_reachable" }] }; };
+    const result = await run(["notification-status", NOTIFICATION]);
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({ notificationId: NOTIFICATION });
+    expect(result.stdout).toBe("email: delivered\nslack: failed (not_reachable)");
+  });
+
+  test("says when the latest status could not be fetched", async () => {
+    backend.state.toolOutputs["people.notification_status"] = () => ({ notificationId: NOTIFICATION, refreshed: false, deliveries: [{ channel: "email", status: "sent", errorCode: null }] });
+    expect((await run(["notification-status", NOTIFICATION])).stdout).toContain("last saved one");
+  });
+
+  test("needs a notification id", async () => {
+    expect((await run(["notification-status"])).exitCode).toBe(2);
+    expect((await run(["notification-status", "not-an-id"])).exitCode).toBe(2);
   });
 });
 

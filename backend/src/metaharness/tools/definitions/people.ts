@@ -3,11 +3,14 @@ import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import { isNotifyChannelId, NOTIFY_CHANNELS, type NotifyChannelId, type NotifyResult } from "draft-core/notify";
+import { resendSettings } from "../../../config";
 import { recordError } from "../../../errors/record-error";
 import { attributionLine } from "../../../notify/attribution";
 import { isFailure, resolvePerson } from "../../../notify/resolve-person";
 import { deliverNotification, originTaskId } from "../../../notify/deliver";
 import { htmlToText, MAX_EMAIL_HTML_CHARS, renderEmail } from "../../../notify/email-render";
+import { emailStatusFromResend, mergeEmailStatus, type EmailStatus } from "../../../notify/email-status";
+import { getResendEmail, type ResendDeps } from "../../../notify/resend";
 import { defaultChannels } from "../../../notify/send";
 import type { NotifyChannel } from "../../../notify/types";
 import { createPerson } from "../../../people/create";
@@ -25,6 +28,8 @@ const PROVIDERS = ["email", "slack", "linear", "github", "whatsapp"] as const;
 const DEFAULT_MAX_CREATES_PER_RUN = 5;
 const DEFAULT_MAX_IDENTITIES_PER_RUN = 10;
 const DEFAULT_MAX_NOTIFIES_PER_RUN = 10;
+/** An email in one of these cannot get better, so Draft stops asking the provider. A delivered one can still turn into a complaint. */
+const FINAL_EMAIL_STATUSES: ReadonlyArray<EmailStatus> = ["failed", "bounced", "complained"];
 
 const IDENTITY_REFUSALS: Record<string, string> = {
   person_not_found: "No person with that id in this workspace.",
@@ -59,9 +64,13 @@ async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "p
   return refuse("limit_reached", `This run has used ${tool} ${max} times, which is its limit. Stop and report what is left.`);
 }
 
-/** Synthesis can maintain the roster; other runs keep their permission and per-run limits. */
-export function createPeopleTools(client: SupabaseClient, deps: { channels?: Record<NotifyChannelId, NotifyChannel> } = {}) {
+/** The people tools. A person needs an account to approve or reject; a run can find, add and add identities within limits. */
+export function createPeopleTools(
+  client: SupabaseClient,
+  deps: { channels?: Record<NotifyChannelId, NotifyChannel>; statusApiKey?: () => string | undefined; resend?: ResendDeps } = {},
+) {
   const channels = deps.channels ?? defaultChannels(client);
+  const statusApiKey = deps.statusApiKey ?? (() => resendSettings().statusApiKey);
   const find = defineTool({
     name: "people.find",
     mcp: true,
@@ -262,6 +271,81 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     },
   });
 
+  const notificationStatus = defineTool({
+    name: "people.notification_status",
+    mcp: true,
+    description:
+      "Check what happened to a message sent with people.notify, by its notificationId. Returns one entry per channel with its status: " +
+      "queued, sent (the provider accepted it), delivered (the recipient's mail server accepted it), delayed, bounced, complained or failed. " +
+      "Delivered does not mean the message was read or reached the inbox. Reading status never sends anything. " +
+      "You can check messages you sent, messages sent for the person you work for, and messages shared with the team. " +
+      "If refreshed is false, the latest status could not be fetched and the saved one is shown.",
+    input: z.object({ notificationId: z.string().uuid() }),
+    auditArguments: (input) => ({ notificationId: input.notificationId }),
+    handler: async ({ input, caller }) => {
+      const workspaceId = callerWorkspaceId(caller);
+      const origin = caller.origin;
+      const callerUserId = origin.kind === "run" ? origin.run.onBehalfOf : origin.userId;
+
+      const { data: found, error } = await client
+        .from("notifications")
+        .select("id, recipient_person_id, sender_user_id, visibility, agent_run_id, created_at")
+        .eq("id", input.notificationId)
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+      if (error) throw error;
+      const notification = found as { id: string; recipient_person_id: string; sender_user_id: string | null; visibility: string; agent_run_id: string | null; created_at: string } | null;
+      const notFound = refuse("not_found", "No notification with that id that you can see.");
+      if (!notification) return notFound;
+
+      // A private notification is read by its sender, the run that made it, and its recipient. Anyone else gets the same answer as for a missing one.
+      let allowed = notification.visibility === "shared" || (callerUserId !== null && notification.sender_user_id === callerUserId) || (origin.kind === "run" && notification.agent_run_id === origin.run.id);
+      if (!allowed && callerUserId) {
+        const { data: recipient, error: recipientError } = await client.from("people").select("user_id").eq("id", notification.recipient_person_id).eq("workspace_id", workspaceId).maybeSingle();
+        if (recipientError) throw recipientError;
+        allowed = (recipient as { user_id: string | null } | null)?.user_id === callerUserId;
+      }
+      if (!allowed) return notFound;
+
+      const { data: rows, error: deliveriesError } = await client
+        .from("notification_deliveries")
+        .select("id, channel, status, provider_message_id, accepted_at, delivered_at, error_code")
+        .eq("notification_id", notification.id)
+        .eq("workspace_id", workspaceId)
+        .order("created_at", { ascending: true });
+      if (deliveriesError) throw deliveriesError;
+      const deliveries = (rows ?? []) as Array<{ id: string; channel: string; status: EmailStatus; provider_message_id: string | null; accepted_at: string | null; delivered_at: string | null; error_code: string | null }>;
+
+      let refreshed = true;
+      const key = statusApiKey();
+      for (const delivery of deliveries) {
+        if (delivery.channel !== "email" || !delivery.provider_message_id || FINAL_EMAIL_STATUSES.includes(delivery.status)) continue;
+        if (!key) { refreshed = false; continue; }
+        try {
+          const latest = await getResendEmail(key, delivery.provider_message_id, deps.resend);
+          const next = mergeEmailStatus(delivery.status, emailStatusFromResend(latest.lastEvent));
+          if (next === delivery.status) continue;
+          const now = new Date().toISOString();
+          const { error: updateError } = await client.from("notification_deliveries").update({ status: next, last_event_at: now, ...(next === "delivered" ? { delivered_at: now } : {}) }).eq("id", delivery.id).eq("workspace_id", workspaceId);
+          if (updateError) throw updateError;
+          delivery.status = next;
+          if (next === "delivered") delivery.delivered_at = now;
+        } catch (refreshError) {
+          refreshed = false;
+          await recordError({ client, workspaceId, agentRunId: origin.kind === "run" ? origin.run.id : null, operation: "execution", code: "notify_status_refresh_failed", message: "people.notification_status could not refresh a delivery", detail: { channel: delivery.channel }, error: refreshError });
+        }
+      }
+
+      const output = {
+        notificationId: notification.id,
+        createdAt: notification.created_at,
+        refreshed,
+        deliveries: deliveries.map((delivery) => ({ channel: delivery.channel, status: delivery.status, acceptedAt: delivery.accepted_at, deliveredAt: delivery.delivered_at, errorCode: delivery.error_code })),
+      };
+      return { status: "ok", output, summary: deliveries.map((delivery) => `${delivery.channel}: ${delivery.status}`).join(", ") };
+    },
+  });
+
   const approve = defineTool({
     name: "people.approve",
     mcp: true,
@@ -295,5 +379,5 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     return { status: "ok", output: { person: result.person }, summary: `${to === "active" ? "approved" : "rejected"} ${result.person.displayName}` };
   }
 
-  return [find, create, addIdentityTool, notify, approve, reject];
+  return [find, create, addIdentityTool, notify, notificationStatus, approve, reject];
 }

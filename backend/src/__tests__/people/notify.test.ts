@@ -332,6 +332,81 @@ describe("notification records", () => {
   });
 });
 
+describe("people.notification_status", () => {
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+  function statusSetup(responses: Array<Response | Error>, key: string | undefined = "re_status") {
+    const { channel: email } = emailRecorder();
+    const db = newDb();
+    const calls: string[] = [];
+    const fetchFn = (async (url: string) => {
+      calls.push(url);
+      const next = responses.shift();
+      if (!next) throw new Error("unexpected call");
+      if (next instanceof Error) throw next;
+      return next;
+    }) as unknown as typeof fetch;
+    const registry = new ToolRegistry(createPeopleTools(fakeClient(db), { channels: { slack: recordingChannel().channel, email } as Record<NotifyChannelId, NotifyChannel>, statusApiKey: () => key, resend: { fetchFn } }));
+    const call = (caller: ToolCaller, tool: string, args: unknown) => invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, caller, tool, args);
+    return { db, call, calls };
+  }
+  const sendEmail = async (s: ReturnType<typeof statusSetup>, caller: ToolCaller = asUser()) =>
+    ((await s.call(caller, "people.notify", { personId: UZO, text: "hi", channels: ["email"] })) as { output: { notificationId: string } }).output.notificationId;
+
+  it("refreshes a sent email from the provider and saves the new status", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "delivered" })]);
+    const notificationId = await sendEmail(s);
+    const out = await s.call(asUser(), "people.notification_status", { notificationId });
+    expect(out).toMatchObject({ status: "ok", output: { notificationId, refreshed: true, deliveries: [{ channel: "email", status: "delivered" }] } });
+    expect(s.calls).toEqual(["https://api.resend.com/emails/em_1"]);
+    expect(s.db.tables.notification_deliveries![0]).toMatchObject({ status: "delivered" });
+    expect(JSON.stringify(out)).not.toContain("em_1");
+  });
+
+  it("never moves a status back and does not ask again for a final one", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "bounced" }), json({ id: "em_1", last_event: "delivered" })]);
+    const notificationId = await sendEmail(s);
+    await s.call(asUser(), "people.notification_status", { notificationId });
+    const again = await s.call(asUser(), "people.notification_status", { notificationId });
+    expect(again).toMatchObject({ output: { deliveries: [{ status: "bounced" }] } });
+    expect(s.calls).toHaveLength(1);
+  });
+
+  it("shows the saved status and logs when the provider cannot be reached or there is no status key", async () => {
+    const down = statusSetup([json({ name: "restricted_api_key" }, 401)]);
+    const id = await sendEmail(down);
+    expect(await down.call(asUser(), "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok", output: { refreshed: false, deliveries: [{ status: "sent" }] } });
+    expect(down.db.tables.errors!.some((row) => (row.detail_json as { code?: string }).code === "notify_status_refresh_failed")).toBe(true);
+    const none = statusSetup([], undefined);
+    const id2 = await sendEmail(none);
+    expect(await none.call(asUser(), "people.notification_status", { notificationId: id2 })).toMatchObject({ output: { refreshed: false, deliveries: [{ status: "sent" }] } });
+  });
+
+  it("lets the sender and the recipient read a private notification, and nobody else", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "sent" }), json({ id: "em_1", last_event: "sent" })]);
+    const id = await sendEmail(s, asUser(OWNER));
+    const asRecipient = asUser(OWNER);
+    expect(await s.call(asRecipient, "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok" });
+    expect(await s.call(asUser(ADMIN), "people.notification_status", { notificationId: id })).toMatchObject({ status: "refused", code: "not_found" });
+    expect(await s.call(asUser(), "people.notification_status", { notificationId: "99999999-9999-4999-8999-999999999999" })).toMatchObject({ status: "refused", code: "not_found" });
+  });
+
+  it("does not show a notification from another workspace", async () => {
+    const s = statusSetup([]);
+    const id = await sendEmail(s);
+    s.db.tables.notifications![0]!.workspace_id = "99999999-9999-4999-8999-999999999999";
+    expect(await s.call(asUser(), "people.notification_status", { notificationId: id })).toMatchObject({ status: "refused", code: "not_found" });
+  });
+
+  it("lets the run that sent it, and anyone on a shared notification, read it", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "sent" }), json({ id: "em_1", last_event: "sent" })]);
+    const withStatus = [...toMembers, { tool: "people.notification_status" } as AnyDraftToolPermission];
+    const id = await sendEmail(s, asRun(withStatus, null));
+    expect(await s.call(asRun(withStatus, null), "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok" });
+    s.db.tables.notifications![0]!.visibility = "shared";
+    expect(await s.call(asUser(ADMIN), "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok" });
+  });
+});
+
 describe("notify error logging", () => {
   it("logs a thrown channel error to the errors table without the message body", async () => {
     const broken: NotifyChannel = { id: "slack", canReach: async () => true, send: async () => { throw new Error("slack_send_failed: channel_not_found"); } };

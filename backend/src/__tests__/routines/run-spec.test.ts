@@ -55,6 +55,7 @@ describe("routine permissions", () => {
       ...ROUTINE_TOOLS,
       { tool: "people.find" },
       { tool: "people.notify", limits: { recipients: "members", maxPerRun: 15 } },
+      { tool: "people.notification_status" },
     ]);
   });
 
