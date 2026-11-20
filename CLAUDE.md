@@ -46,8 +46,8 @@ time:
    `supabase/migrations/`. Do not hand-write the timestamp.
 2. Write the SQL in that generated file.
 3. Apply to **staging first** (see "Staging first" below), verify, then
-   `supabase db push --linked --dry-run` and `supabase db push --linked`
-   against prod.
+   `scripts/supabase-target.sh push --dry-run` and
+   `scripts/supabase-target.sh push` against prod.
 4. Update the corresponding file(s) in `db/schemas/`, `db/functions/`,
    and/or `db/storage/` by hand to match the new state. This does not
    happen automatically — never skip it.
@@ -68,6 +68,9 @@ for the exact commands.
 
 - Run `scripts/supabase-target.sh status` before any `supabase` command that
   touches a remote DB. The CLI link is global state.
+- Use `scripts/supabase-target.sh` (`staging`, `prod`, `push [--dry-run]`) for
+  remote Supabase CLI work. It passes the DB password from the env file. Raw
+  `supabase db push` and `supabase migration list` fail with a password error.
 - Test and verify every migration on staging before it goes to prod.
 - Run seed, demo, wipe and other data-writing scripts (`backend/scripts/*`)
   against staging only, via `bun --env-file=.env.staging run ...`. Pass the env

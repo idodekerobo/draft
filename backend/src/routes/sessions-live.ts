@@ -38,6 +38,16 @@ const TITLE_MAX_CHARS = 120;
 const RAW_BUCKET = "session-raw";
 const RAW_FILE = /^(root|subagents\/agent-[A-Za-z0-9_-]+)\.jsonl$/;
 
+/** Postgres text and jsonb reject NUL, so one binary tool output would fail the whole batch on every retry. */
+function stripNul<T>(value: T): T {
+  if (typeof value === "string") return (value.includes("\u0000") ? value.replaceAll("\u0000", "") : value) as T;
+  if (Array.isArray(value)) return value.map(stripNul) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, stripNul(entry)])) as T;
+  }
+  return value;
+}
+
 /** The sessions with their owners' names, and the caller's own name, from one lookup. */
 async function withOwnerNames(workspaceId: string, sessions: SessionRow[], callerId: string) {
   const names = await loadDisplayNames(serviceClient, [...new Set([callerId, ...sessions.map((s) => s.owner_user_id)])], []);
@@ -300,7 +310,7 @@ export const LINES = withHostAuth<LinesRequest>(async (req, caller) => {
   }
   const events = incoming
     .flatMap((line) => eventsForHarness(owned.session.harness, line))
-    .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
+    .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: stripNul(event.payload) }));
 
   const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   let lastSeq = owned.session.last_seq;
@@ -322,7 +332,8 @@ export const LINES = withHostAuth<LinesRequest>(async (req, caller) => {
   }
 
   const nativeSessionId = optionalString(body.nativeSessionId, 200);
-  const nativeTitle = latestNativeTitle(incoming, TITLE_MAX_CHARS);
+  const rawNativeTitle = latestNativeTitle(incoming, TITLE_MAX_CHARS);
+  const nativeTitle = rawNativeTitle && stripNul(rawNativeTitle);
   if (nativeTitle) {
     if (nativeTitle !== owned.session.title) await serviceClient.from("sessions").update({ title: nativeTitle }).eq("id", sessionId);
   } else if (owned.session.title === null && firstPrompt) {
