@@ -44,6 +44,10 @@ export interface AgentRoutine {
   canNotify?: boolean;
   /** Lets it search and read the owner's own Gmail. */
   canReadGmail?: boolean;
+  /** Whether the routine's owner has their own Gmail connected. A teammate's never counts. */
+  ownerGmailConnected?: boolean;
+  /** Whether the viewer owns this routine. Only the owner can connect the Gmail it reads. */
+  ownedByViewer?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
   /** The built-in tools of its harness it may use. */

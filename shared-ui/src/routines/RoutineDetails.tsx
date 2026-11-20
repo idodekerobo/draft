@@ -271,7 +271,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
                   fieldError={fieldError}
                   schedule={scheduleFields}
                 />
-                <AbilityFields harness={agent?.harness} value={capabilities} onChange={setCapabilities} disabled={busy} fieldError={fieldError} connectedProviders={connectedProviders} gmailConnected={gmailConnected} onConnect={onConnect} />
+                <AbilityFields harness={agent?.harness} value={capabilities} onChange={setCapabilities} disabled={busy} fieldError={fieldError} connectedProviders={connectedProviders} gmailConnected={routine.agent?.ownerGmailConnected ?? gmailConnected} gmailOwnerName={routine.agent?.ownedByViewer === false ? routine.agent.createdByName : undefined} onConnect={onConnect} />
               </div>
             ) : (
               <section className="ui-routines__agent">

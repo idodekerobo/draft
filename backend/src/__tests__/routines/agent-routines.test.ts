@@ -148,6 +148,42 @@ describe("agent routines", () => {
     expect(routine!.agent!.missingConnections).toEqual(["linear"]);
   });
 
+  describe("Gmail belongs to the routine's owner", () => {
+    const gmail = (userId: string) => ({ workspace_id: "ws-1", provider: "gmail", status: "active", connected_by_user_id: userId });
+
+    it("refuses turning Gmail on when the owner has not connected it, even if a teammate has", async () => {
+      db.tables.connections!.push(gmail("user-2"));
+      await expect(createAgentRoutine("ws-1", creator, { config: { ...config, canReadGmail: true }, when: daily }, NOW))
+        .rejects.toMatchObject({ code: "gmail_not_connected", field: "canReadGmail" });
+    });
+
+    it("reports the owner's Gmail, not the viewer's, on each routine", async () => {
+      db.tables.connections!.push(gmail("user-1"));
+      await createAgentRoutine("ws-1", creator, { config: { ...config, canReadGmail: true }, when: daily }, NOW);
+      const [asOwner] = await listRoutines("ws-1", "user-1");
+      expect(asOwner!.agent).toMatchObject({ ownerGmailConnected: true, ownedByViewer: true, missingConnections: [] });
+      const [asTeammate] = await listRoutines("ws-1", "user-2");
+      expect(asTeammate!.agent).toMatchObject({ ownerGmailConnected: true, ownedByViewer: false });
+    });
+
+    it("lists Gmail as missing once the owner disconnects, and still lets a teammate edit other fields", async () => {
+      db.tables.connections!.push(gmail("user-1"));
+      const routine = await createAgentRoutine("ws-1", creator, { config: { ...config, canReadGmail: true }, when: daily }, NOW);
+      db.tables.connections!.length = 0;
+      const [listed] = await listRoutines("ws-1", "user-2");
+      expect(listed!.agent).toMatchObject({ ownerGmailConnected: false, missingConnections: ["gmail"] });
+      const edited = await updateRoutine((await getRoutineTask("ws-1", routine.id))!, { agent: { ...config, prompt: "New prompt.", canReadGmail: true } }, "user-2", NOW);
+      expect(edited.agent!.prompt).toBe("New prompt.");
+    });
+
+    it("refuses a teammate turning on Gmail for an owner who has not connected it", async () => {
+      const routine = await createAgentRoutine("ws-1", creator, { config, when: daily }, NOW);
+      db.tables.connections!.push(gmail("user-2"));
+      await expect(updateRoutine((await getRoutineTask("ws-1", routine.id))!, { agent: { ...config, canReadGmail: true } }, "user-2", NOW))
+        .rejects.toMatchObject({ code: "gmail_not_connected" });
+    });
+  });
+
   it("returns null for a routine that is not in the workspace", async () => {
     expect(await listRoutineRuns("ws-1", "missing")).toBeNull();
   });

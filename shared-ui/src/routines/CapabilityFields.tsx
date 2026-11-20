@@ -244,7 +244,7 @@ function slackShort(value: CapabilityValue): string {
  * What the routine may do, grouped by connection. Collapsed it shows one row of what is on; expanded,
  * each connection's actions can be changed. A connection that is missing offers to connect it.
  */
-export function AbilityFields({ value, onChange, disabled, fieldError, connectedProviders, gmailConnected, onConnect, harness = "claude" }: {
+export function AbilityFields({ value, onChange, disabled, fieldError, connectedProviders, gmailConnected, gmailOwnerName, onConnect, harness = "claude" }: {
   /** The routine's harness, whose built-in tools it lists. */
   harness?: string;
   value: CapabilityValue;
@@ -252,8 +252,10 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
   disabled: boolean;
   fieldError: (field: string) => ReactNode;
   connectedProviders?: ReadonlyArray<string>;
-  /** The viewer's own Gmail, which is personal and never comes from connectedProviders. */
+  /** The routine owner's own Gmail, which is personal and never comes from connectedProviders. */
   gmailConnected?: boolean;
+  /** Set when the viewer is not the owner: the routine reads this person's Gmail, and only they can connect it. */
+  gmailOwnerName?: string | null;
   onConnect?: () => void;
 }) {
   const panelId = useId();
@@ -261,6 +263,7 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
   const connected = (provider: string) => !connectedProviders || connectedProviders.includes(provider) || (provider === "slack" ? !!value.postChannels || value.canNotify : !!value.github);
   // A saved routine that already reads Gmail keeps its checkbox, so a person can turn it off.
   const gmailReady = gmailConnected !== false || value.canReadGmail;
+  const ownerLabel = gmailOwnerName || "the owner";
   const posting = value.postChannels !== null;
   const onlySome = Array.isArray(value.postChannels);
   const pill = (label: string, isConnected: boolean, on: string) => (
@@ -293,7 +296,9 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
           )}
           {pill("Slack", connected("slack"), slackShort(value))}
           {pill("GitHub", connected("github"), value.github ? (value.github.access === "write" ? "opens PRs" : "reads repos") : "")}
-          {pill("Gmail", gmailReady, value.canReadGmail ? "reads your mail" : "")}
+          {gmailOwnerName === undefined
+            ? pill("Gmail", gmailReady, value.canReadGmail ? "reads your mail" : "")
+            : <li className={`ui-routines__pill${gmailReady && value.canReadGmail ? "" : " ui-routines__pill--off"}`}>{!gmailReady ? `${ownerLabel}'s Gmail not connected` : value.canReadGmail ? `Gmail · reads ${ownerLabel}'s mail` : "Gmail off"}</li>}
         </ul>
       )}
 
@@ -361,11 +366,19 @@ export function AbilityFields({ value, onChange, disabled, fieldError, connected
             <>
               <label className="ui-routines__check">
                 <input type="checkbox" checked={value.canReadGmail} disabled={disabled} onChange={(event) => onChange({ ...value, canReadGmail: event.target.checked })} />
-                Read my Gmail
+                {gmailOwnerName === undefined ? "Read my Gmail" : `Read ${ownerLabel}'s Gmail`}
               </label>
-              <p className="ui-routines__secondary">Searches and reads your own Gmail only when it runs. Draft stores nothing.</p>
+              <p className="ui-routines__secondary">
+                {gmailOwnerName === undefined
+                  ? "Searches and reads your own Gmail only when it runs. Draft stores nothing."
+                  : `Searches and reads ${ownerLabel}'s Gmail only when it runs. Draft stores nothing.`}
+              </p>
             </>
-          ) : missing("Gmail")}
+          ) : gmailOwnerName === undefined ? missing("Gmail") : (
+            <div className="ui-routines__trigger-missing">
+              <span className="ui-routines__secondary">Not connected. Only {ownerLabel} can connect their Gmail.</span>
+            </div>
+          )}
         </div>
       </div>
       {/* Outside the panel, so an error still shows while the panel is collapsed. */}

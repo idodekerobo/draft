@@ -189,6 +189,26 @@ describe("creating a routine", () => {
     expect(onReconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("shows a teammate's routine with the owner's Gmail, never the viewer's, and no Connect action", async () => {
+    const base = agentRoutine();
+    const routine = { ...base, agent: { ...base.agent!, canReadGmail: false, ownerGmailConnected: false, ownedByViewer: false } };
+    setup({ routines: [routine], gmailConnected: true, initialOpenId: "digest" });
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Edit access" }));
+    expect(within(dialog).queryByLabelText("Read my Gmail")).toBeNull();
+    expect(within(dialog).getByText("Not connected. Only Maya can connect their Gmail.")).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "Connect Gmail" })).toBeNull();
+  });
+
+  it("names the owner when a teammate views a routine that reads their Gmail", async () => {
+    const base = agentRoutine();
+    const routine = { ...base, agent: { ...base.agent!, canReadGmail: true, ownerGmailConnected: true, ownedByViewer: false } };
+    setup({ routines: [routine], gmailConnected: false, initialOpenId: "digest" });
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Edit access" }));
+    expect((within(dialog).getByLabelText("Read Maya's Gmail") as HTMLInputElement).checked).toBe(true);
+  });
+
   it("keeps the dialog open and shows the error beside the field", async () => {
     setup({ createRoutine: async () => { throw new RoutineError("Enter a name for this routine.", "title"); } });
     await ready();
