@@ -6,6 +6,8 @@ const output = join(import.meta.dir, "../src/integrations/provider-logo-assets.t
 const assets = {
   slack: "slack.svg",
   google: "google.svg",
+  // Google Drive product icon (2020), as published on Wikimedia Commons ("Google Drive icon (2020).svg"); trademark of Google LLC.
+  googleDrive: "google-drive.svg",
   github: "github.svg",
   linear: "linear.svg",
   fireflies: "fireflies.ai.png",

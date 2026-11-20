@@ -42,7 +42,7 @@ export function ConnectionRow({ tool, status, panel, connectedAction, managePane
     setOpen(false);
     requestAnimationFrame(() => actionRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
   };
-  const connected = status.state === "connected";
+  const connected = status.state === "connected" || status.linked === true;
   const statusText = status.detail || DEFAULT_STATUS_TEXT[status.state];
   const subline = tool.scope === "personal"
     ? "Your account"

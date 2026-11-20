@@ -47,6 +47,35 @@ export interface GoogleConnectPoll {
   message?: string;
 }
 
+/** One synced Google Drive folder: a folder or shared drive whose every native file goes into company context. */
+export interface SyncedGoogleDriveFolder {
+  id: string;
+  folderKind: "folder" | "shared_drive";
+  googleFolderId: string;
+  name: string;
+}
+
+export interface SyncedGoogleDriveFoldersResult extends ActionResult {
+  folders?: SyncedGoogleDriveFolder[];
+  lastSuccessAt?: string | null;
+  reauthRequired?: boolean;
+}
+
+/** A shared drive or folder the person can add, from their own Google Drive. */
+export interface DriveFolderOption {
+  folderKind: "folder" | "shared_drive";
+  googleFolderId: string;
+  name: string;
+  synced: boolean;
+  syncedByYou: boolean;
+  /** Name of the connection that already syncs it. */
+  syncedBy: string | null;
+}
+
+export interface DriveFolderOptionsResult extends ActionResult {
+  options?: DriveFolderOption[];
+}
+
 export type GithubInstallPhase = "idle" | "awaiting_approval" | "connected" | "error";
 
 export interface IntegrationActions {
@@ -61,6 +90,11 @@ export interface IntegrationActions {
   connectLinear: (input: { apiKey: string }) => Promise<ActionResult>;
   startGoogleConnect: () => Promise<GoogleConnectStart>;
   pollGoogleConnect: (code: string) => Promise<GoogleConnectPoll>;
+  listSyncedGoogleDriveFolders: () => Promise<SyncedGoogleDriveFoldersResult>;
+  /** parent is "shared" for shared drives, "root" for My Drive, or a folder id. */
+  listDriveFolderOptions: (input: { parent: string }) => Promise<DriveFolderOptionsResult>;
+  addSyncedGoogleDriveFolder: (input: { folderKind: "folder" | "shared_drive"; googleFolderId: string; name: string }) => Promise<ActionResult & { message?: string }>;
+  removeSyncedGoogleDriveFolder: (input: { id: string }) => Promise<ActionResult>;
   connectSessionTracking: () => Promise<ActionResult>;
   selectSessionRepoFolder: () => Promise<{ folderPath?: string }>;
   enableSessionCaptureForRepo: (input: { folderPath: string }) => Promise<ActionResult>;

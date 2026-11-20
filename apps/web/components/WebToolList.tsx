@@ -7,6 +7,11 @@ import {
   FirefliesConnectPanel,
   GithubConnectPanel,
   GoogleConnectPanel,
+  DriveFoldersPanel,
+  driveToolStatus,
+  hasDriveConnection,
+  hasGmailConnection,
+  useSyncedGoogleDriveFolders,
   GranolaConnectPanel,
   LinearConnectPanel,
   SlackConnectPanel,
@@ -31,7 +36,7 @@ import { webToolStatuses } from "@/lib/tool-statuses";
 import { useGithubInstall } from "@/lib/use-github-install";
 import { useWorkspace } from "@/lib/workspace";
 
-function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola" | "github" | "slack" | "gmail"; query?: string }) {
+function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola" | "github" | "slack" | "gmail" | "google_drive"; query?: string }) {
   const { workspaceId } = useWorkspace();
   const reloadConnections = useRefreshQuery(queryKeys.connections(workspaceId));
   const { track } = useIntegrationActions();
@@ -84,8 +89,9 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint, only }: { g
   const reloadConnections = useRefreshQuery(queryKeys.connections(workspaceId));
   const reloadSessionRepos = useRefreshQuery(queryKeys.sessionRepos(workspaceId));
   const baseStatuses = webToolStatuses(connections.connections);
+  const driveFolders = useSyncedGoogleDriveFolders(hasDriveConnection(connections.connections));
   const sessionsOn = baseStatuses["coding-sessions"]?.state === "connected";
-  const statuses = { ...baseStatuses, "coding-sessions": codingSessionsStatus(sessionsOn, sessionRepos) };
+  const statuses = { ...baseStatuses, "google-drive": driveToolStatus(connections.connections, driveFolders.status === "ready" ? driveFolders.folders.length : null), "coding-sessions": codingSessionsStatus(sessionsOn, sessionRepos) };
   const refresh = () => reloadConnections();
   const slackRow = (connections.connections as Array<{ provider?: string; channel_ids?: string[] }>).find((row) => row.provider === "slack");
   const slackDetail = slackRow
@@ -113,12 +119,14 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint, only }: { g
         </GoogleConnectPanel>
       );
     },
+    "google-drive": () => <GoogleConnectPanel product="drive" hasGmail={hasGmailConnection(connections.connections)} needsReconnect={baseStatuses["google-drive"]?.state === "error"} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={driveFolders.reload}>{baseStatuses["google-drive"]?.state === "error" && allowDisconnect && <DisconnectButton provider="google_drive" />}</GoogleConnectPanel>,
     linear: (close) => <LinearConnectPanel detail={undefined} classPrefix="ui-panel" onConnected={async () => { await refresh(); close(); }} />,
     github: (close) => <GithubPanel onDone={close} />,
     slack: (close) => <SlackConnectPanel detail={slackDetail} mode="connect" classPrefix="ui-panel" onMembershipUpdated={async () => { await refresh(); }} onConnected={async () => { await refresh(); close(); }} />,
     "coding-sessions": () => sessionsPanel(),
   };
   const managePanels: Partial<Record<ToolId, ManagePanel>> = {
+    "google-drive": { label: "Edit", render: () => <DriveFoldersPanel state={driveFolders} /> },
     "coding-sessions": { label: "View repos", render: () => sessionsPanel() },
     slack: { label: "Manage channels", render: () => <SlackConnectPanel detail={slackDetail} mode="manage" classPrefix="ui-panel" onMembershipUpdated={async () => { await refresh(); }} onConnected={async () => { await refresh(); }} /> },
   };
@@ -144,6 +152,7 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint, only }: { g
         github: <DisconnectButton provider="github" />,
         slack: <DisconnectButton provider="slack" />,
         gmail: <DisconnectButton provider="gmail" />,
+        "google-drive": <DisconnectButton provider="google_drive" />,
       } : {}}
       unavailableHint={unavailableHint}
       searchable

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { gmailToolStatus, hasGmailConnection, toolStatusesFromConnections } from "./tool-status";
+import { driveToolStatus, gmailToolStatus, hasDriveConnection, hasGmailConnection, toolStatusesFromConnections } from "./tool-status";
 
 describe("toolStatusesFromConnections", () => {
   test("personal tools use only the caller's own connection", () => {
@@ -46,5 +46,24 @@ describe("gmailToolStatus", () => {
     expect(gmailToolStatus([{ provider: "slack", status: "active" }])).toEqual({ state: "disconnected" });
     expect(gmailToolStatus([{ provider: "gmail", status: "revoked" }])).toEqual({ state: "disconnected" });
     expect(hasGmailConnection([{ provider: "gmail", status: "revoked" }])).toBe(false);
+  });
+});
+
+describe("driveToolStatus", () => {
+  const live = [{ provider: "google_drive", status: "active" }];
+  test("counts synced folders in text", () => {
+    expect(driveToolStatus(live, 3)).toEqual({ state: "connected", detail: "Connected · 3 synced folders" });
+    expect(driveToolStatus(live, 1)).toEqual({ state: "connected", detail: "Connected · 1 synced folder" });
+    expect(driveToolStatus(live, null)).toEqual({ state: "connected", detail: "Connected" });
+  });
+
+  test("no folders asks the person to choose some and keeps the row manageable", () => {
+    expect(driveToolStatus(live, 0)).toEqual({ state: "pending", detail: "Choose folders", linked: true });
+  });
+
+  test("a degraded row asks for a reconnect; no row is not connected", () => {
+    expect(driveToolStatus([{ provider: "google_drive", status: "degraded" }], 2)).toEqual({ state: "error", detail: "Reconnect needed" });
+    expect(driveToolStatus([{ provider: "gmail", status: "active" }], null)).toEqual({ state: "disconnected" });
+    expect(hasDriveConnection([{ provider: "google_drive", status: "revoked" }])).toBe(false);
   });
 });

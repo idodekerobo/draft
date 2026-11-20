@@ -1,5 +1,5 @@
 export type Platform = "web" | "desktop";
-export type ToolId = "fireflies" | "granola" | "gmail" | "claude-code" | "slack" | "github" | "linear" | "coding-sessions";
+export type ToolId = "fireflies" | "granola" | "gmail" | "google-drive" | "claude-code" | "slack" | "github" | "linear" | "coding-sessions";
 /** "sessions" is omitted from the onboarding group lists, which keep their current tools. */
 export type ToolGroup = "meetings" | "email" | "agent" | "team" | "sessions";
 /** Page headings. Data flowing into Draft, and Draft feeding an agent. */
@@ -23,6 +23,7 @@ export const TOOL_REGISTRY: ToolEntry[] = [
   { id: "claude-code", name: "Claude Code, Codex or Cursor", description: "Gives your agent your team's context", group: "agent", scope: "personal", platforms: ["web", "desktop"], popularity: 100 },
   { id: "slack", name: "Slack", description: "Reads the channels you choose", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 100 },
   { id: "github", name: "GitHub", description: "Reads pull requests and commits", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 90 },
+  { id: "google-drive", name: "Google Drive", description: "Syncs the folders you choose into company context", group: "team", scope: "personal", platforms: ["web", "desktop"], popularity: 80 },
   { id: "linear", name: "Linear", description: "Reads issues and projects", group: "team", scope: "workspace", platforms: ["web", "desktop"], popularity: 70 },
   { id: "coding-sessions", name: "Coding sessions", description: "Captures finished Claude Code sessions from your repos", group: "sessions", scope: "workspace", platforms: ["web"], popularity: 50 },
 ];
@@ -40,6 +41,8 @@ export interface ToolStatus {
   state: ToolState;
   /** Account name when connected (for example "cedar-frame-studio"), otherwise status text. */
   detail?: string | null;
+  /** An account is connected but still needs a step, for example choosing folders. The row shows its manage panel. */
+  linked?: boolean;
 }
 
 export function toolsForPlatform(platform: Platform, groups: ToolGroup[] = GROUP_ORDER): ToolEntry[] {
@@ -62,6 +65,7 @@ const TOOL_ALIASES: Partial<Record<ToolId, string[]>> = {
   "coding-sessions": ["sessions", "terminal"],
   github: ["gh"],
   gmail: ["google", "email"],
+  "google-drive": ["drive", "docs", "sheets", "slides"],
 };
 
 export function filterToolGroups(
