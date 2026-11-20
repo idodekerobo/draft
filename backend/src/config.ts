@@ -47,6 +47,25 @@ export function contextExportSettings(): { secret: string | undefined; apiBaseUr
   };
 }
 
+export interface GoogleOAuthSettings {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}
+
+/** Read on demand so Gmail does not force every deployment to set Google credentials. */
+export function googleOAuthSettings(): GoogleOAuthSettings | null {
+  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+  const apiBaseUrl = resolveApiBaseUrl(Number(process.env.PORT ?? 8787));
+  return {
+    clientId,
+    clientSecret,
+    redirectUri: process.env.GOOGLE_OAUTH_REDIRECT_URI || `${apiBaseUrl}/workspaces/google/callback`,
+  };
+}
+
 export function loadConfig(): BackendConfig {
   const port = Number(process.env.PORT ?? 8787);
   const githubAppPrivateKeyPreviousRaw = process.env.GITHUB_APP_PRIVATE_KEY_PREVIOUS;

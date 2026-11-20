@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CredentialError, decryptCredentialPayload } from "./crypto";
 import type { CredentialSecretRow } from "./harness-credential";
-import type { ConnectionProvider } from "../types/enums";
+import type { ConnectionProvider, CredentialProvider } from "../types/enums";
 
 export interface FirefliesProviderCredential {
   api_token: string;
@@ -24,6 +24,17 @@ export interface GranolaProviderCredential {
   webhook_endpoint_id: string;
 }
 
+export interface GoogleProviderCredential {
+  refresh_token: string;
+  scopes: string[];
+}
+
+// Credentials describe who issued the token, not the product, so Gmail
+// connections read a "google" credential that later Google products can share.
+export function credentialProviderFor(provider: ConnectionProvider): CredentialProvider {
+  return provider === "gmail" ? "google" : (provider as CredentialProvider);
+}
+
 export type ProviderCredential<P extends ConnectionProvider> = P extends "fireflies"
   ? FirefliesProviderCredential
   : P extends "slack"
@@ -32,7 +43,9 @@ export type ProviderCredential<P extends ConnectionProvider> = P extends "firefl
       ? LinearProviderCredential
       : P extends "granola"
         ? GranolaProviderCredential
-        : string;
+        : P extends "gmail"
+          ? GoogleProviderCredential
+          : string;
 
 interface ConnectionCredentialRow {
   id: string;
@@ -40,7 +53,7 @@ interface ConnectionCredentialRow {
   status: string;
 }
 
-const NAMED_SECRET_PROVIDERS = new Set<ConnectionProvider>(["fireflies", "slack", "linear", "granola"]);
+const NAMED_SECRET_PROVIDERS = new Set<ConnectionProvider>(["fireflies", "slack", "linear", "granola", "gmail"]);
 
 async function resolveCredentialById<P extends ConnectionProvider>(
   workspaceId: string,
@@ -53,7 +66,7 @@ async function resolveCredentialById<P extends ConnectionProvider>(
     .select("id, status, expires_at, encrypted_payload, encryption_key_version")
     .eq("id", credentialId)
     .eq("workspace_id", workspaceId)
-    .eq("provider", provider)
+    .eq("provider", credentialProviderFor(provider))
     .maybeSingle();
   if (credentialError) throw credentialError;
 
