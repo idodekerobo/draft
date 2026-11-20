@@ -24,7 +24,7 @@ async function routineTitle(client: SupabaseClient, workspaceId: string, schedul
 }
 
 /**
- * The first line of every message Draft sends for a caller. The gateway adds it after the model has handed over
+ * The last line of every message Draft sends for a caller. The gateway adds it after the model has handed over
  * its text, so a model cannot leave it out or change it. Run and owner come from the run spec, not from the model.
  */
 export async function attributionLine(client: SupabaseClient, caller: ToolCaller): Promise<string> {

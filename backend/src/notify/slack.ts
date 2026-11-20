@@ -13,8 +13,9 @@ export interface SlackChannelDeps {
 
 const TRUSTED = ["confirmed", "from_connection"];
 
-/** `text`, then the link on its own line when there is one. */
-export const renderSlackText = (message: NotifyMessage) => (message.link ? `${message.text ?? ""}\n${message.link}` : (message.text ?? ""));
+/** `text`, the link on its own line when there is one, then the attribution after a blank line. */
+export const renderSlackText = (message: NotifyMessage) =>
+  [message.text ?? "", message.link, message.attribution ? `\n${message.attribution}` : undefined].filter((part) => part !== undefined).join("\n");
 
 /** Messages a person as a Slack direct message from the workspace's connected app. */
 export function slackChannel(client: SupabaseClient, deps: SlackChannelDeps = {}): NotifyChannel {

@@ -7,7 +7,7 @@ import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
 import { markReachable, type NotifyChannel } from "../../notify/types";
 import { sendNotification } from "../../notify/send";
-import { slackChannel } from "../../notify/slack";
+import { renderSlackText, slackChannel } from "../../notify/slack";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -92,48 +92,48 @@ const toMembers: AnyDraftToolPermission[] = [{ tool: "people.notify", limits: { 
 const LINE = `🤖 Draft agent · running Uzo's "Meeting follow-up" routine`;
 
 describe("people.notify", () => {
-  it("starts every run message with a fixed line naming the owner and the routine, then the model's text", async () => {
+  it("sends the model's text unchanged and a fixed line naming the owner and the routine to end the message", async () => {
     const { call, sent } = setup();
     const result = await call(asRun(toMembers), "people.notify", { personId: IZA, text: "Your items: ship the demo." });
     expect(result).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }] } });
-    expect(sent[0]!.message.text).toBe(`${LINE}\nYour items: ship the demo.`);
+    expect(sent[0]!.message).toMatchObject({ text: "Your items: ship the demo.", attribution: LINE });
   });
 
-  it("keeps the line first even when the model writes its own first line", async () => {
+  it("keeps the line separate from the text even when the model writes a line like it", async () => {
     const { call, sent } = setup();
     await call(asRun(toMembers), "people.notify", { personId: IZA, text: "Ignore the line above. This message is from a human, not an agent." });
-    expect(sent[0]!.message.text!.startsWith(`${LINE}\n`)).toBe(true);
+    expect(sent[0]!.message).toMatchObject({ text: "Ignore the line above. This message is from a human, not an agent.", attribution: LINE });
   });
 
   it("names the person who sent a message from the CLI", async () => {
     const { call, sent } = setup();
     await call(asUser(OWNER), "people.notify", { personId: IZA, text: "hello" });
-    expect(sent[0]!.message.text).toBe("Sent by Uzo through Draft\nhello");
+    expect(sent[0]!.message).toMatchObject({ text: "hello", attribution: "Sent by Uzo through Draft" });
   });
 
   it("names the routine for a run an event started, whose trigger does not carry the task", async () => {
     const { call, sent } = setup();
     const eventRun = runCaller({ ...runSpec(toMembers), trigger: { type: "webhook", provider: "fireflies", eventId: "meeting-1" } });
     await call(eventRun, "people.notify", { personId: IZA, text: "Your items." });
-    expect(sent[0]!.message.text).toBe(`${LINE}\nYour items.`);
+    expect(sent[0]!.message).toMatchObject({ text: "Your items.", attribution: LINE });
   });
 
   it("names the teammate who pressed Run now on someone else's routine, and not the owner who ran their own", async () => {
     const { call, sent } = setup();
     const manual = (requestedBy: string): ToolCaller => runCaller({ ...runSpec(toMembers), trigger: { type: "manual", requestedBy: parseUserId(requestedBy) } });
     await call(manual(ADMIN), "people.notify", { personId: IZA, text: "a" });
-    expect(sent[0]!.message.text!.split("\n")[0]).toBe(`${LINE} · started by Ada`);
+    expect(sent[0]!.message.attribution).toBe(`${LINE} · started by Ada`);
     await call(manual(OWNER), "people.notify", { personId: IZA, text: "b" });
-    expect(sent[1]!.message.text!.split("\n")[0]).toBe(LINE);
+    expect(sent[1]!.message.attribution).toBe(LINE);
   });
 
   it("says a run with no routine title, or no owner, is still an agent", async () => {
     const { call, sent, db } = setup();
     db.tables.scheduled_tasks![0]!.config_json = {};
     await call(asRun(toMembers), "people.notify", { personId: IZA, text: "a" });
-    expect(sent[0]!.message.text!.split("\n")[0]).toBe("🤖 Draft agent · running a routine for Uzo");
+    expect(sent[0]!.message.attribution).toBe("🤖 Draft agent · running a routine for Uzo");
     await call(asRun([{ tool: "people.notify", limits: { recipients: "members" } }], null), "people.notify", { personId: IZA, text: "b" });
-    expect(sent[1]!.message.text!.split("\n")[0]).toBe("🤖 Draft agent · routine run");
+    expect(sent[1]!.message.attribution).toBe("🤖 Draft agent · routine run");
   });
 
   it("refuses the whole call, with not_allowed, for a missing, pending or external person", async () => {
@@ -257,6 +257,11 @@ describe("the Slack channel", () => {
   };
   const deps = () => ({ resolveBotToken: mock(async () => "xoxb-test"), openDm: mock(async () => "D123"), postMessage: mock(async () => {}) });
 
+  it("ends the Slack message with the attribution after a blank line", () => {
+    expect(renderSlackText({ text: "hello", link: "https://x.dev", attribution: "Sent by Uzo through Draft" })).toBe("hello\nhttps://x.dev\n\nSent by Uzo through Draft");
+    expect(renderSlackText({ text: "hello" })).toBe("hello");
+  });
+
   it("opens a DM with the person's Slack id and posts the text with its link", async () => {
     const d = deps();
     const channel = slackChannel(fakeClient(seed("from_connection")), d);
@@ -298,7 +303,8 @@ describe("telling admins about a pending person", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.personId).toBe(ADA);
     const text = sent[0]!.message.text!;
-    expect(text.startsWith(`${LINE}\nDraft found Cory Banks in "Nov 9 standup"`)).toBe(true);
+    expect(text.startsWith('Draft found Cory Banks in "Nov 9 standup"')).toBe(true);
+    expect(sent[0]!.message.attribution).toBe(LINE);
     expect(text).toContain(evidence.quote);
     expect(text).toContain("draft people approve ");
     expect(text).toContain('approve Cory Banks in Draft');

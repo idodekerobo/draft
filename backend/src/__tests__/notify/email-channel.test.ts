@@ -36,6 +36,13 @@ describe("the email channel", () => {
     expect(calls[0]!.body.text).toBe("See this\nhttps://x.dev/a");
   });
 
+  it("ends the email with the attribution line", async () => {
+    const { channel, calls } = setup();
+    await channel.send(person, { text: "Your research is ready", attribution: "🤖 Draft agent · routine run" });
+    expect(calls[0]!.body.text).toBe("Your research is ready\n\n🤖 Draft agent · routine run");
+    expect(String(calls[0]!.body.html).endsWith("🤖 Draft agent · routine run</p>")).toBe(true);
+  });
+
   it("accepts html alone and makes the text", async () => {
     const { channel, calls } = setup();
     await channel.send(person, { html: "<p>Hello</p>" });

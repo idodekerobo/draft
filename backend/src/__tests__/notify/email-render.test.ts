@@ -48,6 +48,16 @@ describe("renderEmail", () => {
     const result = renderEmail({ text: "plain", html: "<p>rich</p>" });
     expect(result.ok && [result.email.text, result.email.html]).toEqual(["plain", "<p>rich</p>"]);
   });
+  it("ends the text and the html with the footer, inside the body tag when there is one", () => {
+    const plain = renderEmail({ text: "Hello", footer: "Sent by Uzo through Draft" });
+    expect(plain.ok && plain.email.text).toBe("Hello\n\nSent by Uzo through Draft");
+    expect(plain.ok && plain.email.html.endsWith("Sent by Uzo through Draft</p>")).toBe(true);
+    const full = renderEmail({ html: "<html><body><p>Hi</p></body></html>", footer: "A <b>footer</b>" });
+    expect(full.ok && full.email.html).toMatch(/<p>Hi<\/p><p [^>]*>A &lt;b&gt;footer&lt;\/b&gt;<\/p><\/body><\/html>$/);
+  });
+  it("does not count the footer against the size limits", () => {
+    expect(renderEmail({ text: "x".repeat(MAX_EMAIL_TEXT_CHARS), footer: "footer" }).ok).toBe(true);
+  });
   it("rejects an empty body and over-long parts", () => {
     expect(renderEmail({ subject: "x" })).toEqual({ ok: false, code: "empty_body" });
     expect(renderEmail({ text: "   " })).toEqual({ ok: false, code: "empty_body" });

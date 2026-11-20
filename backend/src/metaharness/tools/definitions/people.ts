@@ -213,7 +213,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
       const agentRunId = caller.origin.kind === "run" ? caller.origin.run.id : null;
       const logFailure = (channel: NotifyChannelId, error: unknown) =>
         recordError({ client, workspaceId, agentRunId, operation: "execution", code: "notify_send_failed", message: `people.notify failed on ${channel}`, detail: { channel, personId: person.id }, error });
-      const result = await sendNotification(channels, person, { text: `${line}\n${input.text}`, ...(input.link ? { link: input.link } : {}) }, input.channels?.filter(isNotifyChannelId), logFailure);
+      const result = await sendNotification(channels, person, { text: input.text, attribution: line, ...(input.link ? { link: input.link } : {}) }, input.channels?.filter(isNotifyChannelId), logFailure);
       return { status: "ok", output: result, summary: result.results.map((entry) => `${entry.channel}: ${entry.status}`).join(", ") };
     },
   });

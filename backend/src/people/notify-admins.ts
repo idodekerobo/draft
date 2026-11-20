@@ -43,12 +43,12 @@ export async function notifyAdminsOfPending(
   }
   const quote = evidence.quote.slice(0, 200);
   const text =
-    `${line}\nDraft found ${pending.displayName} in ${where}: "${quote}"\n` +
+    `Draft found ${pending.displayName} in ${where}: "${quote}"\n` +
     `To add them, ask Claude "approve ${pending.displayName} in Draft", or run \`draft people approve ${pending.id}\`.`;
 
   for (const row of (people ?? []) as Array<{ id: string }>) {
     const admin = await resolvePerson(client, workspaceId, row.id);
     if (isFailure(admin)) continue;
-    await sendNotification(channels, admin, { text }).catch(() => undefined);
+    await sendNotification(channels, admin, { text, attribution: line }).catch(() => undefined);
   }
 }

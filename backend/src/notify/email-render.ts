@@ -42,8 +42,18 @@ export function normalizeSubject(subject: string | undefined): string {
   return topic ? `${EMAIL_SUBJECT_PREFIX}${topic}` : DEFAULT_EMAIL_SUBJECT;
 }
 
-/** Builds the subject, text and HTML for one email from whatever the agent supplied. Needs `text` or `html`. */
-export function renderEmail(input: { subject?: string; text?: string; html?: string }): EmailRenderResult {
+/** Adds a closing line to an HTML body, inside `<body>` when there is one. */
+function appendFooterHtml(html: string, footer: string): string {
+  const line = `<p style="margin-top:24px;color:#6b6b6b;font-size:13px">${escapeHtml(footer)}</p>`;
+  const close = html.search(/<\/body>/i);
+  return close === -1 ? html + line : html.slice(0, close) + line + html.slice(close);
+}
+
+/**
+ * Builds the subject, text and HTML for one email from whatever the agent supplied. Needs `text` or `html`.
+ * `footer` is the attribution line. It ends the text and the HTML, and the size limits apply to what the agent wrote.
+ */
+export function renderEmail(input: { subject?: string; text?: string; html?: string; footer?: string }): EmailRenderResult {
   const text = input.text?.trim() ?? "";
   const html = input.html?.trim() ?? "";
   if (!text && !html) return { ok: false, code: "empty_body" };
@@ -51,5 +61,7 @@ export function renderEmail(input: { subject?: string; text?: string; html?: str
   if (html.length > MAX_EMAIL_HTML_CHARS) return { ok: false, code: "html_too_long" };
   const subject = normalizeSubject(input.subject);
   if (subject.length > MAX_EMAIL_SUBJECT_CHARS) return { ok: false, code: "subject_too_long" };
-  return { ok: true, email: { subject, text: text || htmlToText(html), html: html || textToHtml(text) } };
+  const body = { text: text || htmlToText(html), html: html || textToHtml(text) };
+  const footer = input.footer?.trim();
+  return { ok: true, email: { subject, text: footer ? `${body.text}\n\n${footer}` : body.text, html: footer ? appendFooterHtml(body.html, footer) : body.html } };
 }

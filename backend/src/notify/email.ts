@@ -46,7 +46,7 @@ export function emailChannel(client: SupabaseClient, deps: EmailChannelDeps = {}
       const to = key ? await verifiedEmail(client, person) : null;
       if (!key || !to) return { channel: "email", status: "failed", code: "not_reachable" };
 
-      const rendered = renderEmail({ subject: message.subject, text: message.link ? `${message.text ?? ""}\n${message.link}` : message.text, html: message.html });
+      const rendered = renderEmail({ subject: message.subject, text: message.link ? `${message.text ?? ""}\n${message.link}` : message.text, html: message.html, footer: message.attribution });
       if (!rendered.ok) throw new Error(`email_content_invalid: ${rendered.code}`);
 
       await sendResendEmail(key, { from: EMAIL_SENDERS.notification, to: [to], ...rendered.email }, providerIdempotencyKey(person, message.idempotencyKey ?? randomUUID()), deps);
