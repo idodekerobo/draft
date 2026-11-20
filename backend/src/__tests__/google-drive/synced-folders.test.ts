@@ -59,6 +59,18 @@ describe("synced Google Drive folders", () => {
     expect(await response.json()).toMatchObject({ error: "drive_folder_already_synced", synced_by: "Bo" });
   });
 
+  it("resolves an ID-only CLI add with the caller's Google login", async () => {
+    const db = seed();
+    const api = fakeApi({ "f-1": { id: "f-1", name: "Plans", mimeType: "application/vnd.google-apps.folder" }, "d-1": { id: "d-1", driveId: "d-1", name: "Team", mimeType: "application/vnd.google-apps.folder" }, "doc-1": { id: "doc-1", mimeType: "application/vnd.google-apps.document" } });
+    const response = await routes.addDriveFolder("ws-1", "user-a", { googleFolderId: "f-1" }, deps(db, api));
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ folder: { name: "Plans", folder_kind: "folder", google_folder_id: "f-1" } });
+    const shared = await routes.addDriveFolder("ws-1", "user-a", { googleFolderId: "d-1" }, deps(db, api));
+    expect(await shared.json()).toMatchObject({ folder: { folder_kind: "shared_drive" } });
+    expect((await routes.addDriveFolder("ws-1", "user-a", { googleFolderId: "doc-1" }, deps(db, api))).status).toBe(400);
+    expect((await routes.addDriveFolder("ws-1", "user-a", { googleFolderId: "missing" }, deps(db, api))).status).toBe(404);
+  });
+
   it("allows a nested folder and resets that folder's backfill", async () => {
     const db = seed();
     db.tables.connections![0]!.cursor_json = { backfill: { seen: 40, folders: { "f-child": { done: true }, "f-1": { done: true } } } };

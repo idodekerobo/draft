@@ -20,6 +20,8 @@ Commands:
   read --provider <provider> ...         Read from a connected provider: Slack channel messages, a Gmail message, a Drive file
   search --provider <provider> ...       Search a connected provider (see list for which can)
   post --provider <provider> ...         Post a message through a connected provider (slack)
+  drive folders list|add|remove  Manage synced Google Drive folders
+  drive status                Show synced folders and last sync
 
 Every command takes the provider as a flag, never as a bare word.
 Run \`draft connections <command> --help\` for details.
@@ -100,6 +102,16 @@ function baseSubcommandHelp(subcommand: string, provider?: string): string | nul
   switch (subcommand) {
     case "search":
       return SEARCH_HELP;
+    case "drive":
+      return `Usage: draft connections drive folders list [--json]
+       draft connections drive folders add <folder-or-shared-drive-id> [--json]
+       draft connections drive folders remove <synced-folder-id> [--json]
+       draft connections drive status [--json]
+
+Connect first with draft connections connect --provider google (Gmail and Google Drive).
+Every file in these folders goes into company context, including files only you can see.
+Remove uses the synced folder ID from folders list. Disconnect keeps captured files.
+`;
     case "list":
       if (provider === "slack") return slackListHelp();
       return `Usage: draft connections list [--provider <provider>] [--available [--query <text>] [--limit <n>] [--cursor <cursor>]] [--json]

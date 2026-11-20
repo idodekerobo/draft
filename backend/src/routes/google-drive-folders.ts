@@ -4,7 +4,7 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { recordRouteError } from "../errors/route-error";
 import { driveAccessFor } from "../ingestion/google-drive/access";
-import { FOLDER_MIME, type DriveFile } from "../ingestion/google-drive/api";
+import { DriveApiError, FOLDER_MIME, type DriveFile } from "../ingestion/google-drive/api";
 import {
   addSyncedGoogleDriveFolder,
   listSyncedGoogleDriveFolders,
@@ -137,11 +137,20 @@ function parseAddBody(body: unknown): { folderKind: SyncedGoogleDriveFolderKind;
 }
 
 export async function addDriveFolder(workspaceId: string, userId: string, body: unknown, deps = defaultDependencies): Promise<Response> {
-  const input = parseAddBody(body);
-  if (!input) return errorResponse("invalid_body", 400);
+  let input = parseAddBody(body);
+  const raw = body && typeof body === "object" ? body as Record<string, unknown> : null;
+  const resolveId = raw && Object.keys(raw).length === 1 && typeof raw.googleFolderId === "string" ? raw.googleFolderId.trim() : null;
+  if (!input && !resolveId) return errorResponse("invalid_body", 400);
   try {
     const connection = await callerConnection(deps.db, workspaceId, userId);
     if (!connection) return notConnected();
+    if (!input) {
+      const access = await deps.driveAccess(deps.db, workspaceId, userId);
+      if (!access.ok) return errorResponse(access.code, access.code === "drive_not_connected" ? 404 : 409);
+      const file = await access.api.getFile(resolveId!);
+      if (file.mimeType !== FOLDER_MIME || file.trashed) return errorResponse("drive_not_a_folder", 400);
+      input = { googleFolderId: file.id, folderKind: file.driveId === file.id ? "shared_drive" : "folder", name: file.name ?? "Untitled folder" };
+    }
     const result = await addSyncedGoogleDriveFolder(deps.db, workspaceId, connection.id, input);
     if (!result.ok) {
       return Response.json({ error: result.code, message: result.message, synced_by: result.ownerName }, { status: 409 });
@@ -170,6 +179,7 @@ export async function addDriveFolder(workspaceId: string, userId: string, body: 
       { status: 201 },
     );
   } catch (error) {
+    if (error instanceof DriveApiError) return errorResponse(error.code === "not_found" ? "not_found" : "drive_folder_lookup_failed", error.status);
     return errorResponse("drive_folder_add_failed", 500, error, workspaceId);
   }
 }
