@@ -30,7 +30,7 @@ import { pendingItems } from "./pending-items";
 import { buildStreamItems, openApprovals, type StreamItem } from "./stream-items";
 import { presenceLine } from "./presence-line";
 import { TeamStrip } from "./TeamStrip";
-import { teamRoster, type TeamMember } from "./team-roster";
+import { agentStripMembers, teamRoster, type TeamMember } from "./team-roster";
 import { prependToDraft } from "./drafts";
 import { useSessionInputs } from "./useSessionInputs";
 import { useSessionPresence } from "./useSessionPresence";
@@ -285,9 +285,7 @@ function SessionContents({
   const livePreviews = useLiveText(api, sessionId, stream.recentEvents, stream.readThrough);
   const liveText = useMemo(() => (session.status === "ended" ? [] : livePreviews), [session.status, livePreviews]);
   const approvals = useMemo(() => stream.approvals ? openApprovals(buildStreamItems(stream.approvals)) : openApprovals(logItems), [stream.approvals, logItems]);
-  const team = useMemo(() => stream.agents ? stream.agents.filter((agent) => agent.name).map((agent) => ({
-    name: agent.name!, state: agent.state, hostSeq: agent.hostSeq ?? agent.firstSeq, description: agent.description, model: agent.model, key: agent.key,
-  })) : teamRoster(events), [events, stream.agents]);
+  const team = useMemo(() => stream.agents ? agentStripMembers(stream.agents) : teamRoster(events), [events, stream.agents]);
   const ownerName = session.owner_name ?? "the owner";
   const harnessId = session.harness ?? "claude";
   const agentName = shortName(harnessId);

@@ -35,6 +35,7 @@ interface LiveJsonlLine {
   origin?: LineOrigin | null;
   message?: { role?: string; content?: string | ContentBlock[] };
   attachment?: { type?: string; prompt?: unknown; origin?: LineOrigin | null };
+  toolUseResult?: { agentId?: string; isAsync?: boolean; resolvedModel?: string; status?: string; success?: boolean; resumedAgentId?: string };
 }
 
 /** `human` marks a line a person typed. `peer` marks a message from another agent. */
@@ -179,13 +180,28 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
   } catch {
     return [];
   }
-  if (!parsed || parsed.isMeta || parsed.isCompactSummary) return [];
+  if (!parsed || parsed.isCompactSummary) return [];
+  const origin = parsed.origin ?? parsed.attachment?.origin;
+  const content = parsed.message?.content;
+  const body = parsed.attachment?.prompt ?? (typeof content === "string" ? content : textOf(content));
+  const notification = origin?.kind === "task-notification" && typeof body === "string"
+    ? /<task-id>([^<]+)<\/task-id>[\s\S]*?<status>(completed|failed|stopped)<\/status>/.exec(body) : null;
+  if (parsed.isMeta && origin?.kind !== "peer" && !notification) return [];
   if (parsed.isSidechain && agentId === null) return [];
 
   const base = typeof parsed.uuid === "string" && parsed.uuid ? parsed.uuid : `${line.stream}:${line.position}`;
   const timestamp = typeof parsed.timestamp === "string" ? parsed.timestamp : null;
   const common = { timestamp, ...(agentId ? { agent_id: agentId } : {}) };
   const out: Array<Pick<ParsedLiveEvent, "kind" | "payload">> = [];
+
+  if (notification) {
+    return [{ sourceId: base, kind: "session_note", payload: { ...common, text: "Agent " + notification[2], agent_lifecycle: { id: notification[1], state: "idle", isError: notification[2] === "failed" } } }];
+  }
+  if (origin?.kind === "peer") {
+    pushAgentNotes(out, common, agentMessagesOf(typeof body === "string" ? body : "", origin));
+    if (origin.handback && origin.from && out[0]) out[0].payload.agent_lifecycle = { id: origin.from, state: "idle", isError: false };
+    return out.map((event, index) => ({ sourceId: index === 0 ? base : `${base}#${index}`, ...event }));
+  }
 
   if (parsed.type === "system") {
     if (parsed.subtype === "compact_boundary") out.push({ kind: "session_note", payload: { ...common, text: "Conversation compacted" } });
@@ -218,9 +234,12 @@ export function parseLiveLine(line: LiveLineInput, agentId: string | null = agen
       for (const block of content) {
         if (block.type !== "tool_result") continue;
         const result = clip(textOf(block.content), TOOL_FIELD_MAX_CHARS);
+        const metadata = parsed.toolUseResult;
+        const agentResult = metadata?.agentId ? { id: metadata.agentId, async: metadata.isAsync === true, model: metadata.resolvedModel ?? null } : null;
+        const resumed = !block.is_error && metadata?.success === true ? metadata.resumedAgentId : null;
         out.push({
           kind: "tool_result",
-          payload: { ...common, tool_use_id: block.tool_use_id ?? null, content: result.text, is_error: block.is_error === true, ...(result.truncated ? { truncated: true } : {}) },
+          payload: { ...common, tool_use_id: block.tool_use_id ?? null, content: result.text, is_error: block.is_error === true, ...(result.truncated ? { truncated: true } : {}), ...(agentResult ? { agent_result: agentResult } : {}), ...(resumed ? { agent_lifecycle: { id: resumed, state: "working", isError: false } } : {}) },
         });
       }
     }

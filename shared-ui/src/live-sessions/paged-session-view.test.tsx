@@ -6,13 +6,13 @@ import { SessionView } from "./SessionView";
 import type { LiveSession, LiveSessionEvent, LiveSessionsApi, SessionAgentSummary, SessionTranscriptPage, SessionViewQuery, SessionViewResponse } from "./types";
 afterEach(cleanup);
 const session={id:"s",owner_user_id:"u",owner_name:"User",title:"Paged session",folder_name:null,host_name:null,status:"live" as const,started_at:"",ended_at:null,last_event_at:null,last_seq:1000};
-const agent:SessionAgentSummary={key:"agent:a1",agentId:"a1",hostSeq:1,firstSeq:2,lastSeq:900,name:"worker",description:"Inspect files",model:null,steps:100,state:"working",isError:false};
+const agent:SessionAgentSummary={async:false,key:"agent:a1",agentId:"a1",hostSeq:1,firstSeq:2,lastSeq:900,name:"worker",description:"Inspect files",model:null,steps:100,state:"working",isError:false};
 const root:LiveSessionEvent[]=[{seq:1,source_id:"spawn",kind:"tool_use",payload:{name:"Agent",tool_use_id:"spawn",input:{name:"worker"}},created_at:""},{seq:1000,source_id:"root",kind:"assistant_text",payload:{text:"Latest root answer"},created_at:""}];
 const child:LiveSessionEvent[]=[{seq:500,source_id:"child",kind:"assistant_text",payload:{text:"Private agent answer",agent_id:"a1"},created_at:""}];
 const page=(events:LiveSessionEvent[],agentId:string|null=null):SessionTranscriptPage=>({agentId,events,dependencies:[],before:events[0]?.seq??null,after:events.at(-1)?.seq??null,hasOlder:false,hasNewer:false,through:1000,readThrough:1000});
-function setup(options:{failAgent?:boolean;orphan?:boolean;approval?:boolean;track?:TrackFn;session?:Partial<LiveSession>}={}){
+function setup(options:{failAgent?:boolean;orphan?:boolean;approval?:boolean;track?:TrackFn;session?:Partial<LiveSession>;agent?:Partial<SessionAgentSummary>}={}){
  const calls:SessionViewQuery[]=[];let fail=options.failAgent??false;
- const summary=options.orphan?{...agent,hostSeq:null,firstSeq:500}:agent;
+ const summary={...agent,...options.agent,...(options.orphan?{hostSeq:null,firstSeq:500}:{})};
  const fetchView=async(_id:string,q:SessionViewQuery):Promise<SessionViewResponse>=>{
   calls.push(q);
   if(q.agentId||q.around===500){if(fail)throw new Error("agent failed");return {page:page(child,"a1")};}
@@ -110,4 +110,19 @@ it("counts an ended routine opened through the paged view as a result, not multi
  render(t.tree());
  await screen.findByText("Latest root answer");
  expect(track.mock.calls).toEqual([["routine_result_viewed", { live_session_id: "s" }]]);
+});
+
+it("shows an async subagent chip without an @ prefix and opens its transcript", async()=>{
+ const t=setup({agent:{name:null,async:true,description:"Read Drive",steps:62}});
+ const {container}=render(t.tree());await screen.findByText("Latest root answer");
+ const chip=screen.getByRole("button",{name:"Read Drive working"});
+ expect(chip.textContent).not.toContain("@");
+ fireEvent.click(chip);await screen.findByText("Private agent answer");
+ expect(container.querySelector("#m-1")!.textContent).toContain("working");
+});
+it("hides a completed async chip while retaining its transcript row", async()=>{
+ const t=setup({agent:{name:null,async:true,state:"idle",description:"Read Drive"}});
+ const {container}=render(t.tree());await screen.findByText("Latest root answer");
+ expect(screen.queryByRole("list",{name:"Agents in this session"})).toBeNull();
+ expect(container.querySelector("#m-1")!.textContent).toContain("completed");
 });
