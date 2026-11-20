@@ -94,14 +94,14 @@ export async function handleGoogleCallback(
 
     const { data: rows, error: rowsError } = await deps.db
       .from("connections")
-      .select("id, provider, connection_key, credential_id, connected_by_user_id, status")
+      .select("id, provider, connection_key, credential_id, connected_by_user_id, status, cursor_json")
       .eq("workspace_id", session.workspaceId)
       .in("provider", PRODUCTS.map((product) => product.provider))
       .neq("status", "revoked");
     if (rowsError) throw rowsError;
     const live = (rows ?? []) as Pick<
       ConnectionRow,
-      "id" | "provider" | "connection_key" | "credential_id" | "connected_by_user_id" | "status"
+      "id" | "provider" | "connection_key" | "credential_id" | "connected_by_user_id" | "status" | "cursor_json"
     >[];
 
     for (const product of granted) {
@@ -148,6 +148,9 @@ export async function handleGoogleCallback(
     }
 
     for (const product of granted) {
+      // Keep sync progress (Drive backfill, change feed position) across a reconnect; only the reconnect flag clears.
+      const previous = live.find((row) => row.provider === product.provider && row.connection_key === identity.sub);
+      const { reauth_required: _cleared, ...cursor } = (previous?.cursor_json ?? {}) as Record<string, unknown>;
       const connection = await deps.upsertConnection(deps.db, {
         workspace_id: session.workspaceId,
         provider: product.provider,
@@ -157,6 +160,7 @@ export async function handleGoogleCallback(
         status: "active",
         credential_id: credentialId,
         connected_by_user_id: session.userId,
+        cursor_json: cursor,
       });
       if (product.provider === "google_drive") {
         await deps.registerDriveSyncTask({ id: connection.id, workspace_id: connection.workspace_id }, deps.db);

@@ -214,6 +214,21 @@ describe("handleGoogleCallback", () => {
     expect(db.tables.connections!.find((row) => row.provider === "google_drive")).toMatchObject({ credential_id: "cred-1", status: "active" });
   });
 
+  it("keeps Drive sync progress on reconnect and clears only the reconnect flag", async () => {
+    const backfill = { seen: 3, folders: { "f-1": { done: true } } };
+    const db = createFakeDb({
+      credentials: [{ id: "cred-1", workspace_id: "ws-1", provider: "google", status: "active" }],
+      connections: [
+        { id: "conn-2", workspace_id: "ws-1", provider: "google_drive", connection_key: "sub-1", credential_id: "cred-1", connected_by_user_id: "user-1", status: "degraded", cursor_json: { start_page_token: "t-9", backfill, reauth_required: true } },
+      ],
+    });
+    const state = createGoogleOAuthSession("ws-1", "user-1", "v");
+    await handleGoogleCallback(request(state), makeDeps(db, { exchangeCode: mock(async () => tokens({ scopes: ["openid", "email", DRIVE_READONLY_SCOPE] })) }));
+
+    expect(db.tables.connections!.find((row) => row.provider === "google_drive")).toMatchObject({ status: "active", cursor_json: { start_page_token: "t-9", backfill } });
+    expect(db.tables.connections!.find((row) => row.provider === "google_drive")!.cursor_json).not.toHaveProperty("reauth_required");
+  });
+
   it("refuses a Google account a teammate already connected for Drive", async () => {
     const db = createFakeDb({
       connections: [
