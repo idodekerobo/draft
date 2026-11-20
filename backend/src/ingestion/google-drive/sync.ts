@@ -75,6 +75,8 @@ export interface DriveCursor {
   deferred_file_ids?: string[];
   // Last file id whose comments were refreshed; the next poll continues after it.
   comment_refresh_after?: string;
+  // Resume checking captured files after a synced folder is removed.
+  folder_cleanup_after?: string | null;
   reauth_required?: boolean;
 }
 
@@ -260,6 +262,34 @@ async function handleFile(ctx: PassContext, change: DriveChange): Promise<boolea
     await deleteFile(ctx, file.id);
   }
   return false;
+}
+
+async function cleanRemovedFolders(ctx: PassContext, after: string | null): Promise<string | undefined> {
+  let query = ctx.client.from("source_items")
+    .select("id, external_id")
+    .eq("workspace_id", ctx.connection.workspace_id)
+    .eq("connection_id", ctx.connection.id)
+    .eq("lifecycle_status", "active")
+    .order("id", { ascending: true })
+    .limit(MAX_FILES_PER_POLL);
+  if (after) query = query.gt("id", after);
+  const { data, error } = await query;
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ id: string; external_id: string }>;
+  const others = await otherConnectionsFolders(ctx);
+  for (const row of rows) {
+    try {
+      const file = await ctx.api.getFile(row.external_id);
+      if (file.trashed || (!(await ctx.resolver.contains(file)) && !(await workspaceHolds(ctx, file, others)))) {
+        await deleteFile(ctx, row.external_id);
+      }
+    } catch (fileError) {
+      if (isDriveError(fileError, "not_found")) await handleGone(ctx, row.external_id);
+      else if (isDriveError(fileError, "forbidden")) ctx.deps.recordSkip(ctx.connection, row.external_id, "forbidden", fileError);
+      else throw fileError;
+    }
+  }
+  return rows.length === MAX_FILES_PER_POLL ? rows[rows.length - 1]!.id : undefined;
 }
 
 async function backfillPass(ctx: PassContext, folders: SyncedGoogleDriveFolder[], cursor: DriveCursor): Promise<DriveCursor["backfill"]> {
@@ -456,6 +486,11 @@ export async function syncDriveConnection(
       next.comment_refresh_after = await refreshRecentComments(ctx, cursor.comment_refresh_after);
     } else {
       next.start_page_token = await api.getStartPageToken();
+    }
+    const folderRemoved = Object.keys(cursor.backfill?.folders ?? {}).some((id) => !folders.some((folder) => folder.googleFolderId === id));
+    if (folderRemoved || cursor.folder_cleanup_after !== undefined) {
+      const after = await cleanRemovedFolders(ctx, folderRemoved ? null : cursor.folder_cleanup_after ?? null);
+      if (after !== undefined) next.folder_cleanup_after = after;
     }
     next.backfill = await backfillPass(ctx, folders, cursor);
     if (ctx.deferred.size > 0) next.deferred_file_ids = [...ctx.deferred];

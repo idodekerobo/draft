@@ -270,6 +270,28 @@ describe("syncDriveConnection", () => {
     expect(db.tables.source_items!.find((row) => row.id === "item-y")!.lifecycle_status).toBe("deleted");
   });
 
+  it("cleans old unchanged files after folder removal, across bounded polls, and keeps another synced folder's files", async () => {
+    const db = seed([
+      connection("conn-a", "user-a", { cursor_json: { start_page_token: "t-1", backfill: { seen: 0, folders: { "f-1": { done: true } } } } }),
+      connection("conn-b", "user-b"),
+    ]);
+    addFolder(db, "conn-b", "f-2");
+    const drive = new FakeDrive();
+    for (let index = 0; index < 105; index++) {
+      const id = `doc-${String(index).padStart(3, "0")}`;
+      drive.add({ id, parents: [index === 0 ? "f-2" : "f-1"], modifiedTime: "2020-01-01T00:00:00Z" });
+      db.tables.source_items!.push({ id: `item-${String(index).padStart(3, "0")}`, workspace_id: "ws-1", connection_id: "conn-a", external_id: id, lifecycle_status: "active", content_markdown: "stored" });
+    }
+    db.tables.source_items!.push({ id: "old-version", workspace_id: "ws-1", connection_id: "conn-a", external_id: "doc-001", lifecycle_status: "superseded", content_markdown: "older" });
+    await run(db, "conn-a", { "conn-a": drive });
+    expect(db.tables.source_items!.filter((row) => row.lifecycle_status === "active")).toHaveLength(6);
+    expect(db.tables.connections![0]!.cursor_json).toMatchObject({ folder_cleanup_after: "item-099" });
+    await run(db, "conn-a", { "conn-a": drive });
+    expect(db.tables.source_items!.filter((row) => row.lifecycle_status === "active").map((row) => row.external_id)).toEqual(["doc-000"]);
+    expect(db.tables.source_items!.find((row) => row.id === "old-version")).toMatchObject({ lifecycle_status: "deleted", content_markdown: null });
+    expect(db.tables.connections![0]!.cursor_json).not.toHaveProperty("folder_cleanup_after");
+  });
+
   it("keeps one active row when the same file is in two connections' synced folders", async () => {
     const db = seed([connection("conn-a", "user-a"), connection("conn-b", "user-b")]);
     addFolder(db, "conn-a", "f-1");
