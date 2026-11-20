@@ -374,7 +374,7 @@ If any of the given directories fail validation, `status` is `partial_error`, ea
 
 ## Hosted connections
 
-`draft connections` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, and Claude Code. This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `connections` is workspace-level and has nothing to do with any one project's directory. Run `draft connections <command> --help` for details.
+`draft connections` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, Claude Code, and Google (Gmail). This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `connections` is workspace-level and has nothing to do with any one project's directory. Run `draft connections <command> --help` for details.
 
 ### `draft connections list [--provider <provider>] [--available ...] [--json]`
 
@@ -440,6 +440,7 @@ In an interactive terminal, without `--json`, `connect` runs each provider's own
 | `slack` | `--no-open`, `--credential-stdin` \| `--credential-fd <n>` | No, but channel selection only runs on an attended TTY | `connected` |
 | `fireflies` | `--no-open` | **Yes — always** | `credentials_stored_webhook_pending` |
 | `granola` | `--workspace-key`, `--credential-stdin` \| `--credential-fd <n>` | No | `connected` |
+| `google` | `--no-open` | No (browser sign-in, then polls) | `connected` |
 
 The provider is always a flag. Omitting `--provider`, passing a bare provider
 word (`connect slack`), or passing a provider that isn't in the table above,
@@ -471,7 +472,20 @@ draft connections connect --provider fireflies                      # requires a
 draft connections connect --provider granola                        # prompts for a personal Granola API key
 draft connections connect --provider granola --workspace-key         # connects the workspace's shared key instead
 echo '{"api_token":"grn_..."}' | draft connections connect --provider granola --credential-stdin --json
+
+draft connections connect --provider google                         # opens Google sign-in, then waits until you finish
+draft connections connect --provider google --json                  # prints action_required with the sign-in URL, then connected
+draft connections disconnect --provider google                      # disconnects your Gmail and revokes Draft's access at Google
 ```
+
+**Google** connects only your own Gmail, not the workspace's. Sign-in always
+happens in the browser, so it works the same in a terminal and from an agent.
+Draft asks only for read-only Gmail access. With `--json`, the CLI first
+prints `{"status":"action_required","provider":"google","url":"…"}`, then
+`{"status":"connected","provider":"google"}` when you finish. It stops
+waiting after 10 minutes. Gmail is read live when your agent asks; nothing is
+copied into Draft. After you connect, restart your MCP client (or run `/mcp`
+in Claude Code) so the Gmail tools appear.
 
 `github`, `linear`, `claude-code`, `slack`, and `granola` accept
 `--credential-stdin` (a single JSON object on stdin) or `--credential-fd <n>`
