@@ -36,6 +36,7 @@ export type IntegrationErrorCode =
   | "google_reconnect_required"
   | "drive_folder_already_synced"
   | "drive_not_a_folder"
+  | "drive_folder_forbidden"
   | "not_folder_owner"
   | "google_already_connected"
   | "google_oauth_not_configured"
@@ -83,6 +84,7 @@ export const INTEGRATION_ERROR_REGISTRY: Record<IntegrationErrorCode, ErrorDefin
   google_reconnect_required: { message: "Reconnect Google to restore Drive access.", action: "draft connections connect google", exitCode: 1 },
   drive_folder_already_synced: { message: "That folder is already synced. Check Connections for its owner.", exitCode: 1 },
   drive_not_a_folder: { message: "Use a Google Drive folder or shared drive ID.", exitCode: 2 },
+  drive_folder_forbidden: { message: "Your Google account cannot open that folder. Ask its owner to share it with you.", exitCode: 1 },
   not_folder_owner: { message: "Only the person who added this folder can remove it.", exitCode: 1 },
   google_already_connected: { message: "Google is already connected for you.", exitCode: 1 },
   google_oauth_not_configured: { message: "Google sign-in is not set up on this Draft server.", exitCode: 1 },

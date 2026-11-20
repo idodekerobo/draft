@@ -52,6 +52,14 @@ async function callerConnection(db: SupabaseClient, workspaceId: string, userId:
 
 const notConnected = () => errorResponse("drive_not_connected", 404);
 
+// Google's own HTTP status is not ours to return: a 401 there means the caller must reconnect Google.
+function driveErrorResponse(error: DriveApiError, workspaceId: string, failureCode: string): Response {
+  if (error.code === "unauthorized") return errorResponse("google_reconnect_required", 409, undefined, workspaceId, "Reconnect Google to restore Drive access.");
+  if (error.code === "not_found") return errorResponse("not_found", 404);
+  if (error.code === "forbidden") return errorResponse("drive_folder_forbidden", 403);
+  return errorResponse(failureCode, 502, error, workspaceId);
+}
+
 export async function listDriveFolders(workspaceId: string, userId: string, deps = defaultDependencies): Promise<Response> {
   try {
     const connection = await callerConnection(deps.db, workspaceId, userId);
@@ -116,7 +124,8 @@ export async function listDriveFolderOptions(
       }),
     });
   } catch (error) {
-    return errorResponse("drive_folder_options_failed", 502, error, workspaceId);
+    if (error instanceof DriveApiError) return driveErrorResponse(error, workspaceId, "drive_folder_options_failed");
+    return errorResponse("drive_folder_options_failed", 500, error, workspaceId);
   }
 }
 
@@ -171,7 +180,7 @@ export async function addDriveFolder(workspaceId: string, userId: string, body: 
       { status: 201 },
     );
   } catch (error) {
-    if (error instanceof DriveApiError) return errorResponse(error.code === "not_found" ? "not_found" : "drive_folder_lookup_failed", error.status);
+    if (error instanceof DriveApiError) return driveErrorResponse(error, workspaceId, "drive_folder_lookup_failed");
     return errorResponse("drive_folder_add_failed", 500, error, workspaceId);
   }
 }

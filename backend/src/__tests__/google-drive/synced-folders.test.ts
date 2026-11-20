@@ -83,6 +83,20 @@ describe("synced Google Drive folders", () => {
     expect(db.tables.scheduled_tasks![0]!.next_due_at).toBe("2026-11-20T00:00:00.000Z");
   });
 
+  it("maps Drive API failures to Draft's own codes", async () => {
+    const db = seed();
+    const failing = (code: "unauthorized" | "forbidden" | "not_found" | "request_failed", status: number) =>
+      fakeApi({}, { getFile: async () => { throw new DriveApiError("x", code, status); }, listFolderChildren: async () => { throw new DriveApiError("x", code, status); } });
+    const add = (api: DriveApi) => routes.addDriveFolder("ws-1", "user-a", { googleFolderId: "f-1" }, deps(db, api));
+    const cases = [["unauthorized", 401, 409, "google_reconnect_required"], ["forbidden", 403, 403, "drive_folder_forbidden"], ["not_found", 404, 404, "not_found"], ["request_failed", 500, 502, "drive_folder_lookup_failed"]] as const;
+    for (const [code, googleStatus, status, error] of cases) {
+      const response = await add(failing(code, googleStatus));
+      expect([response.status, ((await response.json()) as { error: string }).error]).toEqual([status, error]);
+    }
+    const options = await routes.listDriveFolderOptions("ws-1", "user-a", "root", deps(db, failing("unauthorized", 401)));
+    expect(options.status).toBe(409);
+  });
+
   it("removes a folder only for its owner", async () => {
     const db = seed();
     await routes.addDriveFolder("ws-1", "user-a", { folderKind: "shared_drive", googleFolderId: "d-1", name: "Team" }, deps(db));

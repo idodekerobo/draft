@@ -34,6 +34,7 @@ describe("integration safe output", () => {
       "connection_update_conflict",
       "credential_input_required",
       "drive_folder_already_synced",
+      "drive_folder_forbidden",
       "drive_not_a_folder",
       "drive_not_connected",
       "expired",

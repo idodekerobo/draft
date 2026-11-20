@@ -310,6 +310,7 @@ export type FetchErrorCode =
   | "google_reconnect_required"
   | "drive_folder_already_synced"
   | "drive_not_a_folder"
+  | "drive_folder_forbidden"
   | "not_folder_owner"
   | "google_already_connected"
   | "google_oauth_not_configured"
@@ -419,6 +420,7 @@ const SAFE_BACKEND_ERROR_CODES = new Set<FetchErrorCode>([
   "google_reconnect_required",
   "drive_folder_already_synced",
   "drive_not_a_folder",
+  "drive_folder_forbidden",
   "not_folder_owner",
   "google_already_connected",
   "google_oauth_not_configured",
