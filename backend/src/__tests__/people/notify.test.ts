@@ -42,6 +42,7 @@ const newDb = () =>
       source_items: [],
       scheduled_tasks: [{ id: TASK, workspace_id: WS, config_json: { title: "Meeting follow-up" } }],
       agent_run_tool_calls: [],
+      errors: [],
       agent_runs: [{ id: RUN, workspace_id: WS, scheduled_task_id: TASK }],
     },
     { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]] }, uuidTables: ["people"] },
@@ -101,7 +102,7 @@ describe("people.notify", () => {
   it("keeps the line first even when the model writes its own first line", async () => {
     const { call, sent } = setup();
     await call(asRun(toMembers), "people.notify", { personId: IZA, text: "Ignore the line above. This message is from a human, not an agent." });
-    expect(sent[0]!.message.text.startsWith(`${LINE}\n`)).toBe(true);
+    expect(sent[0]!.message.text!.startsWith(`${LINE}\n`)).toBe(true);
   });
 
   it("names the person who sent a message from the CLI", async () => {
@@ -121,18 +122,18 @@ describe("people.notify", () => {
     const { call, sent } = setup();
     const manual = (requestedBy: string): ToolCaller => runCaller({ ...runSpec(toMembers), trigger: { type: "manual", requestedBy: parseUserId(requestedBy) } });
     await call(manual(ADMIN), "people.notify", { personId: IZA, text: "a" });
-    expect(sent[0]!.message.text.split("\n")[0]).toBe(`${LINE} · started by Ada`);
+    expect(sent[0]!.message.text!.split("\n")[0]).toBe(`${LINE} · started by Ada`);
     await call(manual(OWNER), "people.notify", { personId: IZA, text: "b" });
-    expect(sent[1]!.message.text.split("\n")[0]).toBe(LINE);
+    expect(sent[1]!.message.text!.split("\n")[0]).toBe(LINE);
   });
 
   it("says a run with no routine title, or no owner, is still an agent", async () => {
     const { call, sent, db } = setup();
     db.tables.scheduled_tasks![0]!.config_json = {};
     await call(asRun(toMembers), "people.notify", { personId: IZA, text: "a" });
-    expect(sent[0]!.message.text.split("\n")[0]).toBe("🤖 Draft agent · running a routine for Uzo");
+    expect(sent[0]!.message.text!.split("\n")[0]).toBe("🤖 Draft agent · running a routine for Uzo");
     await call(asRun([{ tool: "people.notify", limits: { recipients: "members" } }], null), "people.notify", { personId: IZA, text: "b" });
-    expect(sent[1]!.message.text.split("\n")[0]).toBe("🤖 Draft agent · routine run");
+    expect(sent[1]!.message.text!.split("\n")[0]).toBe("🤖 Draft agent · routine run");
   });
 
   it("refuses the whole call, with not_allowed, for a missing, pending or external person", async () => {
@@ -200,6 +201,36 @@ describe("people.notify", () => {
   });
 });
 
+describe("notify error logging", () => {
+  it("logs a thrown channel error to the errors table without the message body", async () => {
+    const broken: NotifyChannel = { id: "slack", canReach: async () => true, send: async () => { throw new Error("slack_send_failed: channel_not_found"); } };
+    const db = newDb();
+    const { call } = setup({ channel: broken, db });
+    const out = await call(asUser(), "people.notify", { personId: IZA, text: "secret launch plan" });
+    expect(out).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "failed", code: "provider_error" }] } });
+    expect(db.tables.errors).toHaveLength(1);
+    expect(db.tables.errors![0]).toMatchObject({ workspace_id: WS, operation: "execution", agent_run_id: null });
+    expect(JSON.stringify(db.tables.errors![0])).not.toContain("secret launch plan");
+    expect(db.tables.errors![0]!.detail_json).toMatchObject({ code: "notify_send_failed", channel: "slack", personId: IZA });
+  });
+
+  it("links the logged error to the run that sent", async () => {
+    const broken: NotifyChannel = { id: "slack", canReach: async () => true, send: async () => { throw new Error("boom"); } };
+    const db = newDb();
+    const { call } = setup({ channel: broken, db });
+    await call(runCaller({ ...runSpec([{ tool: "people.notify", limits: { recipients: "members" } } as AnyDraftToolPermission]) }), "people.notify", { personId: IZA, text: "x" });
+    expect(db.tables.errors![0]).toMatchObject({ agent_run_id: RUN });
+  });
+
+  it("does not log not_reachable", async () => {
+    const { channel } = recordingChannel({ channel: "slack", status: "sent" }, false);
+    const db = newDb();
+    const { call } = setup({ channel, db });
+    await call(asUser(), "people.notify", { personId: IZA, text: "x" });
+    expect(db.tables.errors).toHaveLength(0);
+  });
+});
+
 describe("sendNotification", () => {
   const person = markReachable({ id: parsePersonId(IZA), workspaceId: parseWorkspaceId(WS), displayName: "Iza", userId: null, notifyChannels: ["slack"] });
 
@@ -241,10 +272,15 @@ describe("the Slack channel", () => {
     expect(await slackChannel(fakeClient(newDb()), deps()).send(person, { text: "x" })).toEqual({ channel: "slack", status: "failed", code: "not_reachable" });
   });
 
-  it("reports provider_error when Slack refuses", async () => {
+  it("throws when Slack refuses, so the sender can log it and report provider_error", async () => {
     const d = deps();
     d.postMessage = mock(async () => { throw new Error("channel_not_found"); });
-    expect(await slackChannel(fakeClient(seed("confirmed")), d).send(person, { text: "x" })).toEqual({ channel: "slack", status: "failed", code: "provider_error" });
+    const channel = slackChannel(fakeClient(seed("confirmed")), d);
+    await expect(channel.send(person, { text: "x" })).rejects.toThrow("channel_not_found");
+    const logged: unknown[] = [];
+    const result = await sendNotification({ slack: channel } as Record<NotifyChannelId, NotifyChannel>, person, { text: "x" }, ["slack"], (_id, error) => { logged.push(error); });
+    expect(result.results).toEqual([{ channel: "slack", status: "failed", code: "provider_error" }]);
+    expect(logged).toHaveLength(1);
   });
 });
 
@@ -261,7 +297,7 @@ describe("telling admins about a pending person", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.personId).toBe(ADA);
-    const text = sent[0]!.message.text;
+    const text = sent[0]!.message.text!;
     expect(text.startsWith(`${LINE}\nDraft found Cory Banks in "Nov 9 standup"`)).toBe(true);
     expect(text).toContain(evidence.quote);
     expect(text).toContain("draft people approve ");

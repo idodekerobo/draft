@@ -14,7 +14,7 @@ export interface SlackChannelDeps {
 const TRUSTED = ["confirmed", "from_connection"];
 
 /** `text`, then the link on its own line when there is one. */
-export const renderSlackText = (message: NotifyMessage) => (message.link ? `${message.text}\n${message.link}` : message.text);
+export const renderSlackText = (message: NotifyMessage) => (message.link ? `${message.text ?? ""}\n${message.link}` : (message.text ?? ""));
 
 /** Messages a person as a Slack direct message from the workspace's connected app. */
 export function slackChannel(client: SupabaseClient, deps: SlackChannelDeps = {}): NotifyChannel {
@@ -51,14 +51,11 @@ export function slackChannel(client: SupabaseClient, deps: SlackChannelDeps = {}
     async send(person, message): Promise<ChannelSendResult> {
       const found = await target(person);
       if (!found) return { channel: "slack", status: "failed", code: "not_reachable" };
-      try {
-        const botToken = await resolveBotToken(person.workspaceId, found.credentialId);
-        const channel = await openDm(botToken, found.slackUserId);
-        await postMessage(botToken, channel, renderSlackText(message));
-        return { channel: "slack", status: "sent" };
-      } catch {
-        return { channel: "slack", status: "failed", code: "provider_error" };
-      }
+      // A Slack error throws, so sendNotification can log it and report provider_error.
+      const botToken = await resolveBotToken(person.workspaceId, found.credentialId);
+      const channel = await openDm(botToken, found.slackUserId);
+      await postMessage(botToken, channel, renderSlackText(message));
+      return { channel: "slack", status: "sent" };
     },
   };
 }

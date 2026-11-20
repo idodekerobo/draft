@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import { isNotifyChannelId, NOTIFY_CHANNELS, type NotifyChannelId } from "draft-core/notify";
+import { recordError } from "../../../errors/record-error";
 import { attributionLine } from "../../../notify/attribution";
 import { isFailure, resolvePerson } from "../../../notify/resolve-person";
 import { defaultChannels, sendNotification } from "../../../notify/send";
@@ -209,7 +210,10 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
       }
 
       const line = await attributionLine(client, caller);
-      const result = await sendNotification(channels, person, { text: `${line}\n${input.text}`, ...(input.link ? { link: input.link } : {}) }, input.channels?.filter(isNotifyChannelId));
+      const agentRunId = caller.origin.kind === "run" ? caller.origin.run.id : null;
+      const logFailure = (channel: NotifyChannelId, error: unknown) =>
+        recordError({ client, workspaceId, agentRunId, operation: "execution", code: "notify_send_failed", message: `people.notify failed on ${channel}`, detail: { channel, personId: person.id }, error });
+      const result = await sendNotification(channels, person, { text: `${line}\n${input.text}`, ...(input.link ? { link: input.link } : {}) }, input.channels?.filter(isNotifyChannelId), logFailure);
       return { status: "ok", output: result, summary: result.results.map((entry) => `${entry.channel}: ${entry.status}`).join(", ") };
     },
   });
