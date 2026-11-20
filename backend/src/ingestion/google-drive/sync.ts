@@ -33,7 +33,7 @@ export interface DriveSyncConnection {
   workspace_id: string;
 }
 
-export type DriveSkipReason = "forbidden" | "render_failed";
+export type DriveSkipReason = "forbidden" | "render_failed" | "folder_unreadable";
 
 export interface DriveSyncDependencies {
   settings: () => GoogleOAuthSettings | null;
@@ -53,7 +53,7 @@ const defaultDependencies: DriveSyncDependencies = {
       workspaceId: connection.workspace_id,
       connectionId: connection.id,
       operation: "ingestion",
-      errorCode: `drive_file_${reason}`,
+      errorCode: reason === "folder_unreadable" ? "drive_folder_unreadable" : `drive_file_${reason}`,
       detail: { file_id: fileId },
       error,
     }),
@@ -336,13 +336,37 @@ async function backfillPass(ctx: PassContext, folders: SyncedGoogleDriveFolder[]
 
       let files: DriveFile[];
       if (folder.folderKind === "shared_drive") {
-        const page = await ctx.api.listFiles({ q: nativeQuery, driveId: folder.googleFolderId, pageToken: progress.page_token });
+        let page;
+        try {
+          page = await ctx.api.listFiles({ q: nativeQuery, driveId: folder.googleFolderId, pageToken: progress.page_token });
+        } catch (listError) {
+          if (!isDriveError(listError, "forbidden", "not_found")) throw listError;
+          ctx.deps.recordSkip(ctx.connection, folder.googleFolderId, "folder_unreadable", listError);
+          progress.done = true;
+          delete progress.page_token;
+          continue;
+        }
         files = page.files;
         progress.page_token = page.nextPageToken;
         if (!page.nextPageToken) progress.done = true;
       } else {
         const queue = progress.queue ?? [folder.googleFolderId];
-        const page = await ctx.api.listFolderChildren(queue[0]!, progress.page_token);
+        let page;
+        try {
+          page = await ctx.api.listFolderChildren(queue[0]!, progress.page_token);
+        } catch (listError) {
+          if (!isDriveError(listError, "forbidden", "not_found")) throw listError;
+          // Skip the unreadable folder so the rest of the backfill and the cursor save still happen.
+          ctx.deps.recordSkip(ctx.connection, queue[0]!, "folder_unreadable", listError);
+          queue.shift();
+          delete progress.page_token;
+          progress.queue = queue;
+          if (queue.length === 0) {
+            progress.done = true;
+            delete progress.queue;
+          }
+          continue;
+        }
         for (const child of page.files) if (child.mimeType === FOLDER_MIME) queue.push(child.id);
         files = page.files.filter((file) => isNativeMime(file) && !file.trashed && (file.modifiedTime ?? "") > since);
         if (page.nextPageToken) {

@@ -385,6 +385,25 @@ describe("syncDriveConnection", () => {
     expect(db.tables.connections![0]!.status).toBe("revoked");
   });
 
+  it("skips a folder it may not list, keeps backfilling the others and saves the cursor", async () => {
+    const db = seed();
+    addFolder(db, "conn-a", "f-gone");
+    addFolder(db, "conn-a", "f-1");
+    const drive = new FakeDrive();
+    drive.add({ id: "doc-1", parents: ["f-1"] });
+    const api = drive.api();
+    const listing = { ...api, listFolderChildren: async (folderId: string, pageToken?: string) => {
+      if (folderId === "f-gone") throw new DriveApiError("no", "not_found", 404);
+      return api.listFolderChildren(folderId, pageToken);
+    } };
+    const skips: string[] = [];
+    await sync.syncDriveConnection({ id: "conn-a", workspace_id: "ws-1" }, fakeClient(db), { ...deps({ "conn-a": drive }, skips), createApi: () => listing });
+
+    expect(skips).toEqual(["f-gone:folder_unreadable"]);
+    expect(active(db).map((row) => row.external_id)).toEqual(["doc-1"]);
+    expect(db.tables.connections![0]!.cursor_json).toMatchObject({ start_page_token: "start-1", backfill: { folders: { "f-gone": { done: true }, "f-1": { done: true } } } });
+  });
+
   it("skips a file it may not read and keeps going", async () => {
     const db = seed();
     addFolder(db, "conn-a", "f-1");
