@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import type { ScheduledTaskRow } from "../types/tables";
-import { parseAgentRoutineConfig, type AgentRoutineConfig } from "./config";
+import { effectiveBuiltInTools, parseAgentRoutineConfig, type AgentRoutineConfig } from "./config";
 
 /** A routine a person made is level 0. A run at level 3 can't make another routine. */
 export const ROUTINE_MAX_DEPTH = 3;
@@ -16,7 +16,7 @@ export interface ParentRoutine {
 }
 
 /** The access a routine holds. A run may give a routine no more than it holds itself. */
-export type RoutineAccess = Pick<AgentRoutineConfig, "canNotify" | "postChannels" | "github">;
+export type RoutineAccess = Pick<AgentRoutineConfig, "canNotify" | "postChannels" | "github"> & Partial<Pick<AgentRoutineConfig, "harness" | "builtInTools" | "toolset">>;
 
 async function runTaskId(client: SupabaseClient, runId: string, workspaceId: string): Promise<string | null> {
   const { data, error } = await client.from("agent_runs").select("scheduled_task_id").eq("id", runId).eq("workspace_id", workspaceId).maybeSingle();
@@ -86,6 +86,10 @@ export function widerAccess(parent: RoutineAccess | null, child: RoutineAccess):
     const allowed = parent?.postChannels;
     const wider = allowed === undefined || (allowed !== "joined" && (child.postChannels === "joined" || !isSubset(child.postChannels, allowed, channelKey)));
     if (wider) return "postChannels";
+  }
+  // A run's own routine bounds the built-in tools it can give. A run with no routine, such as a cloud session, acts for its owner.
+  if (child.builtInTools && parent?.harness && child.harness === parent.harness && !isSubset(child.builtInTools, effectiveBuiltInTools({ harness: parent.harness, builtInTools: parent.builtInTools, toolset: parent.toolset }), (value) => value)) {
+    return "builtInTools";
   }
   if (child.github) {
     const allowed = parent?.github;

@@ -1,4 +1,4 @@
-import { RoutineInput, type RoutineEventName, type RoutineWhen } from "draft-core/routines";
+import { RoutineInput, defaultRoutineBuiltInTools, type RoutineEventName, type RoutineWhen } from "draft-core/routines";
 import { validateAgentRoutineConfig, type AgentRoutineConfig } from "./config";
 
 export type CreateValidation =
@@ -19,7 +19,9 @@ export function validateCreate(body: unknown): CreateValidation {
   // The run path fills in the harness before it calls this, so a missing one means a person left it out.
   if (!harness) return { ok: false, field: "harness" };
 
-  const checked = validateAgentRoutineConfig({ ...routine, harness, ...triggerFields(when) });
+  // A new routine that names no built-in tools gets every one its harness offers.
+  const builtInTools = routine.builtInTools ?? defaultRoutineBuiltInTools(harness);
+  const checked = validateAgentRoutineConfig({ ...routine, builtInTools, harness, ...triggerFields(when) });
   if (!checked.ok) return { ok: false, field: checked.field };
   return { ok: true, config: checked.config, when, ...(enabled !== undefined ? { enabled } : {}) };
 }

@@ -44,6 +44,8 @@ export interface AgentRoutine {
   canNotify?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
+  /** The built-in tools of its harness it may use. */
+  builtInTools?: string[];
   events?: RoutineEventName[];
   onSchedule?: false;
 }
@@ -104,6 +106,7 @@ export interface AgentRoutineEdit {
   canNotify?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
+  builtInTools?: string[];
 }
 
 /** When a routine runs: a schedule (null turns it off) and/or triggers. A PATCH leaves an omitted part unchanged. */
@@ -131,4 +134,5 @@ export interface CreateRoutineInput {
   canNotify?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
+  builtInTools?: string[];
 }

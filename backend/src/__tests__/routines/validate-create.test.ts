@@ -8,7 +8,7 @@ describe("validateCreate", () => {
   it("accepts a routine with a model and a weekly schedule", () => {
     expect(validateCreate(valid)).toEqual({
       ok: true,
-      config: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku" },
+      config: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku", builtInTools: ["Edit", "Write", "Bash", "WebSearch", "WebFetch"] },
       when: rule,
     });
   });
@@ -34,7 +34,7 @@ describe("validateCreate", () => {
 
   it("stores a once with no triggers and no off flag", () => {
     const result = validateCreate({ ...valid, when: { in: "2h" } });
-    expect(result).toEqual({ ok: true, config: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku" }, when: { in: "2h" } });
+    expect(result).toEqual({ ok: true, config: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: "haiku", builtInTools: ["Edit", "Write", "Bash", "WebSearch", "WebFetch"] }, when: { in: "2h" } });
   });
 
   it("stores a schedule that is off as onSchedule false, with its triggers", () => {

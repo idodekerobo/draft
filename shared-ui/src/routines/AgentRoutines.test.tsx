@@ -363,7 +363,7 @@ describe("editing a routine", () => {
 
     await act(async () => fireEvent.click(save(dialog)));
     await waitFor(() => expect(updateRoutine).toHaveBeenCalledTimes(1));
-    expect(updateRoutine.mock.calls[0]![1]).toEqual({ harness: "codex", model: null, reasoningEffort: null });
+    expect(updateRoutine.mock.calls[0]![1]).toEqual({ harness: "codex", model: null, reasoningEffort: null, builtInTools: ["web_search"] });
   });
 
   it("blocks Save and shows the connect help when the new agent is not connected", async () => {

@@ -1,8 +1,9 @@
 import { validateAgentRoutineConfig, type AgentRoutineConfig } from "./config";
+import { defaultRoutineBuiltInTools } from "draft-core/routines";
 import type { RoutineEditability } from "../scheduling/routine-registry";
 import { RoutinePatch, RoutineWhen } from "draft-core/routines";
 
-const AGENT_FIELDS = ["title", "prompt", "harness", "model", "reasoningEffort", "canNotify", "postChannels", "github"] as const;
+const AGENT_FIELDS = ["title", "prompt", "harness", "model", "reasoningEffort", "canNotify", "postChannels", "github", "builtInTools"] as const;
 /** Sending null for one of these turns that ability off. */
 const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github", "reasoningEffort"]);
 const ALLOWED_FIELDS = new Set<string>(["enabled", "when", ...AGENT_FIELDS]);
@@ -27,6 +28,8 @@ function mergeAgentConfig(current: AgentRoutineConfig, record: Record<string, un
     else if (record[field] !== undefined) merged[field] = record[field];
   }
   if (record.harness !== undefined && record.harness !== current.harness && record.model === undefined) merged.model = null;
+  // Each harness has its own built-in tools, so a new harness with no list starts with all of its own.
+  if (record.harness !== undefined && record.harness !== current.harness && record.builtInTools === undefined) merged.builtInTools = defaultRoutineBuiltInTools(record.harness as string);
   // The model decides which efforts are valid, so a changed harness or model drops the old effort unless a new one comes with it.
   const modelChanged = merged.harness !== current.harness || merged.model !== current.model;
   if (modelChanged && record.reasoningEffort === undefined) delete merged.reasoningEffort;

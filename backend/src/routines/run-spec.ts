@@ -1,14 +1,14 @@
 import { cloudToolsetFor } from "draft-core/harnesses";
 import { cronTrigger, parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec, type AgentRunTrigger } from "draft-core/run-spec";
 import { ROUTINE_READ_PERMISSIONS, type AnyDraftToolPermission } from "draft-core/tools";
-import type { AgentRoutineConfig } from "./config";
+import { effectiveBuiltInTools, type AgentRoutineConfig } from "./config";
 
 /** What a routine may call through Draft today. It reads and writes context. */
 export const ROUTINE_PERMISSIONS = ROUTINE_READ_PERMISSIONS;
 
-/** Built-in tools every routine gets on top of the harness's starting tools. Synthesis never gets a shell. */
-export const ROUTINE_NATIVE_TOOLS: Record<AgentRoutineConfig["harness"], ReadonlyArray<string>> = {
-  claude: ["Grep", "Bash"],
+/** Built-in tools every routine has, whatever it picked: reading for Claude Code, the shell Codex always runs. Synthesis never gets a shell. */
+export const ROUTINE_ALWAYS_ON_NATIVE_TOOLS: Record<AgentRoutineConfig["harness"], ReadonlyArray<string>> = {
+  claude: ["Grep"],
   codex: ["shell"],
 };
 
@@ -61,7 +61,7 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
     runtime: {
       type: "cloud",
       toolset: cloudToolsetFor(input.routine.harness, {
-        nativeTools: [...ROUTINE_NATIVE_TOOLS[input.routine.harness], ...(input.routine.toolset?.nativeTools ?? [])],
+        nativeTools: [...ROUTINE_ALWAYS_ON_NATIVE_TOOLS[input.routine.harness], ...effectiveBuiltInTools(input.routine)],
         mcpServers: (input.mcpServers ?? []).map((server) => ({ connectionId: parseConnectionId(server.connectionId), tools: server.tools })),
       }),
     },
