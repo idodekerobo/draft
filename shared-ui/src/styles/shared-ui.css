@@ -1259,10 +1259,16 @@
 .ui-start__queued { align-self: flex-end; max-width: 80%; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); font-size: var(--font-size-secondary); }
 .ui-start__queued-text { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-notice); background: var(--color-bg-surface); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-size-body, 14px); }
 .ui-start__queued .ui-muted { margin: 0; }
-.ui-routines__builtins > summary { display: flex; align-items: center; gap: var(--space-2); cursor: pointer; list-style: none; }
+.ui-routines__builtins > summary { display: flex; justify-content: flex-start; align-items: center; gap: var(--space-2); cursor: pointer; list-style: none; font-size: 13px; }
+.ui-routines__builtins input[type="checkbox"] { flex: none; width: auto; margin: 0; padding: 0; accent-color: var(--color-accent-fill); }
+.ui-routines__builtins-label { flex: 1 1 auto; min-width: 0; }
+.ui-routines__builtins-label .ui-routines__secondary { white-space: nowrap; margin-left: var(--space-1); }
+.ui-routines__tool-name { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-2); }
+.ui-routines__tool-name code { font-family: var(--font-mono); font-size: 12px; line-height: 1; color: var(--color-text-secondary); }
+.ui-routines__check--locked { color: var(--color-text-secondary); }
 .ui-routines__builtins > summary::-webkit-details-marker { display: none; }
 .ui-routines__builtins-chevron { display: inline-block; width: 12px; color: var(--color-text-secondary); transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1); }
 .ui-routines__builtins[open] > summary .ui-routines__builtins-chevron { transform: rotate(90deg); }
-.ui-routines__builtins-list { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); padding-left: var(--space-8); }
+.ui-routines__builtins-list { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-1); padding-left: 32px; }
 .ui-routines__builtins-list p { margin: var(--space-1) 0 0; }
 @media (prefers-reduced-motion: reduce) { .ui-routines__builtins-chevron { transition: none; } }

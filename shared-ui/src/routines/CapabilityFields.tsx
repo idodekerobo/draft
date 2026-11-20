@@ -192,14 +192,21 @@ function BuiltInToolsField({ harness, value, disabled, onChange }: { harness: st
   const on = offered.filter((entry) => value.includes(entry.tool));
   const state = on.length === 0 ? "none" : on.length === offered.length ? "all" : "some";
   const label = `Enable ${getHarness(harness)?.label ?? harness} built-in tools`;
-  const alwaysOn = (ROUTINE_ALWAYS_ON_TOOLS as Record<string, string>)[harness];
+  const alwaysOn = (ROUTINE_ALWAYS_ON_TOOLS as Record<string, ReadonlyArray<{ tool: string; label: string }>>)[harness] ?? [];
+  const name = (entry: { tool: string; label: string }, hint?: string) => (
+    <span className="ui-routines__tool-name">
+      {entry.label} <code>{entry.tool}</code>
+      {hint && <span className="ui-routines__secondary">{hint}</span>}
+    </span>
+  );
   return (
     <details className="ui-routines__builtins">
       <summary className="ui-routines__builtins-summary">
         <span className="ui-routines__builtins-chevron" aria-hidden="true">▸</span>
         <MixedCheckbox state={state} label={label} disabled={disabled} onChange={(all) => onChange(all ? offered.map((entry) => entry.tool) : [])} />
-        <span>{label}</span>
-        <span className="ui-routines__secondary"> {on.length} of {offered.length}</span>
+        <span className="ui-routines__builtins-label">
+          {label} <span className="ui-routines__secondary">{on.length} of {offered.length}</span>
+        </span>
       </summary>
       <div className="ui-routines__builtins-list">
         {offered.map((entry) => (
@@ -210,10 +217,15 @@ function BuiltInToolsField({ harness, value, disabled, onChange }: { harness: st
               disabled={disabled}
               onChange={(event) => onChange(event.target.checked ? offered.map((o) => o.tool).filter((tool) => tool === entry.tool || value.includes(tool)) : value.filter((tool) => tool !== entry.tool))}
             />
-            {entry.label} <code className="ui-routines__secondary">{entry.tool}</code>
+            {name(entry)}
           </label>
         ))}
-        {alwaysOn && <p className="ui-routines__secondary">{alwaysOn}</p>}
+        {alwaysOn.map((entry) => (
+          <label key={entry.tool} className="ui-routines__check ui-routines__check--locked">
+            <input type="checkbox" checked disabled />
+            {name(entry, "Always on")}
+          </label>
+        ))}
       </div>
     </details>
   );

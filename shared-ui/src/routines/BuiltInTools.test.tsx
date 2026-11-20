@@ -32,13 +32,18 @@ describe("routine built-in tools", () => {
     const onChange = setup({ ...defaultCapabilities([], "claude"), builtInTools: ["Edit"] });
     fireEvent.click(screen.getByRole("checkbox", { name: /Run shell commands/ }));
     expect(onChange.mock.calls.at(-1)![0].builtInTools).toEqual(["Edit", "Bash"]);
-    expect(screen.getByText("Reading files is always on.")).toBeTruthy();
+    const locked = screen.getByRole("checkbox", { name: /Read files/ }) as HTMLInputElement;
+    expect(locked.checked && locked.disabled).toBe(true);
   });
 
   it("names Codex's own tools for a Codex routine", () => {
     setup({ ...defaultCapabilities([], "codex") }, "codex");
     expect(screen.getByRole("checkbox", { name: "Enable Codex built-in tools" })).toBeTruthy();
-    expect(screen.getByText("Codex always runs shell commands and edits files.")).toBeTruthy();
+    for (const name of [/Run shell commands/, /Edit files/]) {
+      const box = screen.getByRole("checkbox", { name }) as HTMLInputElement;
+      expect(box.checked && box.disabled).toBe(true);
+    }
+    expect((screen.getByRole("checkbox", { name: /Search the web/ }) as HTMLInputElement).disabled).toBe(false);
   });
 
   it("says in the preview what the routine can do", () => {

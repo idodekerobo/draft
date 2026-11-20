@@ -49,10 +49,10 @@ export const ROUTINE_BUILT_IN_TOOLS = {
   codex: [{ tool: "web_search", label: "Search the web" }],
 } as const satisfies Record<string, ReadonlyArray<RoutineBuiltInTool>>;
 
-/** What a harness always has in a routine, shown so the person knows. */
-export const ROUTINE_ALWAYS_ON_TOOLS: Record<keyof typeof ROUTINE_BUILT_IN_TOOLS, string> = {
-  claude: "Reading files is always on.",
-  codex: "Codex always runs shell commands and edits files.",
+/** Built-in tools a harness always has in a routine. Shown, ticked and locked, so the person knows. */
+export const ROUTINE_ALWAYS_ON_TOOLS: Record<keyof typeof ROUTINE_BUILT_IN_TOOLS, ReadonlyArray<RoutineBuiltInTool>> = {
+  claude: [{ tool: "Read, Glob, Grep", label: "Read files" }],
+  codex: [{ tool: "shell", label: "Run shell commands" }, { tool: "apply_patch", label: "Edit files" }],
 };
 
 /** The built-in tools a harness offers routines. Empty for a harness with none. */
