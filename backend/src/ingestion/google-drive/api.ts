@@ -13,6 +13,7 @@ export const DOC_MIME = "application/vnd.google-apps.document";
 export const SHEET_MIME = "application/vnd.google-apps.spreadsheet";
 export const SLIDES_MIME = "application/vnd.google-apps.presentation";
 export const NATIVE_MIME_TYPES = [DOC_MIME, SHEET_MIME, SLIDES_MIME];
+export const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 const FILE_FIELDS = "id,name,mimeType,driveId,modifiedTime,version,webViewLink,trashed,parents,owners(emailAddress),lastModifyingUser(displayName)";
 

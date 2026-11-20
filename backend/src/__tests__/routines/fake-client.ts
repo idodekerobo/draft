@@ -115,6 +115,10 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
       matched = [...matched].sort((a, b) => ((a[column] as string) < (b[column] as string) ? -1 : 1) * (ascending ? 1 : -1));
     }
     matched = matched.slice(0, this.cap);
+    if (this.mode === "delete") {
+      this.db.tables[this.table] = rows.filter((r) => !matched.includes(r));
+      return { data: this.returning ? matched : null, error: null };
+    }
     if (this.mode === "update") {
       for (const row of matched) Object.assign(row, this.payload);
       return { data: this.returning ? matched : null, error: null };
