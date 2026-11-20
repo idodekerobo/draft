@@ -36,7 +36,7 @@ The remote MCP server provides authenticated, read-only access to workspace cont
 
 ## Gmail
 
-When you connect Google, Draft reads your Gmail live, with your own Google login, only when an agent asks. Draft does not copy or store your mail. Only your own agents can read it, plus the routines where you turn on **Read my Gmail**. Teammates and their agents cannot. Draft asks only for read-only Gmail access. Your Google refresh token is encrypted like other credentials. When you disconnect, Draft asks Google to revoke it and stops using it. Gmail search terms are not written to Draft's logs. If a captured coding session used a Gmail tool, Draft makes that session's summary private to you.
+When you connect Google, Draft reads your Gmail live, with your own Google login, only when an agent asks. Draft does not copy or store your mail. Only your own agents can read it, plus the routines where you turn on **Read my Gmail**. Teammates and their agents cannot. Google consent requests read-only Gmail and Drive access; partial grants work. Your Google refresh token is encrypted like other credentials. When you disconnect Gmail, Draft stops using that connection. The shared Google credential is revoked once no live Google product uses it. Gmail search terms are not written to Draft's logs. If a captured coding session used a Gmail tool, Draft makes that session's summary private to you.
 
 Known gap: the raw transcript of a captured session is still visible to your teammates. If a session read your mail, parts of it can show in that transcript.
 
@@ -70,3 +70,26 @@ Hosted team collaboration uses Draft organizations, teams, workspaces, and invit
 - [Architecture](./architecture.md)
 - [Hosted team collaboration](./setting-up-collaboration.md)
 - [MCP and agent connections](./mcp.md)
+
+## Google Drive
+
+Choosing a synced Google Drive folder is consent to put every native Google Doc,
+Sheet and Slide in it into shared company context, including files only the person
+who chose the folder can see. A shared drive can also be synced. The folder browser
+states this before folders are added. Google access is read-only: Draft does not
+edit, move or delete files in Google Drive. Gmail remains private and is not synced.
+
+Draft stores rendered file content, comments and captured versions. Workspace
+members and their agents can read those shared copies, including version history.
+Only the person who added a synced folder may remove it. If a file is trashed,
+removed or leaves every synced folder, sync marks all its captured versions deleted
+and clears their text and structured content. Removing a synced folder takes effect
+when sync next checks its files. Facts already synthesized into company context
+are not retroactively removed by disconnecting or removing a folder.
+
+Disconnect stops new ingestion, releases the connection's synced folders, and keeps
+captured Drive files. Another connection may sync those folders later. The encrypted
+Google credential is shared with Gmail and is revoked only when no live Google
+connection uses it. A stale latest read can refresh using the asker's own Drive
+login; without one it returns the stored copy and labels it stale. Historical reads
+never fetch historical revisions from Google. Versions are retained without pruning.

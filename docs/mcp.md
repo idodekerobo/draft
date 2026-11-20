@@ -117,6 +117,37 @@ Run rows include `routineKind` (`once`, `rule` or `null`) and `createdRoutines`,
 
 Your agent never sees your keys: you enter them on the Draft page the link opens. Every refusal names what would have worked, such as the channels the bot has joined.
 
+### Google Drive
+
+`drive.read` and `drive.search` appear when anyone in the workspace has a live
+Google Drive connection. Every workspace member can read shared stored files.
+Choose synced folders on Connections → Google Drive → Edit, or with the CLI.
+Connecting alone does not ingest files. Refresh your MCP client's tool list after
+connecting. Routines use `sources.search` and `sources.read` for the latest Drive
+files; the dedicated Drive tools are not enabled for routines in v1.
+
+| Tool | Input | Behavior |
+| --- | --- | --- |
+| `drive.read` | `{ file_id, version?, as_of?, include?, max_bytes?, cursor? }` | Read a captured version. `version` is a version ID or `latest` (default). `as_of` is an ISO time; it cannot be combined with `version`. `include: ["versions"]` adds paged captured versions and short change summaries. Returns `version_id`, `captured_at`, `version_count`, `first_captured_at`, `last_captured_at`, `source` and `content`. `max_bytes` is 1 KB–256 KB, default 32 KB. Pass `next_cursor` with the same request to continue. |
+| `drive.search` | `{ query, file_id?, include_history?, modified_after?, modified_before?, limit?, cursor? }` | Search shared Drive files. `include_history` defaults to false; set it to find text in superseded versions. Each hit names its version and capture time. `limit` is 1–50, default 10. Continue with `next_cursor`. |
+
+Latest reads fetch live when the owning connection's last successful sync is
+older than five minutes, using the asker's own Drive login. New content is stored
+under the connection that owns the captured file. Without your own Drive login,
+Draft returns the stored copy with `source: "stored"` and `stale: true`. Historical
+reads always use captured versions. At most 10 live refreshes per user per minute
+are allowed in each backend process. Only versions Draft captured exist; edits
+between syncs may merge into one captured version.
+
+| Error | Meaning |
+| --- | --- |
+| `drive_not_connected` | Connect Google Drive to browse or sync folders. Stored shared files remain readable without your own login. |
+| `google_reconnect_required` | Google access expired or was revoked; reconnect Google. |
+| `drive_folder_already_synced` | Another connection already syncs that folder. The folder browser names its owner. |
+| `drive_no_version_at_time` | The requested time precedes the first capture. |
+| `drive_version_not_found` | The requested captured version does not exist. |
+| `invalid_input` | Invalid arguments, including passing both `version` and `as_of`. |
+
 ### Gmail
 
 Gmail is a provider of `connections.search` and `connections.read`: pass `provider: "gmail"`. It reads the Gmail of the person who connected Google, live, with that person's own Google login. Nothing is stored in Draft. Connect Google first (`connections.connect` with `google`, or `draft connections connect --provider google`). `connections.list` then shows Gmail's verbs and fields under the Google connection.
