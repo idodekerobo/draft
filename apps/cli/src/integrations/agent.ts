@@ -9,7 +9,7 @@ import { PROVIDER_LABELS } from "./types.ts";
 export const CONNECT_CLI_PROVIDERS = HOSTED_CONNECTION_PROVIDERS;
 export type ConnectCliProvider = (typeof CONNECT_CLI_PROVIDERS)[number];
 
-function toBackendProvider(provider: ConnectCliProvider): string {
+export function toBackendProvider(provider: ConnectCliProvider): string {
   return provider === "claude-code" ? "claude_session" : provider;
 }
 
@@ -51,14 +51,14 @@ export const defaultAgentConnectDeps: AgentConnectDeps = {
 };
 
 type ConnectOutput =
-  | { status: "connected"; provider: string }
+  | { status: "connected" | "pending"; provider: string; message?: string }
   | { status: "action_required"; url: string; expiresAt: string; [key: string]: unknown };
 
 function readConnectOutput(output: unknown): ConnectOutput | null {
   if (!output || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
-  if (record.status === "connected" && typeof record.provider === "string") {
-    return { status: "connected", provider: record.provider };
+  if ((record.status === "connected" || record.status === "pending") && typeof record.provider === "string") {
+    return { status: record.status, provider: record.provider, ...(typeof record.message === "string" ? { message: record.message } : {}) };
   }
   if (
     record.status === "action_required" &&
@@ -89,9 +89,9 @@ function fail(json: boolean, deps: AgentConnectDeps, code: string, message: stri
   return EXIT_OPERATIONAL_ERROR;
 }
 
-function succeed(json: boolean, deps: AgentConnectDeps, provider: ConnectCliProvider, backendProvider: string): number {
-  if (json) emitJson(deps, { status: "connected", provider: backendProvider });
-  else deps.stdout(`Connected: ${PROVIDER_LABELS[provider]}.\n`);
+function succeed(json: boolean, deps: AgentConnectDeps, provider: ConnectCliProvider, backendProvider: string, message?: string): number {
+  if (json) emitJson(deps, { status: "connected", provider: backendProvider, ...(message ? { message } : {}) });
+  else deps.stdout(message ? `${message}\n` : `Connected: ${PROVIDER_LABELS[provider]}.\n`);
   return EXIT_SUCCESS;
 }
 
@@ -110,7 +110,12 @@ export async function runAgentConnect(
   if (!link) {
     return fail(options.json, deps, "malformed_response", "The Draft backend returned an invalid response. Retry shortly.");
   }
-  if (link.status === "connected") return succeed(options.json, deps, options.provider, link.provider);
+  if (link.status === "connected") return succeed(options.json, deps, options.provider, link.provider, link.message);
+  if (link.status === "pending") {
+    if (options.json) emitJson(deps, link);
+    else deps.stdout(`${link.message ?? `${label} is saved and waiting for its first event.`}\n`);
+    return EXIT_SUCCESS;
+  }
 
   if (options.json) emitJson(deps, link);
   else deps.stdout(`Open this link to connect ${label}: ${link.url} (expires ${link.expiresAt})\n`);

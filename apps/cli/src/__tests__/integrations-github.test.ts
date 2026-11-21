@@ -215,7 +215,7 @@ describe("draft connections connect github", () => {
       };
     };
 
-    const result = await runCli(["connections", "connect", "github", "--json"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "connect", "--provider", "github", "--json"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -244,7 +244,7 @@ describe("draft connections connect github", () => {
       message: "Ask the person to open this link.",
     });
 
-    const result = await runCli(["connections", "connect", "github"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "connect", "--provider", "github"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe("Open this link to connect GitHub: https://draft.example/connect/token-2 (expires 2026-11-14T12:15:00.000Z)");
@@ -253,7 +253,7 @@ describe("draft connections connect github", () => {
   it("maps a refusal from connections.connect to a safe error", async () => {
     backend.state.toolOutputs["connections.connect"] = () => ({ __refusal: { code: "too_many_requests", message: "Too many open connect links." } });
 
-    const result = await runCli(["connections", "connect", "github", "--json"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "connect", "--provider", "github", "--json"], { home, apiUrl: backend.url });
 
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ schema_version: 1, status: "error", code: "too_many_requests", message: "Too many open connect links." });
@@ -262,12 +262,12 @@ describe("draft connections connect github", () => {
   it("rejects invalid grammar before any request", async () => {
     const cases = [
       ["connections", "connect"],
-      ["connections", "connect", "github", "extra"],
-      ["connections", "connect", "github", "--json", "--json"],
-      ["connections", "connect", "github", "--no-open"],
-      ["connections", "connect", "github", "--credential-fd", "2"],
-      ["connections", "connect", "unknown-provider"],
-      ["connections", "connect", "--json", "github"],
+      ["connections", "connect", "--provider", "github", "extra"],
+      ["connections", "connect", "--provider", "github", "--json", "--json"],
+      ["connections", "connect", "--provider", "github", "--no-open"],
+      ["connections", "connect", "--provider", "github", "--credential-fd", "2"],
+      ["connections", "connect", "--provider", "unknown-provider"],
+      ["connections", "connect", "github"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });
@@ -277,7 +277,7 @@ describe("draft connections connect github", () => {
   });
 
   it("lists the valid providers when connect is missing or given an unknown one", async () => {
-    for (const args of [["connections", "connect"], ["connections", "connect", "unknown-provider"]]) {
+    for (const args of [["connections", "connect"], ["connections", "connect", "--provider", "unknown-provider"]]) {
       const human = await runCli(args, { home, apiUrl: backend.url });
       expect(human.exitCode).toBe(2);
       expect(human.stderr).toContain("github|linear|claude-code|slack|fireflies");
@@ -289,10 +289,12 @@ describe("draft connections connect github", () => {
     expect(backend.state.requests).toEqual([]);
   });
 
-  it("still reports github's own grammar error, not the generic provider list, when a valid provider is just misplaced", async () => {
-    const result = await runCli(["connections", "connect", "--json", "github"], { home, apiUrl: backend.url });
+  it("treats a bare provider name as the old grammar and points to --provider", async () => {
+    const result = await runCli(["connections", "connect", "github", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(2);
-    expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_usage" });
+    const payload = JSON.parse(result.stdout);
+    expect(payload).toMatchObject({ status: "error", code: "invalid_connect_usage" });
+    expect(payload.message).toContain("--provider");
     expect(backend.state.requests).toEqual([]);
   });
 });

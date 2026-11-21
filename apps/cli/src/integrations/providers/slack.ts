@@ -7,12 +7,9 @@ import {
 } from "draft-core/integrations/slack-hosted";
 import {
   connectIntegration,
-  listSlackChannels,
-  setSlackChannels,
   type ConnectIntegrationResult,
   type FetchResult,
   type HostedSlackChannel,
-  type SlackMembershipReconcileResult,
 } from "../../cloud-client.ts";
 import {
   CredentialInputError,
@@ -164,82 +161,4 @@ export async function runSlackConnect(
     deps.offSignal("SIGINT", onSignal);
     deps.offSignal("SIGTERM", onSignal);
   }
-}
-
-export interface SlackChannelsListDeps {
-  list(): Promise<FetchResult<{ ok: true; channels: HostedSlackChannel[] }>>;
-}
-
-const defaultListDeps: SlackChannelsListDeps = { list: listSlackChannels };
-
-export async function runSlackChannelsList(
-  output: IntegrationOutput,
-  deps: SlackChannelsListDeps = defaultListDeps,
-): Promise<number> {
-  const result = await deps.list();
-  if (!result.ok) return output.error(result.code);
-  return output.event({ status: "channels", provider: "slack", channels: result.value.channels });
-}
-
-export interface SlackChannelsSetDeps {
-  list(): Promise<FetchResult<{ ok: true; channels: HostedSlackChannel[] }>>;
-  set(channelIds: string[]): Promise<FetchResult<SlackMembershipReconcileResult>>;
-  selector: ChannelSelector;
-  preflightTty(): Promise<boolean>;
-  onSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
-  offSignal(signal: "SIGINT" | "SIGTERM", handler: () => void): void;
-  // See SlackConnectDeps.exitProcess.
-  exitProcess(code: number): void;
-}
-
-const defaultSetDeps: SlackChannelsSetDeps = {
-  list: listSlackChannels,
-  set: setSlackChannels,
-  selector: channelSelector,
-  preflightTty: () => credentialReader.preflightTty(),
-  onSignal: (signal, handler) => { process.on(signal, handler); },
-  offSignal: (signal, handler) => { process.off(signal, handler); },
-  exitProcess: (code) => { process.exit(code); },
-};
-
-export async function runSlackChannelsSet(
-  channelIds: string[] | null,
-  output: IntegrationOutput,
-  deps: SlackChannelsSetDeps = defaultSetDeps,
-): Promise<number> {
-  let finalIds: string[];
-  if (channelIds !== null) {
-    finalIds = channelIds;
-  } else if (await deps.preflightTty()) {
-    const controller = new AbortController();
-    const onSignal = () => controller.abort();
-    deps.onSignal("SIGINT", onSignal);
-    deps.onSignal("SIGTERM", onSignal);
-    try {
-      const list = await deps.list();
-      if (!list.ok) return output.error(list.code);
-      let selected: string[] | null;
-      try {
-        selected = await deps.selector.select(list.value.channels, controller.signal);
-      } catch (error) {
-        if (error instanceof ChannelSelectionInterruptedError) {
-          const code = output.error("interrupted");
-          deps.exitProcess(code);
-          return code;
-        }
-        throw error;
-      }
-      if (selected === null) return output.error("invalid_credential_input");
-      finalIds = selected;
-    } finally {
-      deps.offSignal("SIGINT", onSignal);
-      deps.offSignal("SIGTERM", onSignal);
-    }
-  } else {
-    finalIds = [];
-  }
-
-  const result = await deps.set(finalIds);
-  if (!result.ok) return output.error(result.code);
-  return output.event({ status: "channels_set", provider: "slack", result: result.value });
 }

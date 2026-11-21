@@ -1,33 +1,18 @@
-import {
-  callPersonTool,
-  disconnectIntegration,
-} from "../cloud-client.ts";
-import {
-  isDisconnectProvider,
-  isNetworkDisconnectProvider,
-  type DisconnectProvider,
-} from "../integrations/types.ts";
-import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
+import { callPersonTool } from "../cloud-client.ts";
+import { runConnectChannels, runConnectionsDisconnect, runConnectionsPost, runConnectionsRead, takeProviderFlag, takeValueFlag } from "../integrations/tool-commands.ts";
 import { createIntegrationOutput, INTEGRATION_ERROR_REGISTRY, type IntegrationErrorCode } from "../integrations/safe-output.ts";
-import { isInteractiveTerminal, parseAgentConnectArgs, runAgentConnect } from "../integrations/agent.ts";
+import { isInteractiveTerminal, parseAgentConnectArgs, runAgentConnect, toBackendProvider } from "../integrations/agent.ts";
 import { integrationsGroupHelp, integrationsSubcommandHelp } from "../integrations/help.ts";
 import { runGithubConnect } from "../integrations/providers/github.ts";
 import { runLinearConnect } from "../integrations/providers/linear.ts";
 import { runClaudeCodeConnect } from "../integrations/providers/claude-code.ts";
-import { runSlackConnect, runSlackChannelsList, runSlackChannelsSet } from "../integrations/providers/slack.ts";
+import { runSlackConnect } from "../integrations/providers/slack.ts";
 import { runFirefliesConnect } from "../integrations/providers/fireflies.ts";
 import { runGranolaConnect } from "../integrations/providers/granola.ts";
 import { CredentialInputError, parseCredentialSourceOptions, type CredentialSource } from "../integrations/credentials.ts";
 
 interface ParsedListArgs {
   json: boolean;
-  error?: true;
-}
-
-interface ParsedDisconnectArgs {
-  json: boolean;
-  provider?: DisconnectProvider;
-  workspaceKey: boolean;
   error?: true;
 }
 
@@ -43,27 +28,6 @@ function parseListArgs(args: string[]): ParsedListArgs {
   return jsonCount <= 1 && args.every((arg) => arg === "--json")
     ? { json }
     : { json, error: true };
-}
-
-function parseDisconnectArgs(args: string[]): ParsedDisconnectArgs {
-  const jsonCount = args.filter((arg) => arg === "--json").length;
-  const workspaceKeyCount = args.filter((arg) => arg === "--workspace-key").length;
-  const json = jsonCount > 0;
-  const workspaceKey = workspaceKeyCount > 0;
-  if (jsonCount > 1 || workspaceKeyCount > 1) return { json, workspaceKey, error: true };
-  const positionals: string[] = [];
-  for (const arg of args) {
-    if (arg === "--json" || arg === "--workspace-key") {
-      continue;
-    }
-    if (arg.startsWith("-")) return { json, workspaceKey, error: true };
-    positionals.push(arg);
-  }
-  if (positionals.length !== 1 || !isDisconnectProvider(positionals[0]!)) {
-    return { json, workspaceKey, error: true };
-  }
-  if (workspaceKey && positionals[0] !== "granola") return { json, workspaceKey, error: true };
-  return { json, workspaceKey, provider: positionals[0] };
 }
 
 function parseGithubConnectArgs(args: string[]): ParsedGithubConnectArgs {
@@ -166,38 +130,6 @@ function parseGranolaConnectArgs(args: string[]): ParsedGranolaConnectArgs {
   }
 }
 
-interface ParsedSlackChannelsListArgs {
-  json: boolean;
-  error?: true;
-}
-
-function parseSlackChannelsListArgs(args: string[]): ParsedSlackChannelsListArgs {
-  const jsonCount = args.filter((arg) => arg === "--json").length;
-  const json = jsonCount > 0;
-  return jsonCount <= 1 && args.every((arg) => arg === "--json")
-    ? { json }
-    : { json, error: true };
-}
-
-interface ParsedSlackChannelsSetArgs {
-  json: boolean;
-  channelIds: string[] | null;
-  error?: true;
-}
-
-function parseSlackChannelsSetArgs(args: string[]): ParsedSlackChannelsSetArgs {
-  const jsonCount = args.filter((arg) => arg === "--json").length;
-  const json = jsonCount > 0;
-  if (jsonCount > 1) return { json, channelIds: null, error: true };
-  const positionals: string[] = [];
-  for (const arg of args) {
-    if (arg === "--json") continue;
-    if (arg.startsWith("-")) return { json, channelIds: null, error: true };
-    positionals.push(arg);
-  }
-  return { json, channelIds: positionals.length > 0 ? positionals : null };
-}
-
 interface ToolIntegration {
   provider: string;
   label: string;
@@ -207,6 +139,9 @@ interface ToolIntegration {
   triggers: Array<{ event: string; label: string }>;
   abilities: string[];
   connect: { cli: string; mcp: string };
+  actions?: Array<{ verb: string }>;
+  channels?: Array<{ id: string; name: string }>;
+  channelsError?: string;
 }
 
 const STATUS_TEXT: Record<ToolIntegration["status"], string> = {
@@ -227,6 +162,10 @@ function renderIntegrations(items: ToolIntegration[]): string {
     lines.push(`  brings in: ${item.ingests}`);
     if (item.triggers.length > 0) lines.push(`  unlocks triggers: ${item.triggers.map((trigger) => trigger.label).join(", ")}`);
     if (item.abilities.length > 0) lines.push(`  lets routines: ${item.abilities.join("; ")}`);
+    if (item.channels) lines.push(`  channels the bot has joined: ${item.channels.length ? item.channels.map((channel) => `#${channel.name}`).join(", ") : "none yet"}`);
+    if (item.channelsError) lines.push(`  channels: ${item.channelsError}`);
+    const verbs = (item.actions ?? []).map((action) => action.verb).filter((verb) => verb !== "connect");
+    if (verbs.length > 0) lines.push(`  you can: ${verbs.map((verb) => `draft connections ${verb} --provider ${item.provider}`).join(", ")}`);
     if (item.status === "needs_reconnect" || item.status === "not_connected") lines.push(`  connect: ${item.connect.cli}`);
     return lines.join("\n");
   }).join("\n\n");
@@ -237,13 +176,14 @@ function toIntegrationErrorCode(code: string): IntegrationErrorCode {
 }
 
 async function runIntegrationsList(args: string[]): Promise<number> {
-  const parsed = parseListArgs(args);
+  const taken = takeProviderFlag(args);
+  const parsed = parseListArgs(taken.rest);
   const output = createIntegrationOutput({ json: parsed.json });
-  if (parsed.error) {
+  if (parsed.error || taken.error) {
     return output.error("invalid_usage");
   }
 
-  const result = await callPersonTool("connections.list", {});
+  const result = await callPersonTool("connections.list", taken.provider ? { provider: toBackendProvider(taken.provider) } : {});
   if (!result.ok) {
     return output.error(toIntegrationErrorCode(result.refusal ?? result.code));
   }
@@ -260,43 +200,24 @@ async function runIntegrationsList(args: string[]): Promise<number> {
   return 0;
 }
 
-async function runIntegrationsDisconnect(args: string[]): Promise<number> {
-  const parsed = parseDisconnectArgs(args);
-  const output = createIntegrationOutput({ json: parsed.json });
-  if (parsed.error || !parsed.provider) {
-    return output.error("invalid_usage");
-  }
-
-  if (!isNetworkDisconnectProvider(parsed.provider)) {
-    return output.error("not_supported");
-  }
-
-  const result = await disconnectIntegration(
-    parsed.provider,
-    parsed.provider === "granola" ? (parsed.workspaceKey ? "workspace" : "personal") : undefined,
-  );
-  if (!result.ok) {
-    return output.error(result.code);
-  }
-
-  return output.event({ status: "disconnected", provider: parsed.provider });
-}
-
-const CONNECT_PROVIDERS = new Set<string>(HOSTED_CONNECTION_PROVIDERS);
 
 function hasExplicitCredentialSource(args: string[]): boolean {
   return args.some((arg) => arg.startsWith("--credential-"));
 }
 
-async function runIntegrationsConnect(args: string[]): Promise<number> {
-  // Only short-circuit when no recognized provider appears anywhere in
-  // args -- a misplaced flag ahead of a real provider name (e.g.
-  // `--json github`) should still reach that provider's own grammar
-  // check below, which reports the more specific problem.
-  if (!args.some((arg) => CONNECT_PROVIDERS.has(arg))) {
-    const json = args.includes("--json");
-    return createIntegrationOutput({ json }).error("invalid_connect_usage");
+async function runIntegrationsConnect(rawArgs: string[]): Promise<number> {
+  const taken = takeProviderFlag(rawArgs);
+  const channels = takeValueFlag(taken.rest, "--channels");
+  if (taken.error || channels.error || !taken.provider) {
+    return createIntegrationOutput({ json: rawArgs.includes("--json") }).error("invalid_connect_usage");
   }
+  if (channels.value !== undefined) {
+    const json = channels.rest.includes("--json");
+    if (channels.rest.some((arg) => arg !== "--json")) return createIntegrationOutput({ json }).error("invalid_usage");
+    return runConnectChannels(taken.provider, channels.value, json);
+  }
+  // The provider goes first so each provider's own parser below sees the grammar it was written for.
+  const args = [taken.provider, ...taken.rest];
   // Agents and scripts get a link to open. An explicit credential flag keeps the
   // existing key-reading flow, so a human who passes one still gets it.
   const agentMode = !hasExplicitCredentialSource(args) && (args.includes("--json") || !isInteractiveTerminal());
@@ -344,23 +265,6 @@ async function runIntegrationsConnect(args: string[]): Promise<number> {
   return runGithubConnect({ noOpen: parsed.noOpen }, output);
 }
 
-async function runIntegrationsSlack(args: string[]): Promise<number> {
-  if (args[0] === "channels" && args[1] === "list") {
-    const parsed = parseSlackChannelsListArgs(args.slice(2));
-    const output = createIntegrationOutput({ json: parsed.json });
-    if (parsed.error) return output.error("invalid_usage");
-    return runSlackChannelsList(output);
-  }
-  if (args[0] === "channels" && args[1] === "set") {
-    const parsed = parseSlackChannelsSetArgs(args.slice(2));
-    const output = createIntegrationOutput({ json: parsed.json });
-    if (parsed.error) return output.error("invalid_usage");
-    return runSlackChannelsSet(parsed.channelIds, output);
-  }
-  const json = args.includes("--json");
-  return createIntegrationOutput({ json }).error("invalid_usage");
-}
-
 export async function runIntegrations(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
   if (subcommand === "--help" || subcommand === "-h" || subcommand === "help") {
@@ -372,9 +276,10 @@ export async function runIntegrations(args: string[]): Promise<number> {
     return 0;
   }
   if (subcommand === "list") return runIntegrationsList(rest);
-  if (subcommand === "disconnect") return runIntegrationsDisconnect(rest);
+  if (subcommand === "disconnect") return runConnectionsDisconnect(rest);
   if (subcommand === "connect") return runIntegrationsConnect(rest);
-  if (subcommand === "slack") return runIntegrationsSlack(rest);
+  if (subcommand === "read") return runConnectionsRead(rest);
+  if (subcommand === "post") return runConnectionsPost(rest);
 
   const json = args.includes("--json");
   return createIntegrationOutput({ json }).error("invalid_usage");

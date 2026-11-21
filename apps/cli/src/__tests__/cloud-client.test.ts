@@ -122,42 +122,21 @@ describe("hosted provider wrappers", () => {
         webhookSecret: "one-time-secret",
       },
     });
-    expect(await invoke("disconnectIntegration", ["linear"])).toEqual({ ok: true, value: { ok: true } });
     expect(await invoke("createGithubInstallSession")).toMatchObject({
       ok: true,
       value: { code: "install-code" },
     });
-    expect(await invoke("listSlackChannels")).toEqual({
-      ok: true,
-      value: { ok: true, channels: [{ id: "C1", name: "general", memberCount: 10, isMember: true }] },
-    });
-    expect(await invoke("setSlackChannels", [["C1", "C2"]])).toEqual({
-      ok: true,
-      value: {
-        ok: false,
-        channel_ids: ["C1"],
-        joined: ["C1"],
-        left: [],
-        failed: [{ channel_id: "C2", operation: "join", code: "slack_channel_join_failed" }],
-      },
-    });
 
-    expect(backend.state.requests.filter((request) => new URL(request.url).pathname === "/whoami")).toHaveLength(6);
+    expect(backend.state.requests.filter((request) => new URL(request.url).pathname === "/whoami")).toHaveLength(3);
     const requests = providerRequests();
     expect(requests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
       ["GET", "/workspaces/ws-1/connections"],
       ["POST", "/workspaces/ws-1/connections"],
-      ["DELETE", "/workspaces/ws-1/connections/linear"],
       ["POST", "/workspaces/ws-1/github/install-sessions"],
-      ["GET", "/workspaces/ws-1/connections/slack/channels"],
-      ["PATCH", "/workspaces/ws-1/connections/slack"],
     ]);
     expect(requests.every((request) => request.headers.authorization === "Bearer seed-at")).toBe(true);
     expect(requests[1]!.headers["content-type"]).toBe("application/json");
-    expect(requests[5]!.headers["content-type"]).toBe("application/json");
     expect(JSON.parse(requests[1]!.body)).toEqual({ provider: "fireflies", api_token: "ff-secret" });
-    expect(requests[2]!.body).toBe("");
-    expect(JSON.parse(requests[5]!.body)).toEqual({ channel_ids: ["C1", "C2"] });
   });
 
   it("resolves a refreshed token once and uses it for both whoami and the provider request", async () => {
@@ -344,18 +323,6 @@ describe("hosted provider wrappers", () => {
   });
 
   it("preserves only allowlisted non-2xx codes and collapses raw backend detail", async () => {
-    backend.state.slackChannelsResponse = () => Response.json({
-      error: "slack_channel_list_failed",
-      message: "raw-provider-canary",
-    }, { status: 502 });
-    expect(await invoke("listSlackChannels")).toEqual({ ok: false, code: "slack_channel_list_failed" });
-
-    backend.state.slackMembershipResponse = () => Response.json({
-      error: "connection_update_conflict",
-      message: "raw-provider-canary",
-    }, { status: 409 });
-    expect(await invoke("setSlackChannels", [[]])).toEqual({ ok: false, code: "connection_update_conflict" });
-
     backend.state.connectionsListResponse = () => Response.json({
       error: "github_installation_conflict",
       message: "raw-provider-canary",
@@ -393,19 +360,6 @@ describe("hosted provider wrappers", () => {
     });
     expect(await invoke("listConnections")).toEqual({ ok: false, code: "malformed_response" });
 
-    backend.state.slackChannelsResponse = () => Response.json({ ok: true, channels: {} });
-    expect(await invoke("listSlackChannels")).toEqual({ ok: false, code: "malformed_response" });
-
-    backend.state.slackMembershipResponse = () => Response.json({
-      ok: false,
-      channel_ids: [],
-      joined: [],
-      left: [],
-      failed: [{ channel_id: "C1", operation: "join", code: { raw: "canary" } }],
-    });
-    const nested = await invoke("setSlackChannels", [[]]);
-    expect(nested).toEqual({ ok: false, code: "malformed_response" });
-    expect(JSON.stringify(nested)).not.toContain("canary");
   });
 
   it("accepts synthesized expired Claude Code status for later disconnected normalization", async () => {
@@ -442,9 +396,6 @@ describe("hosted provider wrappers", () => {
       ok: false,
       code: "malformed_response",
     });
-
-    backend.state.connectionsDisconnectResponse = () => Response.json({ ok: { nested: true } });
-    expect(await invoke("disconnectIntegration", ["github"])).toEqual({ ok: false, code: "malformed_response" });
 
     backend.state.githubInstallSessionResponse = () => Response.json({
       code: "install-code",

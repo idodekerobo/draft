@@ -289,11 +289,11 @@ describe("draft connections connect fireflies", () => {
 
   it("rejects invalid grammar before any request", async () => {
     const cases = [
-      ["connections", "connect", "fireflies", "extra"],
-      ["connections", "connect", "fireflies", "--json", "--json"],
-      ["connections", "connect", "fireflies", "--no-open", "--no-open"],
-      ["connections", "connect", "fireflies", "--credential-stdin"],
-      ["connections", "connect", "fireflies", "--credential-fd", "3"],
+      ["connections", "connect", "--provider", "fireflies", "extra"],
+      ["connections", "connect", "--provider", "fireflies", "--json", "--json"],
+      ["connections", "connect", "--provider", "fireflies", "--no-open", "--no-open"],
+      ["connections", "connect", "--provider", "fireflies", "--credential-stdin"],
+      ["connections", "connect", "--provider", "fireflies", "--credential-fd", "3"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });

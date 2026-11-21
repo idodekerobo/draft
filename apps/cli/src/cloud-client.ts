@@ -672,18 +672,6 @@ export function connectIntegration(body: HostedConnectBody): Promise<FetchResult
   });
 }
 
-/**
- * Disconnects a hosted integration. `accountKind` only matters for Granola,
- * which can have both a personal and a workspace-key connection live.
- */
-export function disconnectIntegration(
-  provider: BackendProvider,
-  accountKind?: "personal" | "workspace",
-): Promise<FetchResult<{ ok: true }>> {
-  const query = provider === "granola" ? `?account_kind=${accountKind ?? "personal"}` : "";
-  return requestValue(`/connections/${encodeURIComponent(provider)}${query}`, { method: "DELETE" }, decodeOk);
-}
-
 export async function createGithubInstallSession(signal?: AbortSignal): Promise<FetchResult<GithubInstallSession>> {
   const result = await authedFetch("/github/install-sessions", { method: "POST", signal });
   if (!result.ok) return result;
@@ -754,59 +742,6 @@ export function createGithubInstallPollAdapter(originWorkspaceId: string, code: 
       }
     }) as typeof fetch,
   };
-}
-
-export function listSlackChannels(): Promise<FetchResult<{ ok: true; channels: HostedSlackChannel[] }>> {
-  return requestValue("/connections/slack/channels", undefined, (value) => {
-    const body = recordValue(value);
-    if (body?.ok !== true || !Array.isArray(body.channels)) return null;
-    const channels: HostedSlackChannel[] = [];
-    for (const raw of body.channels) {
-      const channel = recordValue(raw);
-      if (
-        !channel ||
-        typeof channel.id !== "string" ||
-        typeof channel.name !== "string" ||
-        typeof channel.memberCount !== "number" ||
-        !Number.isFinite(channel.memberCount) ||
-        typeof channel.isMember !== "boolean"
-      ) return null;
-      channels.push({
-        id: channel.id,
-        name: channel.name,
-        memberCount: channel.memberCount,
-        isMember: channel.isMember,
-      });
-    }
-    return { ok: true, channels };
-  });
-}
-
-export function setSlackChannels(channelIds: string[]): Promise<FetchResult<SlackMembershipReconcileResult>> {
-  return requestValue("/connections/slack", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ channel_ids: channelIds }),
-  }, (value) => {
-    const body = recordValue(value);
-    if (!body || typeof body.ok !== "boolean") return null;
-    const persisted = stringArrayValue(body.channel_ids);
-    const joined = stringArrayValue(body.joined);
-    const left = stringArrayValue(body.left);
-    if (!persisted || !joined || !left || !Array.isArray(body.failed)) return null;
-    const failed: SlackMembershipFailure[] = [];
-    for (const raw of body.failed) {
-      const failure = recordValue(raw);
-      if (!failure || (failure.operation !== "join" && failure.operation !== "leave")) return null;
-      const expectedCode = failure.operation === "join"
-        ? "slack_channel_join_failed"
-        : "slack_channel_leave_failed";
-      if (typeof failure.channel_id !== "string" || failure.code !== expectedCode) return null;
-      failed.push({ channel_id: failure.channel_id, operation: failure.operation, code: expectedCode });
-    }
-    if (body.ok !== (failed.length === 0)) return null;
-    return { ok: body.ok, channel_ids: persisted, joined, left, failed };
-  });
 }
 
 export interface MintSessionIngestTokenInput {
