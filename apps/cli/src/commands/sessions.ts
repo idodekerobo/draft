@@ -13,6 +13,7 @@ import {
   requireAccessToken,
   revokeSessionIngestTokenWithGrace,
   rotateSessionIngestToken,
+  runModeErrorMessage,
 } from "../cloud-client.ts";
 import { getCliRuntimeConfig } from "../runtime-config.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
@@ -65,6 +66,8 @@ function isAgent(value: string): value is Agent {
 }
 
 function fetchErrorPayload(code: string) {
+  const runMode = runModeErrorMessage(code);
+  if (runMode) return errorPayload(code, runMode);
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
   if (code === "invalid_ingest_token") return errorPayload(code, "This project's ingest token is no longer valid — run `draft sources capture enable claude-code` again.");

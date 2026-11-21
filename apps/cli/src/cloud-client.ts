@@ -193,12 +193,14 @@ export type ContextFetchResult =
         | "session_refresh_transient"
         | "whoami_failed"
         | "no_workspace"
+        | "run_credentials_incomplete"
+        | "run_token_refused"
         | "context_fetch_failed"
         | "period_not_found"
         | "invalid_period";
     };
 
-const CONTEXT_PASS_THROUGH: ReadonlyArray<string> = ["not_authenticated", "auth_busy", "session_refresh_transient", "whoami_failed", "no_workspace"];
+const CONTEXT_PASS_THROUGH: ReadonlyArray<string> = ["not_authenticated", "auth_busy", "session_refresh_transient", "whoami_failed", "no_workspace", "run_credentials_incomplete", "run_token_refused"];
 type ContextFailureCode = Extract<ContextFetchResult, { ok: false }>["code"];
 
 /** A sign-in or workspace failure is passed on as it is; any other failure of the call is a failed fetch. */
@@ -288,6 +290,8 @@ export type FetchResult<T> =
 
 export type FetchErrorCode =
   | "not_authenticated"
+  | "run_credentials_incomplete"
+  | "run_token_refused"
   | "auth_busy"
   | "session_refresh_transient"
   | "whoami_failed"
@@ -478,14 +482,66 @@ export type ToolCallResult =
   // `message` is the tool's own words for why not, when it gave some. `toolStatus` says which kind of "no" it was.
   | { ok: false; code: FetchErrorCode; refusal?: string; message?: string; toolStatus?: "refused" | "denied" | "invalid" | "error" | "malformed" };
 
-/** Calls one of Draft's tools as the signed-in person. The answer is the tool's output, or why the call did not work. */
+type RunCredentialsRead =
+  | { kind: "none" }
+  | { kind: "run"; runId: string; token: string }
+  | { kind: "incomplete"; missing: "DRAFT_RUN_ID" | "DRAFT_RUN_TOKEN" };
+
+/** An agent run is given both variables when Draft starts it. Having only one is a setup mistake, not a sign-in. */
+function readRunCredentials(env: NodeJS.ProcessEnv = process.env): RunCredentialsRead {
+  const runId = env.DRAFT_RUN_ID?.trim();
+  const token = env.DRAFT_RUN_TOKEN?.trim();
+  if (runId && token) return { kind: "run", runId, token };
+  if (runId) return { kind: "incomplete", missing: "DRAFT_RUN_TOKEN" };
+  if (token) return { kind: "incomplete", missing: "DRAFT_RUN_ID" };
+  return { kind: "none" };
+}
+
+const RUN_MODE_MESSAGES: Partial<Record<FetchErrorCode, string>> = {
+  run_credentials_incomplete: "DRAFT_RUN_ID and DRAFT_RUN_TOKEN must both be set to act as an agent run. Set both, or unset both to use your own sign-in.",
+  run_token_refused: "The run token was refused. The run may have finished.",
+};
+
+/** The words for a failure that only happens when acting as a run, or null for any other code. */
+export function runModeErrorMessage(code: string): string | null {
+  return RUN_MODE_MESSAGES[code as FetchErrorCode] ?? null;
+}
+
+type ToolTransport =
+  | { ok: true; response: Response; asRun: boolean }
+  | { ok: false; code: FetchErrorCode; message?: string };
+
+/** Sends a tool call as the run when run credentials are set, and as the signed-in person otherwise. */
+async function sendToolCall(name: string, body: string): Promise<ToolTransport> {
+  const credentials = readRunCredentials();
+  if (credentials.kind === "incomplete") {
+    return { ok: false, code: "run_credentials_incomplete", message: `${credentials.missing} is not set. ${RUN_MODE_MESSAGES.run_credentials_incomplete}` };
+  }
+  if (credentials.kind === "none") {
+    const result = await authedFetch(`/tools/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    return result.ok ? { ok: true, response: result.response, asRun: false } : result;
+  }
+  try {
+    const response = await fetch(`${getCliRuntimeConfig().apiBaseUrl}/runs/${encodeURIComponent(credentials.runId)}/tools/${encodeURIComponent(name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${credentials.token}` },
+      body,
+    });
+    return { ok: true, response, asRun: true };
+  } catch {
+    return { ok: false, code: "session_refresh_transient" };
+  }
+}
+
+/** Calls one of Draft's tools as the agent run when run credentials are set, else as the signed-in person. The answer is the tool's output, or why the call did not work. */
 async function callToolRaw(name: string, input: unknown): Promise<ToolCallResult> {
-  const result = await authedFetch(`/tools/${encodeURIComponent(name)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input ?? {}),
-  });
+  const result = await sendToolCall(name, JSON.stringify(input ?? {}));
   if (!result.ok) return result;
+  if (result.asRun && result.response.status === 401) return { ok: false, code: "run_token_refused", message: RUN_MODE_MESSAGES.run_token_refused };
 
   let value: unknown;
   try {

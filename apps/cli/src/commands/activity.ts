@@ -1,7 +1,7 @@
 // commands/activity.ts — draft activity list: what the workspace's agents have run, newest first.
 // The command is the MCP tool activity.list; --json prints that tool's answer.
 
-import { callPersonTool } from "../cloud-client.ts";
+import { callPersonTool, runModeErrorMessage } from "../cloud-client.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { bold, dim, red } from "../utils/output.ts";
 
@@ -73,7 +73,7 @@ async function runList(args: string[]): Promise<number> {
   const result = await callPersonTool("activity.list", cursor ? { cursor } : {});
   if (!result.ok) {
     const code = result.toolStatus ? (result.refusal ?? result.code) : result.code;
-    const message = result.toolStatus ? (result.message ?? "Could not read activity.") : code === "not_authenticated" ? "Not signed in. Run `draft auth login`." : "Could not reach Draft. Retry shortly.";
+    const message = result.toolStatus ? (result.message ?? "Could not read activity.") : runModeErrorMessage(code) ?? (code === "not_authenticated" ? "Not signed in. Run `draft auth login`." : "Could not reach Draft. Retry shortly.");
     return fail(command, json, code, message, EXIT_OPERATIONAL_ERROR);
   }
   const output = result.output as { runs?: ActivityRun[]; nextCursor?: string | null };

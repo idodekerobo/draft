@@ -3,7 +3,7 @@
 // Who the workspace's people are, and how to reach them. Each command is one Draft tool, called as the
 // signed-in person. An agent that adds a person leaves them pending; an admin decides here.
 
-import { callPersonTool, type FetchErrorCode } from "../cloud-client.ts";
+import { callPersonTool, runModeErrorMessage, type FetchErrorCode } from "../cloud-client.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { bold, dim, red } from "../utils/output.ts";
 
@@ -45,6 +45,8 @@ function parseFlags(args: string[]): Flags {
 }
 
 function transportError(code: FetchErrorCode) {
+  const runMode = runModeErrorMessage(code);
+  if (runMode) return errorPayload(code, runMode);
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
   return errorPayload(code, "Could not reach the people API right now. Retry shortly.");

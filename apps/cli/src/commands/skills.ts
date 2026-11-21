@@ -11,6 +11,7 @@ import {
   listSkills,
   readSkill,
   removeSkill,
+  runModeErrorMessage,
   updateSkill,
   type AddOrUpdateSkillBody,
   type FetchErrorCode,
@@ -21,6 +22,8 @@ import { bold, dim, red } from "../utils/output.ts";
 import { readSkillFrontmatter } from "../utils/skill-frontmatter.ts";
 
 function fetchErrorPayload(code: FetchErrorCode) {
+  const runMode = runModeErrorMessage(code);
+  if (runMode) return errorPayload(code, runMode);
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
   if (code === "skill_not_found") return errorPayload(code, "unknown skill — run `draft skills list` to see available names.");
