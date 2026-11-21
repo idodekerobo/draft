@@ -33,6 +33,7 @@ export function printHelp(): void {
     ["context export [--out <dir>|--zip <file>]", "Export the full context as markdown files (--force to overwrite)"],
     ["people find [name] [--me]",  "Find the people in the workspace"],
     ["people create <name>",       "Add a teammate (an admin approves them)"],
+    ["people add-identity <id|name> --provider <p> --external-id <id>", "Record another way to recognise a person"],
     ["people pending",             "List people waiting for approval"],
     ["people approve <id|name>",   "Approve a pending person (admins)"],
     ["people reject <id|name>",    "Reject a pending person (admins)"],

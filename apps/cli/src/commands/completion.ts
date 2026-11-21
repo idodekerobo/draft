@@ -73,7 +73,7 @@ _draft_completion() {
       return 0
       ;;
     people)
-      COMPREPLY=( $(compgen -W "find create pending approve reject notify" -- "\$cur") )
+      COMPREPLY=( $(compgen -W "find create add-identity pending approve reject notify" -- "\$cur") )
       return 0
       ;;
     routines)
@@ -174,7 +174,7 @@ _draft() {
           _describe 'subcommand' subcmds
           ;;
         people)
-          local subcmds=('find:Find people' 'create:Add a teammate' 'pending:List people waiting for approval' 'approve:Approve a pending person' 'reject:Reject a pending person' 'notify:Send a message to a person')
+          local subcmds=('find:Find people' 'create:Add a teammate' 'add-identity:Record another way to recognise a person' 'pending:List people waiting for approval' 'approve:Approve a pending person' 'reject:Reject a pending person' 'notify:Send a message to a person')
           _describe 'subcommand' subcmds
           ;;
         activity)

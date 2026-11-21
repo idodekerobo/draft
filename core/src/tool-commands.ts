@@ -36,7 +36,7 @@ export const TOOL_COMMANDS: Record<DraftToolName, string | null> = {
   "github.credential": null,
   "people.find": "people find",
   "people.create": "people create",
-  "people.add_identity": null,
+  "people.add_identity": "people add-identity",
   "people.notify": "people notify",
   "people.approve": "people approve",
   "people.reject": "people reject",
@@ -46,8 +46,4 @@ export const TOOL_COMMANDS: Record<DraftToolName, string | null> = {
  * Where the MCP and the CLI disagree today. Each entry is a gap to close or a decision to make. The parity test
  * fails when a tool disagrees and is not listed here, and when a listed tool no longer disagrees.
  */
-export const PARITY_GAPS: Partial<Record<DraftToolName, string>> = {
-  "people.add_identity": "The MCP offers it, and no CLI command adds an identity.",
-  "skills.update": "A CLI command updates a skill, and the MCP does not offer it.",
-  "skills.delete": "A CLI command removes a skill, and the MCP does not offer it.",
-};
+export const PARITY_GAPS: Partial<Record<DraftToolName, string>> = {};

@@ -1,4 +1,4 @@
-// commands/people.ts — draft people find | create | pending | approve | reject | notify
+// commands/people.ts — draft people find | create | add-identity | pending | approve | reject | notify
 //
 // Who the workspace's people are, and how to reach them. Each command is one Draft tool, called as the
 // signed-in person. An agent that adds a person leaves them pending; an admin decides here.
@@ -26,7 +26,8 @@ interface Flags {
   error?: string;
 }
 
-const VALUE_FLAGS = new Set(["email", "slack", "quote", "status", "reason", "link", "channel", "name"]);
+const VALUE_FLAGS = new Set(["email", "slack", "quote", "status", "reason", "link", "channel", "name", "provider", "external-id", "handle", "source-item"]);
+const IDENTITY_PROVIDERS = ["email", "slack", "linear", "github", "whatsapp"] as const;
 const BOOLEAN_FLAGS = new Set(["json", "me", "force"]);
 
 function parseFlags(args: string[]): Flags {
@@ -149,6 +150,50 @@ export async function runPeopleCreate(args: string[]): Promise<number> {
   return EXIT_SUCCESS;
 }
 
+/** Turns an id or a name into one person. A name has to match exactly one person, whatever their status. */
+async function resolvePerson(command: string, json: boolean, who: string): Promise<{ id: string; name: string | null } | number> {
+  if (UUID.test(who)) return { id: who, name: null };
+  const result = await call(command, json, "people.find", { name: who });
+  if (typeof result === "number") return result;
+  const matches = people(result.output);
+  if (matches.length === 1) return { id: matches[0]!.id, name: matches[0]!.displayName };
+  if (matches.length === 0) return fail(command, json, errorPayload("person_not_found", `Nobody matches "${who}". Run \`draft people find\`.`));
+  return fail(command, json, errorPayload("ambiguous_person", `More than one person matches "${who}". Use an id: ${matches.map((p) => `${p.displayName} ${p.id}`).join("; ")}`));
+}
+
+export async function runPeopleAddIdentity(args: string[]): Promise<number> {
+  const command = "draft people add-identity";
+  const shape = "usage: draft people add-identity <id or name> --provider <email|slack|linear|github|whatsapp> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]";
+  const flags = parseFlags(args);
+  if (flags.error) return usage(command, flags.json, flags.error);
+  const [who, ...extra] = flags.positionals;
+  const { provider, handle, quote } = flags.values;
+  const externalId = flags.values["external-id"];
+  const sourceItemId = flags.values["source-item"];
+  if (!who || extra.length || !provider || !externalId) return usage(command, flags.json, shape);
+  if (!(IDENTITY_PROVIDERS as readonly string[]).includes(provider)) return usage(command, flags.json, `unknown provider "${provider}". Providers: ${IDENTITY_PROVIDERS.join(", ")}`);
+  if (sourceItemId && !UUID.test(sourceItemId)) return usage(command, flags.json, "--source-item must be a source item id from `draft sources search`");
+
+  const target = await resolvePerson(command, flags.json, who);
+  if (typeof target === "number") return target;
+  const result = await call(command, flags.json, "people.add_identity", {
+    personId: target.id,
+    provider,
+    externalId,
+    ...(handle ? { handle } : {}),
+    evidence: { quote: quote ?? "Added from the Draft CLI", ...(sourceItemId ? { sourceItemId } : {}) },
+  });
+  if (typeof result === "number") return result;
+
+  const outcome = (result.output as { outcome?: string } | null)?.outcome;
+  if (flags.json) { printJsonLine({ outcome, personId: target.id, provider, externalId }); return EXIT_SUCCESS; }
+  const name = target.name ?? target.id;
+  console.log(outcome === "created"
+    ? `Added the ${provider} identity ${externalId} to ${name}. It is a guess until a connection or an admin confirms it, so it cannot be used to message them yet.`
+    : `${name} already has the ${provider} identity ${externalId}. Nothing changed.`);
+  return EXIT_SUCCESS;
+}
+
 /** Turns an id or a name into one person id. A name has to match exactly one pending person. */
 async function resolvePending(command: string, json: boolean, who: string): Promise<{ id: string } | number> {
   if (UUID.test(who)) return { id: who };
@@ -218,6 +263,7 @@ function printPeopleHelp(): void {
   console.log("Usage:");
   console.log(`  draft people find [name] [--me] [--email <address>] [--status <s>] [--json]   ${dim("Find people")}`);
   console.log(`  draft people create <name> [--email <a>] [--slack <id>] [--quote <why>] [--force]   ${dim("Add a teammate (pending unless you are an admin)")}`);
+  console.log(`  draft people add-identity <id or name> --provider <p> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]   ${dim("Record another way to recognise a person")}`);
   console.log(`  draft people pending [--json]   ${dim("Who is waiting for approval")}`);
   console.log(`  draft people approve <id or name>   ${dim("Admins only")}`);
   console.log(`  draft people reject <id or name> [--reason <why>]   ${dim("Admins only")}`);
@@ -232,10 +278,11 @@ export async function runPeople(args: string[]): Promise<number> {
   }
   if (sub === "find") return runPeopleFind(rest);
   if (sub === "create") return runPeopleCreate(rest);
+  if (sub === "add-identity") return runPeopleAddIdentity(rest);
   if (sub === "pending") return runPeoplePending(rest);
   if (sub === "approve") return runPeopleApprove(rest);
   if (sub === "reject") return runPeopleReject(rest);
   if (sub === "notify") return runPeopleNotify(rest);
-  console.error(red(`draft people: unknown subcommand "${sub}". Use find, create, pending, approve, reject or notify.`));
+  console.error(red(`draft people: unknown subcommand "${sub}". Use find, create, add-identity, pending, approve, reject or notify.`));
   return EXIT_USAGE_ERROR;
 }

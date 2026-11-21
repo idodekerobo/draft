@@ -81,7 +81,8 @@ export function createSkillTools(client: SupabaseClient) {
 
   const update = defineTool({
     name: "skills.update",
-    description: "Replace an existing skill's content and fields. Fails with skill_not_found if the name does not exist.",
+    mcp: true,
+    description: "Replace an existing skill's content and fields. Use only when the user asks to change a skill. Fails with skill_not_found if the name does not exist.",
     allowedOrigins: ["person"],
     input: z.object({ name: z.string().describe("The skill's name, as returned by skills.list."), description: descriptionField, ...skillFields }),
     auditArguments: skillAudit,
@@ -95,7 +96,9 @@ export function createSkillTools(client: SupabaseClient) {
 
   const remove = defineTool({
     name: "skills.delete",
-    description: "Remove a skill from the workspace. Fails with skill_not_found if the name does not exist.",
+    mcp: true,
+    destructive: true,
+    description: "Remove a skill from the workspace. Use only when the user asks to remove a skill, and name it back to them first. Fails with skill_not_found if the name does not exist.",
     allowedOrigins: ["person"],
     input: z.object({ name: z.string() }),
     handler: async ({ input, caller }) => {
