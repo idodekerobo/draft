@@ -17,12 +17,13 @@ const SEND_ERRORS: Partial<Record<LiveSessionErrorCode, string>> = {
 };
 
 /** "This session has ended", with Resume where the owner can continue it. */
-function EndedNote({ onResume }: { onResume?: () => Promise<void> }) {
-  const [resuming, setResuming] = useState(false);
+function EndedNote({ onResume, pending = false, failure, retryable = true }: { onResume?: () => Promise<void>; pending?: boolean; failure?: string | null; retryable?: boolean }) {
+  const [localPending, setResuming] = useState(false);
+  const resuming = pending || localPending;
   const [error, setError] = useState<string | null>(null);
 
   async function resume() {
-    if (!onResume) return;
+    if (!onResume || resuming) return;
     setResuming(true);
     setError(null);
     try {
@@ -37,15 +38,15 @@ function EndedNote({ onResume }: { onResume?: () => Promise<void> }) {
   return (
     <>
       <p className="ui-muted">
-        This session has ended.
+        {resuming ? "Resuming this session…" : "This session has ended."}
         {onResume && (
           <>
             {" "}
-            <button type="button" className="ui-link" disabled={resuming} onClick={() => void resume()}>{resuming ? "Resuming…" : "Resume"}</button>
+            <button type="button" className="ui-link" disabled={resuming} onClick={() => void resume()}>{resuming ? "Resuming…" : failure || error ? retryable ? "Retry resume" : "Resume after fixing" : "Resume"}</button>
           </>
         )}
       </p>
-      {error && <p className="ui-error" role="alert">{error}</p>}
+      {(failure || error) && !resuming && <p className="ui-error" role="alert">{failure || error}</p>}
     </>
   );
 }
@@ -57,6 +58,10 @@ export function SessionComposer({
   act,
   ownerName,
   ended,
+  resuming = false,
+  resumeFailure,
+  resumeRetryable = true,
+  preserveDraft = false,
   hostWait = false,
   autoFocus = false,
   onEmptyEscape,
@@ -65,7 +70,7 @@ export function SessionComposer({
   agentControl,
   onCycleMode,
   sleeping = false,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; hostWait?: HostWait; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; resuming?: boolean; resumeFailure?: string | null; resumeRetryable?: boolean; preserveDraft?: boolean; hostWait?: HostWait; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -74,8 +79,8 @@ export function SessionComposer({
   useTypeToFocus(inputRef, !ended);
 
   useEffect(() => {
-    if (ended) clearDraft(sessionId);
-  }, [ended, sessionId]);
+    if (ended && !preserveDraft) clearDraft(sessionId);
+  }, [ended, sessionId, preserveDraft]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), STATUS_TICK_MS);
@@ -117,7 +122,7 @@ export function SessionComposer({
         </ul>
       )}
       {ended ? (
-        <EndedNote onResume={onResume} />
+        <EndedNote onResume={onResume} pending={resuming} failure={resumeFailure} retryable={resumeRetryable} />
       ) : (
         <>
         <form className="ui-composer__box" onSubmit={submit}>

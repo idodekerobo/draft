@@ -41,7 +41,7 @@ export const liveSessionsApi: LiveSessionsApi = {
   },
   resume: async (sessionId) => {
     const result = await rpc.request.resumeLiveSession({ sessionId });
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok) throw Object.assign(new Error(result.error), { code: result.code, requestId: result.requestId });
   },
   continueInChat: async (sessionId) => {
     const result = await rpc.request.startLiveSession({

@@ -418,7 +418,7 @@ export type AppRPCType = {
       endLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Start an ended session of the owner again on this computer. */
-      resumeLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
+      resumeLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string; code?: string; requestId?: string } };
 
       /** Hide the owner's session in Draft, ending it first if it is live. Nothing on this computer is removed. */
       deleteLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
