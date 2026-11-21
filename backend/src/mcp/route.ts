@@ -3,7 +3,7 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import { auth } from "../auth/better-auth";
 import { loadConfig } from "../config";
 import { buildMcpServer } from "./tools";
-import { recordRouteError } from "../errors/route-error";
+import { createLoggedMcpHandler } from "./request-logging";
 
 const config = loadConfig();
 
@@ -18,11 +18,18 @@ const mcpHttpHandler = createMcpHandler((ctx) => {
 });
 
 /** Verifies the bearer token against Better Auth's JWKS and forwards the claims as MCP AuthInfo. */
-const authenticatedHandler = requireMcpAuth(
+const loggedHandler = createLoggedMcpHandler(async (request, context) => requireMcpAuth(
   auth,
   async (request, claims) => {
     const sub = typeof claims.sub === "string" ? claims.sub : undefined;
-    if (!sub) return Response.json({ error: "invalid_token" }, { status: 401 });
+    if (!sub) {
+      context.stage = "missing_subject";
+      return Response.json({ error: "invalid_token" }, { status: 401 });
+    }
+    context.stage = "mcp_handling";
+    context.userId = sub;
+    context.clientId = typeof claims.client_id === "string" ? claims.client_id : undefined;
+    context.scopes = typeof claims.scope === "string" ? claims.scope.split(" ") : [];
 
     return mcpHttpHandler.fetch(request, {
       authInfo: {
@@ -34,33 +41,11 @@ const authenticatedHandler = requireMcpAuth(
     });
   },
   { resource: config.mcpResourceUrl, requiredScopes: ["read", "write"] },
-);
-
-async function loggedHandler(request: Request): Promise<Response> {
-  try {
-    const response = await authenticatedHandler(request);
-    if (response.status >= 400) {
-      recordRouteError({
-        workspaceId: null,
-        allowUnattributed: true,
-        operation: response.status === 401 || response.status === 403 ? "auth" : "read",
-        errorCode: "mcp_request_rejected",
-        detail: { method: request.method, status: response.status },
-      });
-    }
-    return response;
-  } catch (error) {
-    recordRouteError({
-      workspaceId: null,
-      allowUnattributed: true,
-      operation: "auth",
-      errorCode: "mcp_request_failed",
-      error,
-      detail: { method: request.method },
-    });
-    throw error;
-  }
-}
+)(request), {
+  issuer: `${config.apiBaseUrl}/api/auth`,
+  resource: config.mcpResourceUrl,
+  requiredScopes: ["read", "write"],
+});
 
 export const GET = loggedHandler;
 export const POST = loggedHandler;
