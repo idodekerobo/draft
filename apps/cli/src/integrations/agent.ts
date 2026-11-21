@@ -51,14 +51,18 @@ export const defaultAgentConnectDeps: AgentConnectDeps = {
 };
 
 type ConnectOutput =
-  | { status: "connected" | "pending"; provider: string; message?: string }
+  | { status: "connected"; provider: string; message?: string }
+  | { status: "pending"; provider: string; message?: string }
   | { status: "action_required"; url: string; expiresAt: string; [key: string]: unknown };
 
 function readConnectOutput(output: unknown): ConnectOutput | null {
   if (!output || typeof output !== "object") return null;
   const record = output as Record<string, unknown>;
-  if ((record.status === "connected" || record.status === "pending") && typeof record.provider === "string") {
-    return { status: record.status, provider: record.provider, ...(typeof record.message === "string" ? { message: record.message } : {}) };
+  if (record.status === "connected" && typeof record.provider === "string") {
+    return { status: "connected", provider: record.provider, ...(typeof record.message === "string" ? { message: record.message } : {}) };
+  }
+  if (record.status === "pending" && typeof record.provider === "string") {
+    return { status: "pending", provider: record.provider, ...(typeof record.message === "string" ? { message: record.message } : {}) };
   }
   if (
     record.status === "action_required" &&

@@ -1,4 +1,4 @@
-export interface SlackChannelOption {
+export interface JoinedSlackChannel {
   id: string;
   name: string;
 }
@@ -7,11 +7,11 @@ export interface SlackChannelOption {
 export interface ConnectionsListAnswer {
   status: string;
   message?: string;
-  output?: { connections?: Array<{ status?: string; channels?: SlackChannelOption[]; channelsError?: string }> };
+  output?: { connections?: Array<{ status?: string; channels?: JoinedSlackChannel[]; channelsError?: string }> };
 }
 
 /** The channels the Slack bot has joined, or an error that says why they could not be listed. */
-export function slackChannelsFromConnections(answer: ConnectionsListAnswer): SlackChannelOption[] {
+export function slackChannelsFromConnections(answer: ConnectionsListAnswer): JoinedSlackChannel[] {
   const slack = answer.output?.connections?.[0];
   if (answer.status !== "ok" || !slack) throw new Error(answer.message ?? "Could not load Slack channels.");
   if (slack.channelsError) throw new Error(slack.channelsError);
