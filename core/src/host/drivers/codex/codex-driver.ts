@@ -51,6 +51,7 @@ type Sink = {
 /** One app server with its connection and thread. It lives as long as the session runs on this computer. */
 class CodexConnection {
   sink: Sink | null = null;
+  exitCode: number | null = null;
   busy = false;
   turnId: string | null = null;
   hasTurned = false;
@@ -68,7 +69,9 @@ class CodexConnection {
   /** Until someone chooses, turns keep the thread's own approval settings. */
   approvalChosen = false;
 
-  constructor(readonly server: AppServer, readonly threadId: string, readonly folderPath: string, readonly bin: string) {}
+  constructor(readonly server: AppServer, readonly threadId: string, readonly folderPath: string, readonly bin: string) {
+    void server.exited.then(code => { this.exitCode = code; }).catch(() => {});
+  }
 
   isAlive(): boolean {
     return this.rpc.isOpen();
@@ -128,7 +131,6 @@ async function resumeConnection(input: { bin: string; sessionId: string; threadI
     connection.hasTurned = true;
     connection.history = resumed.thread.turns ?? [];
     route.connection = connection;
-    live.set(input.sessionId, connection);
     return connection;
   } catch (error) {
     rpc.close();
@@ -155,6 +157,7 @@ export class CodexDriver implements HarnessDriver {
   private waiting = false;
   private halted = false;
   private lastActivityAt = Date.now();
+  private ownedConnection: CodexConnection | null = null;
   private attaching = false;
   private attachFailed = false;
   private respawned = false;
@@ -174,10 +177,11 @@ export class CodexDriver implements HarnessDriver {
   }
 
   private get connection(): CodexConnection | null {
-    return live.get(this.host.state().sessionId) ?? null;
+    return this.ownedConnection;
   }
 
   start(): void {
+    this.ownedConnection = live.get(this.host.state().sessionId) ?? null;
     for (const requestId of this.host.state().openRequests ?? []) {
       void this.broker.closeOnServer(requestId, { requestId, reason: "hook_gone" });
     }
@@ -209,12 +213,16 @@ export class CodexDriver implements HarnessDriver {
       const bin = findHarnessBin("codex");
       if (!bin) throw new Error("Codex is not installed");
       const connection = await resumeConnection({ bin, sessionId: state.sessionId, threadId: state.nativeSessionId, folderPath: state.folderPath, model: state.model ?? null, effort: state.reasoningEffort ?? null });
+      if (this.halted) { connection.stop(); return; }
+      this.ownedConnection = connection;
+      live.set(state.sessionId, connection);
       this.bind(connection);
       this.backfill(connection.threadId, connection.history);
       connection.history = [];
     } catch (error) {
       console.error("[live-session] could not resume the codex thread", error);
       this.attachFailed = true;
+      if (!this.halted) this.host.reportFailure?.("host_reconnect_failed", error);
     } finally {
       this.attaching = false;
     }
@@ -311,7 +319,7 @@ export class CodexDriver implements HarnessDriver {
           await this.host.postLines(batch);
         } catch (error) {
           if (this.host.isFatal(error)) this.host.onFatal(error);
-          else console.error("[live-session] posting codex lines failed", error);
+          else this.host.reportError("posting codex lines", error);
           return false;
         }
         this.queue.splice(0, batch.length);
@@ -334,7 +342,8 @@ export class CodexDriver implements HarnessDriver {
     if (connection) {
       connection.sink = null;
       connection.stop();
-      live.delete(this.host.state().sessionId);
+      if (live.get(this.host.state().sessionId) === connection) live.delete(this.host.state().sessionId);
+      this.ownedConnection = null;
     }
   }
 
@@ -343,13 +352,17 @@ export class CodexDriver implements HarnessDriver {
     if (this.attaching) return true;
     const connection = this.connection;
     if (connection?.isAlive()) return true;
-    if (!connection || this.respawned || this.halted) return false;
+    if (!connection || this.halted) return false;
+    const closed = Object.assign(new Error("The Codex connection closed."), { exitCode: connection.exitCode });
+    if (this.respawned) { this.host.reportFailure?.("host_recovery_exhausted", closed); return false; }
+    this.host.reportFailure?.("host_connection_lost", closed);
     this.respawned = true;
     if (connection.busy && connection.turnId) {
       this.enqueue({ method: "turn/completed", params: { threadId: connection.threadId, turn: { id: connection.turnId, status: "interrupted", error: null } } });
     }
     connection.stop();
-    live.delete(this.host.state().sessionId);
+    if (live.get(this.host.state().sessionId) === connection) live.delete(this.host.state().sessionId);
+    this.ownedConnection = null;
     await this.attach();
     return !this.attachFailed;
   }
@@ -556,6 +569,7 @@ const launcher: HarnessLauncher = {
   async resume({ sessionId, nativeSessionId, model, effort, options: { bin } }) {
     try {
       const connection = await resumeConnection({ bin, sessionId, threadId: nativeSessionId, folderPath: "", model, effort });
+      live.set(sessionId, connection);
       return { folderPath: connection.folderPath };
     } catch (error) {
       throw new LaunchError(`Codex could not resume the session: ${error instanceof Error ? error.message : "unknown error"}`);

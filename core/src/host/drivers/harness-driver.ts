@@ -1,3 +1,4 @@
+import type { SessionFailureCode } from "../../session-failure";
 import type { HarnessId } from "../../harnesses";
 import type { HostEvent } from "../approvals";
 import type { ControlInput } from "../controls";
@@ -20,6 +21,7 @@ export interface DriverHost {
   isFatal(error: unknown): boolean;
   onFatal(error: unknown): void;
   reportError(what: string, error: unknown): void;
+  reportFailure?(code: SessionFailureCode, error?: unknown): void;
   /** The harness finished a turn, so raw files may have changed. */
   requestUpload(): void;
   /** Run the next pass now. */
