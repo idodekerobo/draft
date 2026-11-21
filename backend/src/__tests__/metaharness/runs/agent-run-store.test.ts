@@ -100,6 +100,9 @@ describe("agent run store", () => {
     expect(() => specFromRow({ ...good, harness: "unknown-harness" })).toThrow("Unknown harness");
     expect(() => specFromRow({ ...good, kind: "mystery" as never })).toThrow("Unknown run kind");
     expect(() => specFromRow({ ...good, permissions: [{ tool: "made.up_tool" }] })).toThrow();
+    expect(() => specFromRow({ ...good, permissions: [{ tool: "slack.post_message" }] })).toThrow();
+    const perProvider = [{ tool: "connections.post", provider: "slack", limits: { channels: "joined", maxPerRun: 3 } }];
+    expect(specFromRow({ ...good, permissions: perProvider }).permissions).toEqual(perProvider as never);
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "system", reason: "because" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "event", eventIds: ["evt_123"] } })).toThrow();

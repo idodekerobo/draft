@@ -58,6 +58,17 @@ describe("routine permissions", () => {
     ]);
   });
 
+  it("gives a routine that may post to Slack list, read and capped post permissions for the slack provider", () => {
+    expect(routinePermissions({ postChannels: ["#standup"] })).toEqual([
+      ...ROUTINE_PERMISSIONS,
+      ...ROUTINE_TOOLS,
+      { tool: "connections.list", provider: "slack" },
+      { tool: "connections.read", provider: "slack" },
+      { tool: "connections.post", provider: "slack", limits: { channels: ["#standup"], maxPerRun: 10 } },
+    ]);
+    expect(routinePermissions({ postChannels: "joined" })).toContainEqual({ tool: "connections.post", provider: "slack", limits: { channels: "joined", maxPerRun: 10 } });
+  });
+
   it("lets every routine run create up to 5 routines, and a routine's runs manage routines through the per-call guards", () => {
     expect(ROUTINE_CREATE_MAX_PER_RUN).toBe(5);
     expect(routinePermissions({})).toContainEqual({ tool: "routines.create", limits: { maxPerRun: ROUTINE_CREATE_MAX_PER_RUN } });

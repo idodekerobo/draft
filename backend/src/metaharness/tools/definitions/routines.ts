@@ -14,7 +14,7 @@ import type { ResolvedWhen } from "../../../routines/when";
 import { MIN_RUN_MADE_CRON_GAP_SECONDS, minCronGapSeconds, resolveWhen } from "../../../routines/when";
 import type { ScheduledTaskRow } from "../../../types/tables";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
-import { createSlackTools } from "./slack";
+import { createSlackProvider } from "./slack";
 
 const scheduleService = () => import("../../../routines/service");
 const UUID = z.string().uuid();
@@ -211,11 +211,14 @@ export function createRoutineTools(client: SupabaseClient) {
       const actor = resolveRoutineCaller(caller);
       try {
         const svc = await scheduleService();
-        const slackList = createSlackTools(client).find((tool) => tool.name === "slack.list_channels")!;
+        const slackProvider = createSlackProvider(client);
         const [connected, agents, slack, github] = await Promise.all([
           svc.listConnectedProviders(actor.workspaceId),
           import("../../../routines/agent-status").then(({ routineAgentStatuses }) => routineAgentStatuses(client, actor.workspaceId)),
-          optionalPart(actor.workspaceId, "Slack channels", () => slackList.run(caller, {})),
+          optionalPart(actor.workspaceId, "Slack channels", async () => {
+            const result = await slackProvider.listChannels(actor.workspaceId);
+            return result.ok ? result.channels : null;
+          }),
           optionalPart(actor.workspaceId, "GitHub repos", () => import("./github").then(({ listWorkspaceGithubRepos }) => listWorkspaceGithubRepos(client, actor.workspaceId))),
         ]);
         return {
@@ -239,7 +242,7 @@ export function createRoutineTools(client: SupabaseClient) {
               canNotify: "true lets it message teammates on Slack",
               builtInTools: "the agent's built-in tools it may use, from agents[].builtInTools; a new routine gets them all when left out",
               github: "{ repos: [\"owner/repo\"], access: \"read\" | \"write\" }; write lets it open pull requests; null (update only) turns it off",
-              slackChannels: slack?.status === "ok" ? slack.output : null,
+              slackChannels: slack,
               githubRepos: github,
             },
             notes: "A routine runs as the person who created it. An event run only sees a source that person can see; otherwise the run is recorded as skipped.",

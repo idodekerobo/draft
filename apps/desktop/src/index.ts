@@ -6,6 +6,7 @@ import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getWorkspacePath, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, type AnalyticsConfig } from "draft-core/config";
 import { runMigrations } from "draft-core/migrations/runner";
 import { documentsToEntries } from "draft-shared-ui/context-files";
+import { slackChannelsFromConnections, type ConnectionsListAnswer } from "draft-shared-ui/slack-channels";
 import { capture } from "./exec";
 import { buildSlackManifestUrl, validateSlackTokenFormat, fetchSlackChannels } from "draft-core/integrations/slack-hosted";
 import {
@@ -481,11 +482,9 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getRoutineSlackChannels: async () => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("Sign in to Draft Cloud first.");
-        const result = await fetchServerJSON<{ status: string; output?: Array<{ id: string; name: string }>; message?: string }>(`workspaces/${workspaceId}/tools/slack.list_channels`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-        });
-        if (result.status !== "ok" || !result.output) throw new Error(result.message ?? "Could not load Slack channels.");
-        return result.output;
+        return slackChannelsFromConnections(await fetchServerJSON<ConnectionsListAnswer>(`workspaces/${workspaceId}/tools/connections.list`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: "slack" }),
+        }));
       },
       getRoutineGithubRepos: async () => {
         const workspaceId = getCachedWorkspaceId();

@@ -17,10 +17,10 @@ describe("listIntegrations", () => {
     const by = (provider: string) => list.find((item) => item.provider === provider)!;
     expect(by("slack")).toMatchObject({ status: "connected", connectedByYou: true });
     expect(by("github")).toMatchObject({ status: "connected", connectedByYou: false });
-    expect(by("linear")).toMatchObject({ status: "needs_reconnect", connect: { cli: "draft connections connect linear" } });
+    expect(by("linear")).toMatchObject({ status: "needs_reconnect", connect: { cli: "draft connections connect --provider linear" } });
     expect(by("granola").status).toBe("not_connected");
     expect(by("fireflies").status).toBe("pending");
-    expect(by("claude_session").connect.cli).toBe("draft connections connect claude-code");
+    expect(by("claude_session").connect.cli).toBe("draft connections connect --provider claude-code");
     expect(by("linear").triggers.map((trigger) => trigger.event)).toEqual(["linear.issue_created", "linear.issue_completed"]);
   });
 });
@@ -38,7 +38,19 @@ describe("connect links", () => {
 
   it("makes no link for a provider that is already connected", async () => {
     const db = fakeDb({ connections: [connection("linear")] });
-    expect(await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "cli" }, deps)).toEqual({ status: "connected", provider: "linear" });
+    expect(await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "cli" }, deps)).toEqual({
+      status: "connected",
+      provider: "linear",
+      message: "Linear is already connected. No link is needed.",
+    });
+    expect(db.tables.connection_requests ?? []).toHaveLength(0);
+  });
+
+  it("says a saved connection is waiting for its first event, and makes no link", async () => {
+    const db = fakeDb({ connections: [connection("fireflies", "pending")] });
+    const result = await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "fireflies", via: "mcp" }, deps);
+    expect(result).toMatchObject({ status: "pending", provider: "fireflies" });
+    expect((result as { message: string }).message).toContain("waiting for its first event");
     expect(db.tables.connection_requests ?? []).toHaveLength(0);
   });
 

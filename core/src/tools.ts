@@ -30,9 +30,8 @@ export const DRAFT_TOOLS = [
   { name: "connections.connect", access: "write" },
   { name: "connections.disconnect", access: "write" },
   { name: "activity.list", access: "read" },
-  { name: "slack.list_channels", access: "read" },
-  { name: "slack.read_channel", access: "read" },
-  { name: "slack.post_message", access: "write" },
+  { name: "connections.read", access: "read" },
+  { name: "connections.post", access: "write" },
   { name: "github.credential", access: "read" },
   { name: "people.find", access: "read" },
   { name: "people.create", access: "write" },
@@ -74,9 +73,9 @@ export interface DraftToolLimits {
   "connections.connect": Record<string, never>;
   "connections.disconnect": Record<string, never>;
   "activity.list": Record<string, never>;
-  "slack.list_channels": Record<string, never>;
-  "slack.read_channel": Record<string, never>;
-  "slack.post_message": { channels?: "joined" | ReadonlyArray<string>; maxPerRun?: number };
+  "connections.read": Record<string, never>;
+  /** Slack is the only provider that posts today, so `channels` is a Slack channel id or name. */
+  "connections.post": { channels?: "joined" | ReadonlyArray<string>; maxPerRun?: number };
   "github.credential": { repos?: ReadonlyArray<string>; access?: "read" | "write" };
   "people.find": Record<string, never>;
   "people.create": { maxPerRun?: number };
@@ -89,6 +88,8 @@ export interface DraftToolLimits {
 
 export interface DraftToolPermission<T extends DraftToolName = DraftToolName> {
   tool: T;
+  /** The provider this permission covers, for a tool that takes a `provider` input. Other tools leave it out. */
+  provider?: string;
   limits?: DraftToolLimits[T];
 }
 
@@ -146,7 +147,7 @@ export const runCaller = (run: AgentRunSpec): ToolCaller =>
 export const originKind = (caller: ToolCaller): AllowedOrigin =>
   caller.origin.kind === "person" ? "person" : caller.origin.run.kind;
 
-/** The permission that lets this run call the tool, or null when it has none. */
-export function findToolPermission(run: AgentRunSpec, tool: DraftToolName): AnyDraftToolPermission | null {
-  return run.permissions.find((permission) => permission.tool === tool) ?? null;
+/** The permission that lets this run call the tool, or null when it has none. With a provider, only a permission for that provider counts. */
+export function findToolPermission(run: AgentRunSpec, tool: DraftToolName, provider?: string): AnyDraftToolPermission | null {
+  return run.permissions.find((permission) => permission.tool === tool && (provider === undefined || permission.provider === provider)) ?? null;
 }

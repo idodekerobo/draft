@@ -106,19 +106,21 @@ Run rows include `routineKind` (`once`, `rule` or `null`) and `createdRoutines`,
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `connections.list` | `{}` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; and how to connect it. |
-| `connections.connect` | `{ provider }` | Start connecting a provider. Answers `{ status: "action_required", url, expiresAt }`. Your agent gives you the link, and you sign in or enter the key on that page in the Draft app. The link works once, only for you, for 15 minutes. Answers `{ status: "connected" }` if it already is. |
+| `connections.list` | `{ provider? }` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; how to connect it; and `actions`, the verbs you may call on it with their fields. For Slack, `channels` lists the channels the bot has joined. |
+| `connections.connect` | `{ provider, channels? }` | Start connecting a provider. Answers `{ status: "action_required", url, expiresAt }`. Your agent gives you the link, and you sign in or enter the key on that page in the Draft app. The link works once, only for you, for 15 minutes. Answers `{ status: "connected", message }` with no link if it already is, and `{ status: "pending", message }` if it is saved and waiting for its first event. For Slack, once connected, pass `channels` (ids or `#names`) to change which public channels the bot joins. |
+| `connections.disconnect` | `{ provider, accountKind?, confirm? }` | Disconnect a provider you connected. Without `confirm` it answers `{ status: "confirmation_required", stops, message }` and changes nothing. With `confirm: true` it disconnects. |
+| `connections.read` | `{ provider, channel, limit? }` | Read recent messages from a connected provider. Slack today: a channel id or `#name` the bot has joined. |
+| `connections.post` | `{ provider, channel, text }` | Post a message through a connected provider. Slack today. Draft adds an attribution line. |
 
-Your agent never sees your keys: you enter them on the Draft page the link opens. To disconnect a provider, use the Draft app or `draft connections disconnect`.
+Your agent never sees your keys: you enter them on the Draft page the link opens. Every refusal names what would have worked, such as the channels the bot has joined.
 
-### Skills, people and Slack
+### Skills and people
 
 | Tool | Purpose |
 | --- | --- |
 | `skills.list`, `skills.read` | List and read shared workspace skills. |
 | `skills.add` | Create a new shared skill. Fails with `duplicate_name` if the name exists. |
 | `people.find`, `people.create`, `people.add_identity`, `people.notify`, `people.approve`, `people.reject` | Find the workspace's people, add people and their identities, and message a teammate. |
-| `slack.list_channels`, `slack.read_channel`, `slack.post_message` | List the channels Draft's bot is in, read one, and post to one. |
 
 ## Connect Claude Code
 

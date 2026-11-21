@@ -41,6 +41,7 @@ const runtimeSchema = z.discriminatedUnion("type", [
 const toolNames = DRAFT_TOOLS.map((tool) => tool.name) as [string, ...string[]];
 const permissionSchema = z.object({
   tool: z.enum(toolNames),
+  provider: z.string().optional(),
   limits: z.record(z.string(), z.unknown()).optional(),
 });
 

@@ -31,6 +31,8 @@ export interface ToolSpec<N extends DraftToolName, S extends z.ZodType> {
   /** True when the tool removes something, so a client should ask before calling it. */
   destructive?: boolean;
   input: S;
+  /** For a tool that takes a `provider` input: the provider a call is for, so a run needs a permission for that provider. */
+  providerOf?: (input: z.output<S>) => string | undefined;
   /** Returns a reason when the input is outside the run's limits for this tool, or null when it is inside. */
   checkLimits?: (limits: DraftToolLimits[N] | undefined, input: z.output<S>) => string | null;
   /** What the audit row stores for this call. The default is the input as received. */
@@ -63,8 +65,10 @@ export interface RegisteredTool {
   inputSchema: z.ZodType;
   /** Null when the input is valid and inside the limits, otherwise the reason. Parsing errors are reported by `parse`. */
   parse: (raw: unknown) => { ok: true; value: unknown } | { ok: false; issues: string[] };
-  /** How a run comes to hold this tool. Draft's own tools come from the run's permissions. */
-  permission: (run: AgentRunSpec) => RunPermission;
+  /** The provider a call is for, when this tool is permitted per provider. Absent for every other tool. */
+  providerOf?: (value: unknown) => string | undefined;
+  /** How a run comes to hold this tool. Draft's own tools come from the run's permissions. With a parsed value, a per-provider tool needs a permission for that value's provider. */
+  permission: (run: AgentRunSpec, value?: unknown) => RunPermission;
   checkLimits: (limits: unknown, value: unknown) => string | null;
   auditArguments: (value: unknown) => Record<string, unknown>;
   run: (caller: ToolCaller, value: unknown) => Promise<ToolHandlerResult>;
@@ -83,7 +87,8 @@ export function defineTool<N extends DraftToolName, S extends z.ZodType>(spec: T
     modelVisible: spec.modelVisible ?? true,
     destructive: spec.destructive ?? false,
     inputSchema: spec.input,
-    permission: (run) => findToolPermission(run, spec.name),
+    providerOf: spec.providerOf ? (value) => spec.providerOf!(value as z.output<S>) : undefined,
+    permission: (run, value) => findToolPermission(run, spec.name, value !== undefined ? spec.providerOf?.(value as z.output<S>) : undefined),
     parse(raw) {
       const result = spec.input.safeParse(raw);
       if (result.success) return { ok: true, value: result.data };

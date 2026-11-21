@@ -61,7 +61,7 @@ export async function listIntegrations(client: SupabaseClient, workspaceId: stri
       ingests: entry.ingests,
       triggers: ROUTINE_TRIGGERS.filter((trigger) => trigger.provider === entry.provider).map(({ event, label }) => ({ event, label })),
       abilities: entry.abilities,
-      connect: { cli: `draft connections connect ${entry.cliName}`, mcp: `connections.connect {"provider":"${entry.provider}"}` },
+      connect: { cli: `draft connections connect --provider ${entry.cliName}`, mcp: `connections.connect {"provider":"${entry.provider}"}` },
     };
   });
 }
@@ -69,7 +69,8 @@ export async function listIntegrations(client: SupabaseClient, workspaceId: stri
 export const hashConnectToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export type ConnectResult =
-  | { status: "connected"; provider: IntegrationProvider }
+  | { status: "connected"; provider: IntegrationProvider; message: string }
+  | { status: "pending"; provider: IntegrationProvider; message: string }
   | { status: "action_required"; action: string; provider: IntegrationProvider; url: string; expiresAt: string; message: string }
   | { status: "too_many_requests" };
 
@@ -85,7 +86,8 @@ export async function createConnectRequest(
   const now = deps.now ?? new Date();
   const entry = INTEGRATIONS.find((item) => item.provider === input.provider)!;
   const current = (await listIntegrations(client, input.workspaceId, input.userId)).find((item) => item.provider === input.provider);
-  if (current?.status === "connected" || current?.status === "pending") return { status: "connected", provider: input.provider };
+  if (current?.status === "connected") return { status: "connected", provider: input.provider, message: `${entry.label} is already connected. No link is needed.` };
+  if (current?.status === "pending") return { status: "pending", provider: input.provider, message: `${entry.label} is saved and waiting for its first event from the provider. No link is needed.` };
 
   const { count, error: countError } = await client
     .from("connection_requests")

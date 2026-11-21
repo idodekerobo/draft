@@ -8,6 +8,7 @@
     "./integrations": "./src/integrations/index.ts",
     "./onboarding": "./src/onboarding/index.ts",
     "./context-files": "./src/context/context-files.ts",
+    "./slack-channels": "./src/routines/slack-channels.ts",
     "./styles/tokens.css": "./src/styles/tokens.css",
     "./styles/shared-ui.css": "./src/styles/shared-ui.css",
     "./theme": "./src/settings/theme.ts"

@@ -152,7 +152,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     mcp: true,
     description:
       "Send a short message to one teammate, by their id from people.find. Only active teammates can be messaged, and only on channels where Draft can reach them. " +
-      "Read recent messages with slack.read_channel first and do not repeat a message already sent. " +
+      "Read recent messages with connections.read first and do not repeat a message already sent. " +
       "The message starts with a line saying a Draft agent sent it; you cannot change that line. Write only the body. Message only the people your instructions name. " +
       "The result has one entry per channel: sent, or failed with not_reachable or provider_error. A failure on one channel does not stop the others.",
     input: z.object({
