@@ -11,6 +11,7 @@ import { resolveProviderCredential } from "../credentials/resolve-provider-crede
 import { loadConfig } from "../config";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
 import { disconnectConnection } from "../integrations/disconnect";
+import { setSlackChannelMembership } from "../integrations/slack-channels";
 import { restartSlackListener } from "../ingestion/slack/bootstrap";
 import { syncPeopleInBackground } from "../people/sync";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
@@ -18,7 +19,6 @@ import { initializeSlackBackfillForConnection, registerSlackBackfillTask } from 
 import {
   joinPublicSlackChannels,
   listPublicSlackChannels,
-  reconcileSlackChannels,
   SlackProviderError,
 } from "../ingestion/slack/provider";
 import {
@@ -129,7 +129,6 @@ interface GranolaConnectResponse {
 }
 
 const config = loadConfig();
-const MAX_SLACK_RECONCILE_ATTEMPTS = 3;
 const SINGLETON_CONNECTION_PROVIDERS = [
   "slack",
   "fireflies",
@@ -1141,72 +1140,24 @@ export const PATCH = withAuth<ConnectionProviderRequest>(async (req, caller) => 
     return errorResponse("invalid_body", 400);
   }
 
-  const desiredChannelIds = (body as { channel_ids: string[] }).channel_ids;
-  let botToken: string | null = null;
-
-  for (let attempt = 0; attempt < MAX_SLACK_RECONCILE_ATTEMPTS; attempt += 1) {
-    const { data: connection, error: connectionError } = await serviceClient
-      .from("connections")
-      .select("id, config_json, updated_at")
-      .eq("workspace_id", req.params.id)
-      .eq("provider", "slack")
-      .in("status", ["active", "degraded"])
-      .maybeSingle();
-    if (connectionError) {
-      return errorResponse("connection_lookup_failed", 500, connectionError, req.params.id);
-    }
-    if (!connection) return errorResponse("not_found", 404);
-
-    if (!botToken) {
-      try {
-        const credential = await resolveProviderCredential(req.params.id, "slack", serviceClient);
-        botToken = credential.bot_token;
-      } catch (error) {
-        const errorCode = error instanceof SlackProviderError
-          ? error.code
-          : "slack_channel_reconcile_failed";
-        return errorResponse(errorCode, 502, error, req.params.id);
-      }
-    }
-
-    const reconciliation = await reconcileSlackChannels(
-      botToken,
-      stringArray(connection.config_json?.channel_ids),
-      desiredChannelIds,
-    );
-    const existingConfig = connection.config_json
-      && typeof connection.config_json === "object"
-      && !Array.isArray(connection.config_json)
-      ? connection.config_json
-      : {};
-    const { data: updatedConnection, error: updateError } = await serviceClient
-      .from("connections")
-      .update({
-        config_json: { ...existingConfig, channel_ids: reconciliation.channelIds },
-      })
-      .eq("id", connection.id)
-      .eq("workspace_id", req.params.id)
-      .eq("updated_at", connection.updated_at)
-      .in("status", ["active", "degraded"])
-      .select("id")
-      .maybeSingle();
-    if (updateError) return errorResponse("connection_update_failed", 500, updateError, req.params.id);
-    if (!updatedConnection) continue;
-
-    return Response.json({
-      ok: reconciliation.failed.length === 0,
-      channel_ids: reconciliation.channelIds,
-      joined: reconciliation.joined,
-      left: reconciliation.left,
-      failed: reconciliation.failed.map((failure) => ({
-        channel_id: failure.channelId,
-        operation: failure.operation,
-        code: failure.code,
-      })),
-    } satisfies SlackMembershipResponse);
+  const result = await setSlackChannelMembership(serviceClient, req.params.id, (body as { channel_ids: string[] }).channel_ids);
+  if (!result.ok) {
+    return result.status === 404 || result.status === 409
+      ? errorResponse(result.code, result.status)
+      : errorResponse(result.code, result.status, result.error, req.params.id);
   }
 
-  return errorResponse("connection_update_conflict", 409);
+  return Response.json({
+    ok: result.failed.length === 0,
+    channel_ids: result.channelIds,
+    joined: result.joined,
+    left: result.left,
+    failed: result.failed.map((failure) => ({
+      channel_id: failure.channelId,
+      operation: failure.operation,
+      code: failure.code,
+    })),
+  } satisfies SlackMembershipResponse);
 });
 
 export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) => {
@@ -1226,7 +1177,7 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
   const result = await disconnectConnection(serviceClient, {
     workspaceId: req.params.id,
     userId: caller.userId,
-    provider: req.params.provider,
+    provider: req.params.provider as ConnectionProvider,
     accountKind: accountKind as "personal" | "workspace" | null,
   });
   if (!result.ok) return errorResponse("disconnect_failed", 500, result.error, req.params.id);
