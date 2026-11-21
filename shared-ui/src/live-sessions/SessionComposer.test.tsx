@@ -98,3 +98,21 @@ describe("SessionComposer", () => {
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
   });
 });
+
+ it("keeps Resume disabled through a pending request and displays failures", async () => {
+  let finish!: () => void;
+  const onResume = mock(() => new Promise<void>((resolve) => { finish = resolve; }));
+  renderComposer({ ended: true, onResume });
+  fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+  const button = screen.getByRole("button", { name: "Resuming…" }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  fireEvent.click(button);
+  fireEvent.click(button);
+  expect(onResume).toHaveBeenCalledTimes(1);
+  finish();
+  await waitFor(() => expect((screen.getByRole("button", { name: "Resume" }) as HTMLButtonElement).disabled).toBe(false));
+  onResume.mockImplementation(async () => { throw new Error("startup failed"); });
+  fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+  await screen.findByRole("alert");
+  expect(screen.getByRole("alert").textContent).toBe("startup failed");
+});

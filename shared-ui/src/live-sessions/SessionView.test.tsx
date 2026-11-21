@@ -979,3 +979,42 @@ describe("SessionView while a cloud session sleeps", () => {
     expect(screen.queryByText("Waking the session to ask again")).toBeNull();
   });
 });
+
+it("keeps resume pending across an early live signal until confirmation", async () => {
+  let current: LiveSession = { ...session, status: "ended", mine: true, end_reason: "exited" };
+  let finish!: () => void;
+  let signal = (_event: string) => {};
+  const resume = mock(() => new Promise<void>(resolve => { finish = resolve; }));
+  const fetchEvents = mock(async () => ({ viewer, session: current, events: [], inputs: [] }));
+  render(<SessionView api={{ ...api, resume, fetchEvents, watchSignals: (_topic, listener) => { signal = listener; return () => {}; } }} sessionId="s1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+  expect((screen.getByRole("button", { name: "Resuming…" }) as HTMLButtonElement).disabled).toBe(true);
+  current = { ...current, status: "live" };
+  const calls = fetchEvents.mock.calls.length;
+  act(() => signal("events"));
+  await waitFor(() => expect(fetchEvents.mock.calls.length).toBeGreaterThan(calls));
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.getByRole("button", { name: "Resuming…" })).toBeTruthy();
+  await act(async () => finish());
+  await screen.findByRole("textbox");
+  expect(resume).toHaveBeenCalledTimes(1);
+});
+
+it("restores a saved failure with Retry and preserves an unsent draft", async () => {
+  let current: LiveSession = { ...session, mine: true };
+  let signal = (_event: string) => {};
+  const fetchEvents = mock(async () => ({ viewer, session: current, events: [], inputs: [] }));
+  const live = { ...api, resume: async () => {}, fetchEvents, watchSignals: (_topic: string, listener: (event: string) => void) => { signal = listener; return () => {}; } };
+  const view = render(<SessionView api={live} sessionId="s1" />);
+  fireEvent.change(await screen.findByRole("textbox"), { target: { value: "keep this draft" } });
+  current = { ...current, status: "ended", end_reason: "host_exited", last_failure: { id: "f1", requestId: "r1", code: "host_exited", at: new Date().toISOString(), message: "The agent disconnected unexpectedly.", retryable: true } };
+  act(() => signal("events"));
+  expect((await screen.findByRole("alert")).textContent).toContain("disconnected unexpectedly");
+  expect(screen.getByRole("button", { name: "Retry resume" })).toBeTruthy();
+  view.unmount();
+  render(<SessionView api={live} sessionId="s1" />);
+  await screen.findByRole("alert");
+  current = { ...current, status: "live", last_failure: null };
+  act(() => signal("events"));
+  expect((await screen.findByRole("textbox") as HTMLTextAreaElement).value).toBe("keep this draft");
+});

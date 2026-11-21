@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, describe, expect, test } from "bun:test";
-import { hostSessionsDir, loadStates, saveState, type HostSessionState } from "../../host/cursor-store";
+import { hostSessionsDir, loadStates, saveState, saveRetiredState, loadRetiredStates, deleteRetiredState, type HostSessionState } from "../../host/cursor-store";
 
 const state = (sessionId: string): HostSessionState => ({ sessionId, workspaceId: "w", hostId: "h", nativeSessionId: "n", folderPath: "/f", cursors: {}, rawUploads: {}, ended: false });
 
@@ -31,4 +31,19 @@ describe("host sessions folder", () => {
     writeFileSync(join(dir, "old.json"), JSON.stringify({ ...state("old"), hostId: undefined, hostMachineId: "mac-1" }));
     expect(loadStates(dir)[0]!.hostId).toBe("mac-1");
   });
+  test("keeps pending uploads separate from the active session state", () => {
+    const root = mkdtempSync(join(tmpdir(), "retired-host-"));
+    roots.push(root);
+    const dir = join(root, "retired");
+    const ended = { ...state("same-session"), ended: true, rawUploads: { root: { size: 1, mtimeMs: 1 } } };
+    saveRetiredState(ended, "old-host", dir);
+    const active = state("same-session");
+    saveState(active, root);
+    expect(loadRetiredStates(dir)).toEqual([{ id: "old-host", state: ended }]);
+    expect(loadStates(root)).toEqual([active]);
+    deleteRetiredState("old-host", dir);
+    expect(loadRetiredStates(dir)).toEqual([]);
+    expect(loadStates(root)).toEqual([active]);
+  });
+
 });

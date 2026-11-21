@@ -1,4 +1,4 @@
-import { recordError } from "../errors/record-error";
+import { recordError, type RecordErrorInput } from "../errors/record-error";
 import { MetaSendError, sendMetaEvent, type MetaEventInput, type MetaEventName } from "../meta/capi";
 import { readMetaSettings, type MetaSettings } from "../meta/settings";
 
@@ -22,7 +22,7 @@ export interface SignupEvent {
 export interface EventDeps {
   settings: MetaSettings | null;
   send: (event: MetaEventInput, settings: MetaSettings) => Promise<void>;
-  logError: typeof recordError;
+  logError: (input: RecordErrorInput) => Promise<void>;
 }
 
 export type EventResult = "sent" | "skipped_unconfigured" | "skipped_opt_out" | "failed";

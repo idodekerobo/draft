@@ -264,6 +264,13 @@ function SessionContents({
   }, [scrollRef]);
   const [stopping, setStopping] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [resumeState, setResumeState] = useState<{ sessionId: string; pending: boolean; error: string | null; requestId?: string } | null>(null);
+  const resuming = resumeState?.sessionId === sessionId && resumeState.pending;
+  const resumeError = resumeState?.sessionId === sessionId ? resumeState.error : null;
+  useEffect(() => {
+    if (resumeState?.sessionId === sessionId && !resumeState.pending && resumeState.error
+      && session.status === "live" && session.resume_request_id && session.resume_request_id !== resumeState.requestId) setResumeState(null);
+  }, [resumeState, sessionId, session.status, session.resume_request_id]);
   const [modeError, setModeError] = useState<string | null>(null);
   const logItems = useMemo(() => {
     const items = buildStreamItems(events);
@@ -580,9 +587,17 @@ function SessionContents({
   // Only a computer can run a session again. A cloud session that failed to start has no run to bring back.
   const canResume = Boolean(api.resume) && session.mine === true && session.status === "ended" && session.runtime !== "cloud" && session.end_reason !== "cleared" && session.end_reason !== "start_failed" && session.end_reason !== "expired";
   const resume = useCallback(async () => {
-    await api.resume?.(sessionId);
-    await refresh();
-  }, [api, sessionId, refresh]);
+    if (!api.resume || resuming) return;
+    setResumeState({ sessionId, pending: true, error: null });
+    try {
+      await api.resume(sessionId);
+      await refresh();
+      setResumeState(current => current?.sessionId === sessionId ? null : current);
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Could not resume the session. Try again.";
+      setResumeState(current => current?.sessionId === sessionId ? { sessionId, pending: false, error: message, requestId: typeof (error as { requestId?: unknown })?.requestId === "string" ? (error as { requestId: string }).requestId : undefined } : current);
+    }
+  }, [api, sessionId, refresh, resuming]);
 
   // A finished routine run can become a cloud chat. Its own session stays as the record of the run.
   const canContinue = Boolean(api.continueInChat) && session.session_type === "routine" && session.status === "ended" && session.end_reason !== "skipped";
@@ -688,7 +703,7 @@ function SessionContents({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended"} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended" || resuming || Boolean(resumeError)} resuming={resuming} resumeRetryable={session.last_failure?.retryable} resumeFailure={resumeError ?? (session.status === "ended" ? session.last_failure?.message : null)} preserveDraft={resuming || Boolean(resumeError) || Boolean(session.last_failure)} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume || resuming || (resumeError && session.mine && session.runtime !== "cloud") ? resume : undefined} />
             </>
           )}
         </div>

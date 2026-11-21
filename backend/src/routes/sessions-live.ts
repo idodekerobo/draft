@@ -389,6 +389,14 @@ export const HEARTBEAT = withHostAuth<HeartbeatRequest>(async (req, caller) => {
   });
   if (error) return knownDbError(error.message) ?? errorResponse("heartbeat_failed", 500, error, workspaceId, sessionId);
 
+  const readyRequestId = optionalString(parsed.body.readyRequestId, 36);
+  if (readyRequestId) {
+    const { error: readyError } = await serviceClient.from("sessions").update({ last_failure: null })
+      .eq("id", sessionId).eq("workspace_id", workspaceId).eq("host_id", hostId)
+      .eq("resume_request_id", readyRequestId).in("status", ["live", "starting", "host_offline"]);
+    if (readyError) return errorResponse("session_ready_failed", 500, readyError, workspaceId, sessionId);
+  }
+
   // The host says which model and effort it ended up on. The session's own host machine is the only one that may.
   const agent = await reportedAgent(sessionId, workspaceId, hostId, parsed.body);
   if (agent) return agent;
@@ -405,6 +413,9 @@ export const END = withHostAuth<EndRequest>(async (req, caller) => {
   const target = hostIdFor(caller, optionalString(parsed.body.hostId, 200));
   if (!target.ok) return target.response;
   if (target.hostId !== owned.session.host_id) return errorResponse("foreign_host", 403);
+
+  const requestId = optionalString(parsed.body.requestId, 36);
+  if (requestId && requestId !== owned.session.resume_request_id) return errorResponse("stale_resume_attempt", 409);
 
   const reason = optionalString(parsed.body.reason, 100) ?? "ended";
   const { error } = await serviceClient
@@ -503,19 +514,25 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   if (!parsed.ok) return parsed.response;
   if (optionalString(parsed.body.hostId, 200) !== owned.session.host_id) return errorResponse("foreign_host", 403);
 
+  const requestId = optionalString(parsed.body.requestId, 36);
+  if (requestId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)) return errorResponse("invalid_request_id", 400);
   const { session } = owned;
   if (session.session_type !== "interactive") return errorResponse("routine_read_only", 409);
-  if (session.status !== "ended") return Response.json({ ok: true, session });
+  if (session.status !== "ended") {
+    if (requestId && session.resume_request_id !== requestId) return errorResponse("session_already_running", 409);
+    return Response.json({ ok: true, session });
+  }
   if (session.end_reason === "cleared") return errorResponse("session_cleared", 409);
 
   const { data, error } = await serviceClient
     .from("sessions")
-    .update({ status: "live", ended_at: null, end_reason: null, last_seen: new Date().toISOString() })
+    .update({ status: "live", ended_at: null, end_reason: null, resume_request_id: requestId, last_seen: new Date().toISOString() })
     .eq("id", sessionId)
     .eq("status", "ended")
     .select(SESSION_COLUMNS)
     .maybeSingle<SessionRow>();
   if (error) return errorResponse("session_reopen_failed", 500, error, workspaceId, sessionId);
+  if (requestId && !data) return errorResponse("session_already_running", 409);
   return Response.json({ ok: true, session: data ?? { ...session, status: "live" } });
 });
 

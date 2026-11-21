@@ -49,6 +49,7 @@ export async function uploadRawFiles(
 export async function putSigned(signedUrl: string, gzipped: Uint8Array): Promise<void> {
   const response = await fetch(signedUrl, {
     method: "PUT",
+    signal: AbortSignal.timeout(30_000),
     headers: { "content-type": "application/gzip", "x-upsert": "true" },
     body: Buffer.from(gzipped),
   });

@@ -9,7 +9,7 @@ import { withAuth } from "./withAuth";
 /** A person's desktop host, or the sandbox host of a cloud session. */
 export type HostCaller =
   | ({ kind: "user" } & VerifiedCaller)
-  | { kind: "cloud_host"; runId: string; sessionId: string; workspaceId: string; ownerUserId: string; hostId: string };
+  | { kind: "cloud_host"; runId: string; sessionId: string; workspaceId: string; ownerUserId: string; hostId: string; runActive?: boolean };
 
 export type HostRequest = Request & { params: Record<string, string> };
 
@@ -49,7 +49,7 @@ type SessionAuthRow = { owner_user_id: string; runtime: string; host_id: string 
  * Checks a run token and the run and session it names. Every failed check is a refusal, and none of them
  * falls back to a login.
  */
-async function cloudHostCaller(req: HostRequest, token: string): Promise<{ ok: true; caller: HostCaller } | Refusal> {
+async function cloudHostCaller(req: HostRequest, token: string, allowFinishedRun = false): Promise<{ ok: true; caller: HostCaller } | Refusal> {
   const workspaceId = req.params.id;
   const sessionId = req.params.sessionId;
 
@@ -76,7 +76,8 @@ async function cloudHostCaller(req: HostRequest, token: string): Promise<{ ok: t
     return refuse(403, "run_not_for_session");
   }
   if (run.kind !== "interactive") return refuse(403, "run_not_interactive");
-  if (!(ACTIVE_AGENT_RUN_STATUSES as ReadonlyArray<string>).includes(run.status)) return refuse(403, "run_not_active");
+  const runActive = (ACTIVE_AGENT_RUN_STATUSES as ReadonlyArray<string>).includes(run.status);
+  if (!runActive && !allowFinishedRun) return refuse(403, "run_not_active");
 
   const { data: session, error: sessionError } = await serviceClient
     .from("sessions")
@@ -93,7 +94,7 @@ async function cloudHostCaller(req: HostRequest, token: string): Promise<{ ok: t
   if (session.host_id !== hostId) return refuse(403, "foreign_host");
   return {
     ok: true,
-    caller: { kind: "cloud_host", runId: claims.runId, sessionId, workspaceId, ownerUserId: session.owner_user_id, hostId },
+    caller: { kind: "cloud_host", runId: claims.runId, sessionId, workspaceId, ownerUserId: session.owner_user_id, hostId, runActive },
   };
 }
 
@@ -101,12 +102,12 @@ async function cloudHostCaller(req: HostRequest, token: string): Promise<{ ok: t
  * Authenticates a host endpoint. A run token binds the request to one cloud session. Any other request
  * goes through withAuth, the same check as before.
  */
-export function withHostAuth<Req extends HostRequest = HostRequest>(handler: HostHandler<Req>) {
+export function withHostAuth<Req extends HostRequest = HostRequest>(handler: HostHandler<Req>, options: { allowFinishedRun?: boolean } = {}) {
   const asUser = withAuth<Req>((req, caller) => handler(req, { kind: "user", ...caller }));
   return async (req: Req): Promise<Response> => {
     const token = runTokenCandidate(req.headers);
     if (token === null) return asUser(req);
-    const cloud = await cloudHostCaller(req, token);
+    const cloud = await cloudHostCaller(req, token, options.allowFinishedRun);
     if (!cloud.ok) return cloud.response;
     return handler(req, cloud.caller);
   };

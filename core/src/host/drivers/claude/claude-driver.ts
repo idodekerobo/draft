@@ -61,6 +61,7 @@ export class ClaudeDriver implements HarnessDriver {
       post: (lines: ForwardedLine[]) => host.postLines(lines),
       isFatal: (error) => host.isFatal(error),
       onFatal: (error) => host.onFatal(error),
+      onError: (error) => host.reportError("forwarding", error),
     });
     this.delivery = new InputDelivery({
       setState: host.setInputState,

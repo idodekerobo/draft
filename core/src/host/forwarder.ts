@@ -95,6 +95,7 @@ export interface ForwarderOptions {
   /** Return true when the failure means this session can never accept lines again. */
   isFatal: (error: unknown) => boolean;
   onFatal: (error: unknown) => void;
+  onError?: (error: unknown) => void;
   locate?: (nativeSessionId: string) => string | null;
   pollMs?: number;
 }
@@ -165,6 +166,7 @@ export class TranscriptForwarder {
         this.stopped = true;
         this.options.onFatal(error);
       } else {
+        this.options.onError?.(error);
         this.backoffMs = Math.min(MAX_BACKOFF_MS, (this.backoffMs || 1000) * 2);
       }
       return false;

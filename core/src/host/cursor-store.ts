@@ -34,6 +34,7 @@ export interface HostSessionState {
   /** Plain text such as "low"; null or missing means the harness's own setting. */
   reasoningEffort?: string | null;
   harnessVersion?: string | null;
+  resumeRequestId?: string;
   /** Permission requests posted and not yet closed, so a restart can close them. */
   openRequests?: string[];
 }
@@ -69,4 +70,23 @@ export function loadStates(dir = hostSessionsDir()): HostSessionState[] {
 
 export function deleteState(sessionId: string, dir = hostSessionsDir()): void {
   rmSync(join(dir, `${sessionId}.json`), { force: true });
+}
+
+export function saveRetiredState(state: HostSessionState, id: string, dir = `${hostSessionsDir()}/retired`): void {
+  mkdirSync(dir, { recursive: true });
+  const path = `${dir}/${id}.json`;
+  writeFileSync(`${path}.tmp`, JSON.stringify(state));
+  renameSync(`${path}.tmp`, path);
+}
+
+export function loadRetiredStates(dir = `${hostSessionsDir()}/retired`): Array<{ id: string; state: HostSessionState }> {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter(name => name.endsWith(".json")).flatMap(name => {
+    try { return [{ id: name.slice(0, -5), state: JSON.parse(readFileSync(join(dir, name), "utf8")) as HostSessionState }]; }
+    catch { return []; }
+  });
+}
+
+export function deleteRetiredState(id: string, dir = `${hostSessionsDir()}/retired`): void {
+  deleteState(id, dir);
 }

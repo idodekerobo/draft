@@ -19,6 +19,8 @@ create table sessions (
   started_at         timestamptz not null default now(),
   ended_at           timestamptz,
   end_reason         text,
+  resume_request_id  uuid,
+  last_failure       jsonb,
   last_event_at      timestamptz,
   last_seen          timestamptz not null default now(),
   last_seq           bigint not null default 0,

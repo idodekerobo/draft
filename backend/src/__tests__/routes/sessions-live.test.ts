@@ -107,6 +107,7 @@ mock.module("../../db/client", () => ({
 }));
 
 const routes = await import("../../routes/sessions-live");
+const failures = await import("../../routes/errors");
 
 const WS = "ws-1";
 const SESSION = "session-1";
@@ -673,6 +674,26 @@ describe("session view route", () => {
   });
 });
 
+describe("generic client error reports", () => {
+  it("uses the shared recorder for an ordinary workspace error", async () => {
+    const id = crypto.randomUUID();
+    const response = await failures.POST(post("/errors", { id, code: "view_fetch_failed", operation: "read", message: "Load failed token=private", detail: { token: "private", status: 500 } }, { id: WS }));
+    expect(response.status).toBe(200);
+    expect(errorRows).toHaveLength(1);
+    expect(errorRows[0]).toMatchObject({ id, workspace_id: WS, operation: "read", message: "Load failed token=[REDACTED]", detail_json: { code: "view_fetch_failed", token: "[REDACTED]", status: 500 } });
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("rejects unauthorized and malformed generic reports", async () => {
+    const body = { id: crypto.randomUUID(), code: "view_failed", operation: "read", message: "Load failed" };
+    accessResult = Response.json({ error: "forbidden" }, { status: 403 });
+    expect((await failures.POST(post("/errors", body, { id: WS }))).status).toBe(403);
+    accessResult = null;
+    expect((await failures.POST(post("/errors", { ...body, operation: "unknown" }, { id: WS }))).status).toBe(400);
+    expect(errorRows).toEqual([]);
+  });
+});
+
 describe("cloud host requests", () => {
   const CLOUD_WS = "11111111-1111-4111-8111-111111111111";
   const RUN = "22222222-2222-4222-8222-222222222222";
@@ -703,6 +724,18 @@ describe("cloud host requests", () => {
   beforeEach(() => {
     tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST })];
     tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
+  });
+
+  it("accepts delayed diagnostics from a finished run without ending its replacement", async () => {
+    tables.agent_runs[0]!.status = "succeeded";
+    const sessionId = crypto.randomUUID();
+    tables.sessions[0]!.id = sessionId;
+    tables.sessions[0]!.host_id = `cloud:${sessionId}`;
+    tables.agent_runs[0]!.session_id = sessionId;
+    const response = await failures.POST(cloudPost({ id: crypto.randomUUID(), sessionId, operation: "session", code: "host_exited", message: "Session ended", detail: { phase: "host_exited" }, sessionFailure: { requestId: null, at: new Date().toISOString(), terminal: true } }, sessionId));
+    expect(response.status).toBe(200);
+    expect(rpcCalls[0]).toMatchObject({ fn: "report_session_failure", args: { p_terminal: false } });
+    expect((await routes.HEARTBEAT(cloudPost({}, sessionId))).status).toBe(403);
   });
 
   it("posts lines under the cloud host id, and refuses a body that names a desktop host", async () => {
