@@ -82,6 +82,18 @@ describe("which identity a tool call uses", () => {
     expect(result.stderr).toContain("may have finished");
   });
 
+  test("the connections commands say it too, not a generic failure", async () => {
+    const partial = await runCli(["connections", "list"], { home, apiUrl: `http://localhost:${server.port}`, env: { DRAFT_RUN_ID: "run-1" } });
+    expect(partial.exitCode).toBe(1);
+    expect(partial.stderr).toContain("both be set");
+
+    respond = () => Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    const refused = await runCli(["connections", "list", "--json"], { home, apiUrl: `http://localhost:${server.port}`, env: { DRAFT_RUN_ID: "run-1", DRAFT_RUN_TOKEN: "tok-1" } });
+    expect(refused.exitCode).toBe(1);
+    expect(JSON.parse(refused.stdout)).toMatchObject({ status: "error", code: "run_token_refused" });
+    expect(JSON.parse(refused.stdout).message).toContain("may have finished");
+  });
+
   test("a tool's own refusal comes through the run route unchanged", async () => {
     respond = () => Response.json({ status: "refused", code: "not_permitted", message: "This run has no skills.list permission." });
     const result = await runCli(["context", "read", "--dimension", "memory", "--period", "today", "--json"], {
