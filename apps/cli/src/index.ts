@@ -14,7 +14,6 @@ import { runRoutines } from "./commands/routines.ts";
 import { runSessions } from "./commands/sessions.ts";
 import { runSkills } from "./commands/skills.ts";
 import { runSources } from "./commands/sources.ts";
-import { runTools } from "./commands/tools.ts";
 import { runCompletion } from "./commands/completion.ts";
 import { runUninstall } from "./commands/uninstall.ts";
 import { runUpdate, getCachedUpdateNotice, checkForUpdateBackground } from "./commands/update.ts";
@@ -65,9 +64,6 @@ if (command === "--version" || command === "-v") {
       break;
     case "sources":
       process.exitCode = await runSources(rest);
-      break;
-    case "tools":
-      process.exitCode = await runTools(rest);
       break;
     case "update":
       process.exitCode = await runUpdate(rest);
