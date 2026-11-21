@@ -7,10 +7,11 @@ import {
   decryptCredentialPayload,
   encryptCredentialPayload,
 } from "../credentials/crypto";
-import { resolveProviderCredential, resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
+import { resolveProviderCredential } from "../credentials/resolve-provider-credential";
 import { loadConfig } from "../config";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
-import { restartSlackListener, stopSlackListener } from "../ingestion/slack/bootstrap";
+import { disconnectConnection } from "../integrations/disconnect";
+import { restartSlackListener } from "../ingestion/slack/bootstrap";
 import { syncPeopleInBackground } from "../people/sync";
 import { registerSlackBatchMaterializationTask } from "../ingestion/slack/materialize-batches";
 import { initializeSlackBackfillForConnection, registerSlackBackfillTask } from "../ingestion/slack/backfill";
@@ -1222,60 +1223,14 @@ export const DELETE = withAuth<ConnectionProviderRequest>(async (req, caller) =>
     accountKind = new URL(req.url).searchParams.get("account_kind") === "workspace" ? "workspace" : "personal";
   }
 
-  // The RPC is the single source of truth for ownership -- it takes
-  // p_connected_by_user_id and reports which case occurred, so there's no
-  // need for a separate pre-check query that would just repeat the same
-  // lookup.
-  const { data, error } = await serviceClient.rpc("disconnect_connection", {
-    p_workspace_id: req.params.id,
-    p_provider: req.params.provider,
-    p_connected_by_user_id: caller.userId,
-    p_account_kind: accountKind,
+  const result = await disconnectConnection(serviceClient, {
+    workspaceId: req.params.id,
+    userId: caller.userId,
+    provider: req.params.provider,
+    accountKind: accountKind as "personal" | "workspace" | null,
   });
-  if (error) return errorResponse("disconnect_failed", 500, error, req.params.id);
-
-  const result = (Array.isArray(data) ? data[0] : data) as {
-    connection_id: string | null;
-    outcome: "disconnected" | "not_found" | "not_owner";
-  } | null;
-
-  if (result?.outcome === "not_owner") {
-    return errorResponse("not_connection_owner", 403, undefined, req.params.id);
-  }
-
-  if (req.params.provider === "slack" && result?.outcome === "disconnected" && result.connection_id) {
-    await stopSlackListener(result.connection_id);
-  }
-
-  if (req.params.provider === "granola" && result?.outcome === "disconnected" && result.connection_id) {
-    // Best-effort: avoids the 4-day window before Granola auto-disables and
-    // emails about a dead endpoint, but isn't fatal if it fails.
-    const { data: revokedConnection } = await serviceClient
-      .from("connections")
-      .select("credential_id")
-      .eq("id", result.connection_id)
-      .eq("workspace_id", req.params.id)
-      .maybeSingle<{ credential_id: string | null }>();
-    if (revokedConnection?.credential_id) {
-      try {
-        const credential = await resolveProviderCredentialById(
-          req.params.id,
-          "granola",
-          revokedConnection.credential_id,
-          serviceClient,
-        );
-        await deleteGranolaWebhookEndpoint(credential.api_token, credential.webhook_endpoint_id);
-      } catch (cleanupError) {
-        recordRouteError({
-          workspaceId: req.params.id,
-          connectionId: result.connection_id,
-          operation: "auth",
-          errorCode: "granola_webhook_cleanup_failed",
-          error: cleanupError,
-        });
-      }
-    }
-  }
+  if (!result.ok) return errorResponse("disconnect_failed", 500, result.error, req.params.id);
+  if (result.outcome === "not_owner") return errorResponse("not_connection_owner", 403, undefined, req.params.id);
 
   return Response.json({ ok: true });
 });
