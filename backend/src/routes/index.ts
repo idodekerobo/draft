@@ -1,3 +1,4 @@
+import * as errors from "./errors";
 import * as calWebhook from "../webhooks/cal/route";
 import * as firefliesWebhook from "../webhooks/fireflies/route";
 import * as granolaWebhook from "../webhooks/granola/route";
@@ -82,6 +83,7 @@ export const routes = {
   "/workspaces/:id/live-sessions/:sessionId/view": { GET: withCors(sessionView), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/events": { GET: withCors(sessionsLive.EVENTS), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/lines": { POST: withCors(sessionsLive.LINES), OPTIONS },
+  "/workspaces/:id/errors": { POST: withCors(errors.POST), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/heartbeat": { POST: withCors(sessionsLive.HEARTBEAT), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/end": { POST: withCors(sessionsLive.END), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/host/sleep": { POST: withCors(sessionsLive.HOST_SLEEP), OPTIONS },

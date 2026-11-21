@@ -11,6 +11,7 @@ const SENSITIVE_KEYS = new Set([
 const SENSITIVE_QUERY = /([?&](?:token|key|secret|signature|sig|expires|credential|x-amz-[^=]+|x-goog-[^=]+)=)[^&#\s]+/gi;
 
 export interface RecordErrorInput {
+  errorId?: string;
   workspaceId: string | null;
   operation: ErrorOperation;
   message: string;
@@ -108,11 +109,18 @@ function fallback(input: RecordErrorInput, reason: unknown): void {
   }));
 }
 
-/** Best-effort persistent operational error logging. This function never rejects. */
-export async function recordError(input: RecordErrorInput): Promise<void> {
+/** A stable errorId enables retry acknowledgement; existing callers remain best effort. */
+export function recordError(input: RecordErrorInput & { errorId: string }): Promise<boolean>;
+export function recordError(input: RecordErrorInput): Promise<void>;
+export async function recordError(input: RecordErrorInput): Promise<boolean | void> {
+  const saved = await persistError(input);
+  if (input.errorId !== undefined) return saved;
+}
+
+async function persistError(input: RecordErrorInput): Promise<boolean> {
   if (!input.workspaceId && !input.allowUnattributed) {
     fallback(input, "workspace_id_unavailable");
-    return;
+    return false;
   }
   try {
     const normalized = normalizeError(input.error);
@@ -121,6 +129,7 @@ export async function recordError(input: RecordErrorInput): Promise<void> {
     // vars in unit tests or startup paths that only use stderr fallback.
     const client = input.client ?? (await import("../db/client")).serviceClient;
     const { error } = await client.from("errors").insert({
+      ...(input.errorId !== undefined ? { id: input.errorId } : {}),
       workspace_id: input.workspaceId,
       connection_id: input.workspaceId ? input.connectionId ?? null : null,
       scheduled_task_id: input.workspaceId ? input.scheduledTaskId ?? null : null,
@@ -131,10 +140,14 @@ export async function recordError(input: RecordErrorInput): Promise<void> {
       detail_json: detail,
       stack_trace: normalized.stack ?? null,
     });
-    if (error) fallback(input, error);
+    if (error && !(input.errorId !== undefined && error.code === "23505")) { fallback(input, error); return false; }
+    return true;
   } catch (error) {
     fallback(input, error);
+    return false;
   }
 }
 
-export const errorSanitizerForTests = { redactString, sanitize, normalizeError };
+export const errorSanitizer = { redactString, sanitize, normalizeError };
+
+export const errorSanitizerForTests = errorSanitizer;

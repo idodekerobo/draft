@@ -206,3 +206,10 @@ describe("recordError", () => {
     }
   });
 });
+
+it("acknowledges a retried error UUID without duplicating it", async () => {
+  const { client, inserts } = fakeClient({ code: "23505", message: "duplicate key" });
+  const id = crypto.randomUUID();
+  expect(await recordError({ client, errorId: id, workspaceId: "ws", operation: "read", message: "Failed", code: "view_failed" })).toBe(true);
+  expect(inserts[0]!.id).toBe(id);
+});
