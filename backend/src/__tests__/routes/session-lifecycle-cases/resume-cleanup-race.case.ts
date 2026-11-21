@@ -2,7 +2,7 @@ import { expect, it, mock } from "bun:test";
 import { tables, rpcResult, updates, session, routes, WS, SESSION } from "./fixture";
 
 it("waits for active cleanup before resuming and retains one reconnect attempt", async () => {
-  
+
   const observations: object[] = [];
   const observe = (phase: string, detail = {}) => { const e = { at: new Date().toISOString(), phase, ...detail }; observations.push(e); console.info(JSON.stringify(e)); };
   const waitFor = async (check: () => boolean) => { const deadline = Date.now() + 4000; while (!check() && Date.now() < deadline) await Bun.sleep(10); expect(check()).toBe(true); };
