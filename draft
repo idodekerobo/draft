@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# draft — entry point wrapper
-# Delegates to the TypeScript CLI via bun.
-# Copy to ~/bin/draft or /usr/local/bin/draft for global access.
-exec bun run "$(dirname "$0")/apps/cli/src/index.ts" "$@"
+# draft — runs this checkout's source CLI against the local backend and staging.
+# For the installed prod CLI, run the `draft` on your PATH instead.
+exec "$(dirname "$0")/scripts/draft-local.sh" "$@"
