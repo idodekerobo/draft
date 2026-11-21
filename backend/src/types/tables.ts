@@ -286,6 +286,8 @@ export type { SessionEventKind } from "draft-core/live-sessions";
 import type { SessionEventKind } from "draft-core/live-sessions";
 
 export interface SessionRow {
+  resume_request_id?: string | null;
+  last_failure?: import("draft-core/session-failure").SessionFailure | null;
   id: string;
   workspace_id: string;
   owner_user_id: string;

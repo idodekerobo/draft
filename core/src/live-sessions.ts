@@ -1,3 +1,4 @@
+import type { SessionFailure } from "./session-failure";
 /** What the backend, the desktop host and the apps agree on for live sessions. */
 
 export type SessionEventKind =
@@ -174,6 +175,8 @@ export interface LiveSession {
   ended_at: string | null;
   /** Why it ended, such as exited, ended_by_owner or cleared. */
   end_reason?: string | null;
+  resume_request_id?: string | null;
+  last_failure?: SessionFailure | null;
   last_event_at: string | null;
   last_seq: number;
   /** Permission requests waiting for an answer. */
@@ -276,6 +279,7 @@ export interface LiveSessionEventPayload {
   agent_message?: { from: string; type: "idle" | "message" | "handback"; color?: string; summary?: string; text: string };
   /** session_note: who pressed Stop on a running turn. */
   interrupted_by?: { id: string; name: string };
+  failure?: SessionFailure;
 }
 
 export interface LiveSessionEvent {

@@ -9,7 +9,7 @@ import { loadDisplayNames } from "./session-display-names";
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export const SESSION_COLUMNS =
-  "id, workspace_id, owner_user_id, session_type, harness, model, reasoning_effort, native_session_id, previous_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, last_event_at, last_seen, last_seq, open_approval_count, host_id, host_name, harness_version, raw_storage_path, raw_uploaded_at, permission_mode, approval_mode, runtime, seed";
+  "id, workspace_id, owner_user_id, session_type, harness, model, reasoning_effort, native_session_id, previous_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, resume_request_id, last_failure, last_event_at, last_seen, last_seq, open_approval_count, host_id, host_name, harness_version, raw_storage_path, raw_uploaded_at, permission_mode, approval_mode, runtime, seed";
 
 export function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string, sessionId?: string): Response {
   if (status >= 500) {
