@@ -124,7 +124,8 @@ Your agent never sees your keys: you enter them on the Draft page the link opens
 | `skills.add` | Create a new shared skill. Fails with `duplicate_name` if the name exists. |
 | `skills.update` | Replace an existing skill's content and fields. Fails with `skill_not_found` if the name does not exist. |
 | `skills.delete` | Remove a skill from the workspace. A client asks before it runs, because the tool is marked destructive. Fails with `skill_not_found` if the name does not exist. |
-| `people.find`, `people.create`, `people.update`, `people.notify`, `people.approve`, `people.reject` | Find the workspace's people, add people, record another way to recognise one (a Slack id, an email), and message a teammate. |
+| `people.find`, `people.create`, `people.notify`, `people.approve`, `people.reject` | Find the workspace's people, add people, message a teammate, and approve or reject a pending one. |
+| `people.update` | `{ personId, provider, externalId?, replaces?, remove?, handle?, evidence? }` | Record another way to recognise a known person (a Slack id, an email), correct one, or remove one. Give `externalId` to add, `externalId` and `replaces` to swap a wrong id for the right one in one step, or `remove` alone to remove one. What you add is a guess until a connection sees the same id, so it cannot be used to message them. Only a guess can be removed or replaced: an id that comes from a workspace member or a connection is kept in step with that source, and the tool refuses it with `identity_trusted`. `identity_taken` means the id belongs to someone else; an id someone else owns reads as `identity_not_found`. |
 
 ## Connect Claude Code
 

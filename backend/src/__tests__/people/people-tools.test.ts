@@ -199,6 +199,86 @@ describe("people.update", () => {
   });
 });
 
+describe("people.update: remove and replace", () => {
+  async function withCory() {
+    const harness = setup();
+    await harness.call(asRun(), "people.create", { displayName: "Cory Banks", evidence });
+    const cory = harness.db.tables.people!.find((p) => p.display_name === "Cory Banks")!;
+    return { ...harness, cory };
+  }
+
+  it("removes an id that was added as a guess", async () => {
+    const { call, db, cory } = await withCory();
+    await call(asRun(), "people.update", { personId: cory.id, provider: "slack", externalId: "U9" });
+    expect(await call(asRun(), "people.update", { personId: cory.id, provider: "slack", remove: "U9" })).toMatchObject({ status: "ok", output: { outcome: "removed" } });
+    expect(db.tables.person_identities).not.toContainEqual(expect.objectContaining({ external_id: "U9" }));
+  });
+
+  it("corrects a wrong email in one step, and the correction is a guess too", async () => {
+    const { call, db, cory } = await withCory();
+    await call(asRun(), "people.update", { personId: cory.id, provider: "email", externalId: "cory@typo.com" });
+    const result = await call(asRun(), "people.update", { personId: cory.id, provider: "email", replaces: "cory@typo.com", externalId: "Cory@Right.com" });
+    expect(result).toMatchObject({ status: "ok", output: { outcome: "replaced" } });
+    const emails = db.tables.person_identities!.filter((i) => i.person_id === cory.id && i.provider === "email");
+    expect(emails.map((i) => [i.external_id, i.status])).toEqual([["cory@right.com", "inferred"]]);
+  });
+
+  it("will not remove or replace an id a connection or a workspace member vouches for, and says why", async () => {
+    const { call, db, cory } = await withCory();
+    db.tables.person_identities!.push({ id: "t1", workspace_id: WS, person_id: cory.id, provider: "slack", external_id: "U1", status: "from_connection", handle: null });
+    const removed = await call(asRun(), "people.update", { personId: cory.id, provider: "slack", remove: "U1" });
+    expect(removed).toMatchObject({ status: "refused", code: "identity_trusted" });
+    expect((removed as { message: string }).message).toContain("keeps it in step with that source");
+    expect(await call(asRun(), "people.update", { personId: cory.id, provider: "slack", replaces: "U1", externalId: "U2" })).toMatchObject({ status: "refused", code: "identity_trusted" });
+    expect(db.tables.person_identities!.filter((i) => i.person_id === cory.id).map((i) => i.external_id)).toEqual(["U1"]);
+  });
+
+  it("says when the person has no such id, without saying who owns it", async () => {
+    const { call, db, cory } = await withCory();
+    await call(asRun(), "people.create", { displayName: "Dana Lee", evidence });
+    const dana = db.tables.people!.find((p) => p.display_name === "Dana Lee")!;
+    await call(asRun(), "people.update", { personId: dana.id, provider: "slack", externalId: "U5" });
+    const result = await call(asRun(), "people.update", { personId: cory.id, provider: "slack", remove: "U5" });
+    expect(result).toMatchObject({ status: "refused", code: "identity_not_found" });
+    expect(JSON.stringify(result)).not.toContain("Dana");
+    expect(db.tables.person_identities).toContainEqual(expect.objectContaining({ person_id: dana.id, external_id: "U5" }));
+  });
+
+  it("keeps the old id when the corrected one belongs to someone else", async () => {
+    const { call, db, cory } = await withCory();
+    await call(asRun(), "people.create", { displayName: "Dana Lee", evidence });
+    const dana = db.tables.people!.find((p) => p.display_name === "Dana Lee")!;
+    await call(asRun(), "people.update", { personId: dana.id, provider: "email", externalId: "dana@x.com" });
+    await call(asRun(), "people.update", { personId: cory.id, provider: "email", externalId: "cory@typo.com" });
+    expect(await call(asRun(), "people.update", { personId: cory.id, provider: "email", replaces: "cory@typo.com", externalId: "dana@x.com" })).toMatchObject({ status: "refused", code: "identity_taken" });
+    expect(db.tables.person_identities).toContainEqual(expect.objectContaining({ person_id: cory.id, external_id: "cory@typo.com" }));
+  });
+
+  it("is for one change at a time: add, replace or remove, never a mix", async () => {
+    const { call, cory } = await withCory();
+    const base = { personId: cory.id, provider: "slack" };
+    for (const args of [
+      base,
+      { ...base, replaces: "U1" },
+      { ...base, remove: "U1", externalId: "U2" },
+      { ...base, remove: "U1", replaces: "U0" },
+      { ...base, remove: "U1", handle: "cory" },
+    ]) {
+      const result = await call(asRun(), "people.update", args);
+      expect(result).toMatchObject({ status: "invalid" });
+      expect(JSON.stringify(result)).toContain("Give externalId to add an id");
+    }
+  });
+
+  it("lets a person do it too, and counts a run's removes and replaces against its limit", async () => {
+    const { call, cory } = await withCory();
+    await call(asUser(), "people.update", { personId: cory.id, provider: "slack", externalId: "U1" });
+    expect(await call(asUser(), "people.update", { personId: cory.id, provider: "slack", remove: "U1" })).toMatchObject({ status: "ok", output: { outcome: "removed" } });
+    const capped = asRun([{ tool: "people.update", limits: { maxPerRun: 0 } }]);
+    expect(await call(capped, "people.update", { personId: cory.id, provider: "slack", remove: "U1" })).toMatchObject({ status: "refused", code: "limit_reached" });
+  });
+});
+
 describe("people.approve and people.reject", () => {
   it("lets an admin approve a pending person, recording who decided and when", async () => {
     const { call, db } = setup();
