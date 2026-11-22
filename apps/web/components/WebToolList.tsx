@@ -6,6 +6,7 @@ import {
   DataBoundary,
   FirefliesConnectPanel,
   GithubConnectPanel,
+  GoogleConnectPanel,
   GranolaConnectPanel,
   LinearConnectPanel,
   SlackConnectPanel,
@@ -30,7 +31,7 @@ import { webToolStatuses } from "@/lib/tool-statuses";
 import { useGithubInstall } from "@/lib/use-github-install";
 import { useWorkspace } from "@/lib/workspace";
 
-function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola" | "github" | "slack"; query?: string }) {
+function DisconnectButton({ provider, query = "" }: { provider: "fireflies" | "granola" | "github" | "slack" | "gmail"; query?: string }) {
   const { workspaceId } = useWorkspace();
   const reloadConnections = useRefreshQuery(queryKeys.connections(workspaceId));
   const { track } = useIntegrationActions();
@@ -104,6 +105,14 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint, only }: { g
   const panels: Partial<Record<ToolId, (close: () => void) => ReactNode>> = {
     fireflies: (close) => <FirefliesConnectPanel detail={undefined} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
     granola: (close) => <GranolaConnectPanel detail={undefined} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close} />,
+    gmail: (close) => {
+      const needsReconnect = baseStatuses.gmail?.state === "error";
+      return (
+        <GoogleConnectPanel needsReconnect={needsReconnect} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={close}>
+          {needsReconnect && allowDisconnect && <DisconnectButton provider="gmail" />}
+        </GoogleConnectPanel>
+      );
+    },
     linear: (close) => <LinearConnectPanel detail={undefined} classPrefix="ui-panel" onConnected={async () => { await refresh(); close(); }} />,
     github: (close) => <GithubPanel onDone={close} />,
     slack: (close) => <SlackConnectPanel detail={slackDetail} mode="connect" classPrefix="ui-panel" onMembershipUpdated={async () => { await refresh(); }} onConnected={async () => { await refresh(); close(); }} />,
@@ -134,6 +143,7 @@ function WebToolListBody({ groups, allowDisconnect, unavailableHint, only }: { g
         granola: <DisconnectButton provider="granola" query="?account_kind=personal" />,
         github: <DisconnectButton provider="github" />,
         slack: <DisconnectButton provider="slack" />,
+        gmail: <DisconnectButton provider="gmail" />,
       } : {}}
       unavailableHint={unavailableHint}
       searchable

@@ -6,7 +6,7 @@ create table connection_requests (
   workspace_id          uuid not null references workspaces(id) on delete cascade,
   requested_by_user_id  uuid not null references users(id) on delete cascade,
   provider              text not null
-                          check (provider in ('fireflies', 'slack', 'granola', 'linear', 'github', 'claude_session', 'codex_session', 'manual_upload', 'mcp')),
+                          check (provider in ('fireflies', 'slack', 'granola', 'linear', 'github', 'google', 'claude_session', 'codex_session', 'manual_upload', 'mcp')),
   token_hash            text not null unique,
   status                text not null default 'pending' check (status in ('pending', 'completed')),
   created_via           text not null check (created_via in ('mcp', 'cli', 'http')),

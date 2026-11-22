@@ -9,6 +9,8 @@ export * from "./session-repos";
 export * from "./SlackChannelPicker";
 export * from "./SlackConnectPanel";
 export * from "./GithubConnectPanel";
+export * from "./GoogleConnectPanel";
+export * from "./gmail-connect";
 export * from "./registry";
 export * from "./ToolList";
 export * from "./ProviderLogo";

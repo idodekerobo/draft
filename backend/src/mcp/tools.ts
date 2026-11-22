@@ -33,7 +33,7 @@ async function resolveCallerWorkspaceId(userId: string): Promise<string | null> 
 }
 
 /** Builds the tool surface for one already-verified caller; write tools also need the `write` scope (see mcp/route.ts). */
-export function buildMcpServer(userId: string, scopes: string[] = [], gatewayOverride?: McpGateway): McpServer {
+export async function buildMcpServer(userId: string, scopes: string[] = [], gatewayOverride?: McpGateway): Promise<McpServer> {
   const gateway = gatewayFor(gatewayOverride);
   const server = new McpServer(
     {

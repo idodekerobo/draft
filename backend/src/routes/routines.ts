@@ -13,6 +13,7 @@ import { ScheduleServiceError, createAgentRoutine, deleteRoutine, getRoutineTask
 import { validateCreate } from "../routines/validate-create";
 import { parseCursor } from "../activity/service";
 import { validatePatch } from "../routines/validate-patch";
+import { personalConnectionProviders } from "../ingestion/gmail/access";
 
 type SchedulesRequest = Bun.BunRequest<"/workspaces/:id/schedules">;
 type ScheduleRequest = Bun.BunRequest<"/workspaces/:id/schedules/:taskId">;
@@ -36,7 +37,7 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
   if (!filter.ok) return Response.json({ error: "invalid_filter", message: `${filter.field} is not a value the routine list takes.`, field: filter.field }, { status: 400 });
 
   try {
-    const [routines, connectedProviders, agents] = await Promise.all([
+    const [routines, connectedProviders, agents, gmailConnected] = await Promise.all([
       listRoutines(req.params.id, caller.userId, filter.filter),
       // A failed lookup is recorded and leaves the list working. The form then treats every connection as present.
       listConnectedProviders(req.params.id).catch((error) => {
@@ -48,9 +49,14 @@ export const GET = withAuth<SchedulesRequest>(async (req, caller) => {
         recordRouteError({ workspaceId: req.params.id, errorCode: "schedules_agent_status_failed", error });
         return undefined;
       }),
+      // Gmail is personal: this is the caller's own connection, never a teammate's.
+      personalConnectionProviders(serviceClient, req.params.id, caller.userId).then((providers) => providers.has("gmail")).catch((error) => {
+        recordRouteError({ workspaceId: req.params.id, errorCode: "schedules_gmail_lookup_failed", error });
+        return undefined;
+      }),
     ]);
     const canEdit = await canEditSchedules(req.params.id, caller.userId);
-    const body = JSON.stringify({ routines, canEdit, agents, connectedProviders });
+    const body = JSON.stringify({ routines, canEdit, agents, connectedProviders, gmailConnected });
     if (isAgentRequest(req)) void recordAgentQueryLog(serviceClient, {
       workspaceId: req.params.id,
       userId: caller.userId,

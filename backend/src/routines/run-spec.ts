@@ -18,8 +18,14 @@ export const ROUTINE_NOTIFY_MAX_PER_RUN = 15;
 /** How many routines one run may create. */
 export const ROUTINE_CREATE_MAX_PER_RUN = 5;
 
-/** What a routine may call. Messaging is off unless the routine was saved with canNotify. Routine tools are checked per call. */
-export function routinePermissions(routine: Pick<AgentRoutineConfig, "canNotify" | "postChannels" | "github">): ReadonlyArray<AnyDraftToolPermission> {
+/**
+ * What a routine may call. Messaging is off unless the routine was saved with canNotify. Gmail needs canReadGmail
+ * and the owner's own live Gmail connection, from `ownerProviders`. Routine tools are checked per call.
+ */
+export function routinePermissions(
+  routine: Pick<AgentRoutineConfig, "canNotify" | "canReadGmail" | "postChannels" | "github">,
+  ownerProviders: ReadonlySet<string> = new Set(),
+): ReadonlyArray<AnyDraftToolPermission> {
   const permissions: AnyDraftToolPermission[] = [
     ...ROUTINE_PERMISSIONS,
     { tool: "routines.create", limits: { maxPerRun: ROUTINE_CREATE_MAX_PER_RUN } },
@@ -31,6 +37,9 @@ export function routinePermissions(routine: Pick<AgentRoutineConfig, "canNotify"
     { tool: "connections.post", provider: "slack", limits: { channels: routine.postChannels, maxPerRun: 10 } },
   );
   if (routine.github) permissions.push({ tool: "github.credential", limits: routine.github });
+  if (routine.canReadGmail && ownerProviders.has("gmail")) permissions.push(
+    { tool: "connections.list", provider: "gmail" }, { tool: "connections.search", provider: "gmail" }, { tool: "connections.read", provider: "gmail" },
+  );
   return permissions;
 }
 
@@ -48,6 +57,8 @@ export interface RoutineRunSpecInput {
   contextVersionId: string;
   /** The connections the run may use, already checked as usable by its owner. */
   mcpServers?: ReadonlyArray<{ connectionId: string; tools: "all" | string[] }>;
+  /** Providers of the owner's own live connections, checked at launch. */
+  ownerConnectionProviders?: ReadonlySet<string>;
 }
 
 export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
@@ -70,7 +81,7 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
     reasoningEffort: input.routine.reasoningEffort ?? null,
     instructions: input.routine.prompt,
     inputs: { contextVersionId: parseContextVersionId(input.contextVersionId) },
-    permissions: routinePermissions(input.routine),
+    permissions: routinePermissions(input.routine, input.ownerConnectionProviders),
     output: { type: "text" },
   };
 }

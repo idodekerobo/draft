@@ -27,7 +27,11 @@ function baseSession(overrides: Partial<CapturedSessionRow> = {}): CapturedSessi
   };
 }
 
-function fakeClient() {
+type LogRow = { workspace_id: string; user_id: string; command: string; occurred_at: string; provider?: string };
+
+function fakeClient(options: { logRows?: LogRow[]; logError?: unknown } = {}) {
+  const rpcCalls: Array<Record<string, unknown>> = [];
+  const logQueries: number[] = [];
   const updates: Array<{ table: string; values: Record<string, unknown>; eq: [string, unknown][] }> = [];
   const client = {
     from: (table: string) => {
@@ -39,6 +43,22 @@ function fakeClient() {
             }),
           }),
         };
+      }
+      if (table === "agent_query_log") {
+        logQueries.push(1);
+        const preds: Array<(row: LogRow) => boolean> = [];
+        const builder = {
+          select: () => builder,
+          eq: (column: string, value: string) => (preds.push((r) => (column === "args_json->>provider" ? r.provider === value : r[column as keyof LogRow] === value)), builder),
+          in: (column: keyof LogRow, values: string[]) => (preds.push((r) => values.includes(r[column] as string)), builder),
+          gte: (column: Exclude<keyof LogRow, "provider">, value: string) => (preds.push((r) => r[column] >= value), builder),
+          lte: (column: Exclude<keyof LogRow, "provider">, value: string) => (preds.push((r) => r[column] <= value), builder),
+          limit: async (n: number) =>
+            options.logError
+              ? { data: null, error: options.logError }
+              : { data: (options.logRows ?? []).filter((r) => preds.every((p) => p(r))).slice(0, n), error: null },
+        };
+        return builder;
       }
       if (table === "source_items") {
         return {
@@ -65,14 +85,15 @@ function fakeClient() {
       }
       throw new Error(`unexpected table: ${table}`);
     },
-    rpc: async (name: string) => {
+    rpc: async (name: string, args: Record<string, unknown>) => {
       if (name === "upsert_source_item") {
+        rpcCalls.push(args);
         return { data: { item_id: "item-1", changed: true, superseded_item_ids: [] }, error: null };
       }
       throw new Error(`unexpected rpc: ${name}`);
     },
   };
-  return { client: client as unknown as import("@supabase/supabase-js").SupabaseClient, updates };
+  return { client: client as unknown as import("@supabase/supabase-js").SupabaseClient, updates, rpcCalls, logQueries };
 }
 
 describe("materializeSessionSummary", () => {
@@ -108,5 +129,48 @@ describe("materializeSessionSummary", () => {
     await materializeSessionSummary(session, { ok: false, error: new Error("boom") }, client);
 
     expect(updates[0].values).toMatchObject({ summary_status: "skipped" });
+  });
+
+  const okResult = {
+    ok: true as const,
+    payload: { who: "alice", project: "draft", outcome: "shipped", keyDecisions: [] },
+  };
+  const gmailRow = (occurred_at: string, command = "mcp.connections.search", provider = "gmail"): LogRow => ({
+    workspace_id: "workspace-1",
+    user_id: "user-1",
+    command,
+    occurred_at,
+    provider,
+  });
+
+  test.each(["connections.read", "mcp.connections.search", "connections.search"])("is private to the owner when %s ran on Gmail inside the session window", async (command) => {
+    const { client, rpcCalls } = fakeClient({ logRows: [gmailRow("2026-08-01T00:30:00.000Z", command)] });
+    await materializeSessionSummary(baseSession(), okResult, client);
+    expect(rpcCalls[0]).toMatchObject({ p_visibility: "private", p_owner_user_id: "user-1" });
+  });
+
+  test("stays shared when the same tools ran on Slack, not Gmail", async () => {
+    const { client, rpcCalls } = fakeClient({ logRows: [gmailRow("2026-08-01T00:30:00.000Z", "connections.read", "slack")] });
+    await materializeSessionSummary(baseSession(), okResult, client);
+    expect(rpcCalls[0]).toMatchObject({ p_visibility: "shared", p_owner_user_id: null });
+  });
+
+  test("stays shared when the Gmail call was outside the session window", async () => {
+    const { client, rpcCalls } = fakeClient({ logRows: [gmailRow("2026-08-01T02:00:00.000Z")] });
+    await materializeSessionSummary(baseSession(), okResult, client);
+    expect(rpcCalls[0]).toMatchObject({ p_visibility: "shared", p_owner_user_id: null });
+  });
+
+  test("stays shared without a user and does not query the log", async () => {
+    const { client, rpcCalls, logQueries } = fakeClient({ logRows: [gmailRow("2026-08-01T00:30:00.000Z")] });
+    await materializeSessionSummary(baseSession({ user_id: null }), okResult, client);
+    expect(logQueries).toHaveLength(0);
+    expect(rpcCalls[0]).toMatchObject({ p_visibility: "shared" });
+  });
+
+  test("is private when the Gmail usage lookup fails", async () => {
+    const { client, rpcCalls } = fakeClient({ logError: { message: "db down" } });
+    await materializeSessionSummary(baseSession(), okResult, client);
+    expect(rpcCalls[0]).toMatchObject({ p_visibility: "private", p_owner_user_id: "user-1" });
   });
 });

@@ -29,6 +29,7 @@ describe("the CLI offers a command for every tool it is meant to", () => {
 const REST_PATHS_OUTSIDE_TOOLS: Record<string, string> = {
   "/tools": "the tools route itself",
   "/connections": "connecting with a key typed in the terminal, and Fireflies' check for an existing connection: the key goes from the person to the backend and never passes through a tool",
+  "/google/connect-sessions": "the Google OAuth handoff: a browser sign-in that the CLI polls",
   "/github/install-sessions": "the GitHub install handoff: a browser step that the CLI polls",
   "/sessions/tokens": "minting and revoking ingest tokens for the session capture hooks: credentials, not capabilities",
   "/sessions": "older helpers for captured sessions that no command calls any more, kept until their tests go",

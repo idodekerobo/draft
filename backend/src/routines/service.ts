@@ -66,6 +66,10 @@ export interface AgentRoutineInfo extends Omit<AgentRoutineConfig, "title"> {
   lastRun: RoutineRun | null;
   /** Connections its triggers or access need that the workspace no longer has. Those triggers never fire. */
   missingConnections: string[];
+  /** Whether the routine's owner has their own live Gmail connection. A teammate's never counts. */
+  ownerGmailConnected: boolean;
+  /** Whether the person who asked for this list owns the routine. Absent when nobody asked. */
+  ownedByViewer?: boolean;
 }
 
 /** once fires one time. recurring runs on its schedule. event is started only by its triggers and Run now. */
@@ -110,7 +114,7 @@ export interface Routine {
 type ConnectionInfo = Pick<ConnectionRow, "id" | "provider" | "status">;
 type RunInfo = Pick<AgentRunRow, "status" | "outcome" | "completed_at">;
 
-export type ScheduleErrorCode = "not_found" | "forbidden" | WhenRefusal["code"];
+export type ScheduleErrorCode = "not_found" | "forbidden" | "gmail_not_connected" | WhenRefusal["code"];
 
 export class ScheduleServiceError extends Error {
   constructor(
@@ -302,10 +306,35 @@ async function loadCreatorSessions(workspaceId: string, runIds: string[]): Promi
   return new Map(((data ?? []) as Array<{ id: string; session_id: string | null }>).flatMap((row) => (row.session_id ? [[row.id, row.session_id] as [string, string]] : [])));
 }
 
+/** Which of these users have their own live Gmail connection. A failed lookup counts as none. */
+async function loadGmailOwners(workspaceId: string, userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const { data, error } = await serviceClient
+    .from("connections")
+    .select("connected_by_user_id")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "gmail")
+    .in("connected_by_user_id", userIds)
+    .in("status", ["active", "degraded"]);
+  if (error) {
+    console.error(JSON.stringify({ source: "routines", event: "gmail_owner_lookup_failed", workspaceId, error: error.message }));
+    return new Set();
+  }
+  return new Set(((data ?? []) as Array<{ connected_by_user_id: string | null }>).flatMap((row) => (row.connected_by_user_id ? [row.connected_by_user_id] : [])));
+}
+
+/** Turning on Gmail needs the owner's own connection. A routine that already has it keeps working if Gmail drops. */
+async function assertOwnerGmail(workspaceId: string, ownerId: string | null, turningOn: boolean): Promise<void> {
+  if (!turningOn) return;
+  if (ownerId && (await loadGmailOwners(workspaceId, [ownerId])).has(ownerId)) return;
+  throw new ScheduleServiceError("gmail_not_connected", "canReadGmail", "Gmail is not connected for the routine's owner. The owner connects Google on the Connections page.");
+}
+
 async function buildRoutines(
   workspaceId: string,
   tasks: ScheduledTaskRow[],
   knownConnections?: Map<string, ConnectionInfo>,
+  viewerId?: string,
 ): Promise<Routine[]> {
   const connectionIds = tasks.flatMap((task) => (task.connection_id ? [task.connection_id] : []));
   const editorIds = [
@@ -315,13 +344,15 @@ async function buildRoutines(
   const hasSynthesis = tasks.some((task) => task.task_type === "synthesize_workspace");
 
   const creatorRunIds = [...new Set(tasks.flatMap((task) => (task.created_by_run_id ? [task.created_by_run_id] : [])))];
-  const [connections, lastRun, names, lastAgentRuns, connectedProviders, creatorSessions] = await Promise.all([
+  const gmailOwnerIds = [...new Set(tasks.flatMap((task) => (task.task_type === "agent_routine" && task.created_by_user_id ? [task.created_by_user_id] : [])))];
+  const [connections, lastRun, names, lastAgentRuns, connectedProviders, creatorSessions, gmailOwners] = await Promise.all([
     knownConnections ?? loadConnections(workspaceId, connectionIds),
     hasSynthesis ? loadLastSynthesisRun(workspaceId) : Promise.resolve(null),
     loadUserNames(workspaceId, editorIds),
     loadLastAgentRuns(workspaceId, agentTaskIds),
     agentTaskIds.length ? listConnectedProviders(workspaceId) : Promise.resolve([]),
     loadCreatorSessions(workspaceId, creatorRunIds),
+    loadGmailOwners(workspaceId, gmailOwnerIds),
   ]);
 
   return tasks.flatMap((task): Routine[] => {
@@ -332,12 +363,19 @@ async function buildRoutines(
         return [];
       }
       const { title: _title, ...agentConfig } = config;
+      // Gmail is personal: a routine reads its owner's mailbox, so only the owner's connection counts.
+      const ownerHasGmail = !!task.created_by_user_id && gmailOwners.has(task.created_by_user_id);
       const agent: AgentRoutineInfo = {
         ...agentConfig,
         builtInTools: effectiveBuiltInTools(config),
         createdByName: task.created_by_user_id ? (names.get(task.created_by_user_id) ?? null) : null,
         lastRun: lastAgentRuns.get(task.id) ?? null,
-        missingConnections: routineProviders(config).filter((provider) => !connectedProviders.includes(provider)),
+        missingConnections: [
+          ...routineProviders(config).filter((provider) => !connectedProviders.includes(provider)),
+          ...(config.canReadGmail && !ownerHasGmail ? ["gmail"] : []),
+        ],
+        ownerGmailConnected: ownerHasGmail,
+        ...(viewerId !== undefined ? { ownedByViewer: task.created_by_user_id === viewerId } : {}),
       };
       const routine = toRoutine(
         task,
@@ -385,7 +423,7 @@ function matchesFilter(task: ScheduledTaskRow, callerId: string | undefined, fil
 
 export async function listRoutines(workspaceId: string, callerId?: string, filter: RoutineListFilter = {}): Promise<Routine[]> {
   const tasks = (await loadTasks(workspaceId)).filter((task) => matchesFilter(task, callerId, filter));
-  const routines = await buildRoutines(workspaceId, tasks);
+  const routines = await buildRoutines(workspaceId, tasks, undefined, callerId);
   if (!callerId) return routines;
   const canEdit = await canEditSchedules(workspaceId, callerId);
   return routines.map((routine) => ({ ...routine, canEdit }));
@@ -459,6 +497,8 @@ export async function updateRoutine(
   attribution: RoutineAttribution = {},
 ): Promise<Routine> {
   if (!(await canEditSchedules(task.workspace_id, userId))) throw new ScheduleServiceError("forbidden");
+  const wasReadingGmail = parseAgentRoutineConfig(task.config_json)?.canReadGmail === true;
+  await assertOwnerGmail(task.workspace_id, task.created_by_user_id, patch.agent?.canReadGmail === true && !wasReadingGmail);
   const changes: Partial<ScheduledTaskRow> = {};
   if (patch.enabled !== undefined) changes.enabled = patch.enabled;
   if (patch.agent) changes.config_json = { ...patch.agent };
@@ -538,7 +578,7 @@ export async function updateRoutine(
     properties: { routine_id: task.id, source: attribution.via, task_type: task.task_type },
   });
   const known = new Map(connection ? [[connection.id, connection]] : []);
-  const [routine] = await buildRoutines(task.workspace_id, [data as ScheduledTaskRow], known);
+  const [routine] = await buildRoutines(task.workspace_id, [data as ScheduledTaskRow], known, userId);
   return routine!;
 }
 
@@ -718,6 +758,7 @@ export async function createAgentRoutine(
   now: Date = new Date(),
 ): Promise<Routine> {
   if (!(await canEditSchedules(workspaceId, creator.userId))) throw new ScheduleServiceError("forbidden");
+  await assertOwnerGmail(workspaceId, creator.userId, input.config.canReadGmail === true);
   const resolved = resolveWhenOrThrow(input.when, now);
   const enabled = input.enabled ?? true;
 
@@ -789,6 +830,6 @@ export async function createAgentRoutine(
       harness: input.config.harness, schedule_kind: created.schedule_kind, visibility: creator.visibility,
       on_schedule: input.config.onSchedule !== false, event_trigger_count: input.config.events?.length ?? 0 },
   });
-  const [routine] = await buildRoutines(workspaceId, [data as ScheduledTaskRow]);
+  const [routine] = await buildRoutines(workspaceId, [data as ScheduledTaskRow], undefined, creator.userId);
   return routine!;
 }

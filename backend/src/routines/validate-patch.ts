@@ -3,7 +3,7 @@ import { defaultRoutineBuiltInTools } from "draft-core/routines";
 import type { RoutineEditability } from "../scheduling/routine-registry";
 import { RoutinePatch, RoutineWhen } from "draft-core/routines";
 
-const AGENT_FIELDS = ["title", "prompt", "harness", "model", "reasoningEffort", "canNotify", "postChannels", "github", "builtInTools"] as const;
+const AGENT_FIELDS = ["title", "prompt", "harness", "model", "reasoningEffort", "canNotify", "canReadGmail", "postChannels", "github", "builtInTools"] as const;
 /** Sending null for one of these turns that ability off. */
 const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github", "reasoningEffort"]);
 const ALLOWED_FIELDS = new Set<string>(["enabled", "when", ...AGENT_FIELDS]);

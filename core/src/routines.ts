@@ -71,6 +71,8 @@ export const RoutineInput = z.object({
   reasoningEffort: z.string().nullable().optional(),
   when: RoutineWhen,
   canNotify: z.boolean().optional(),
+  /** Lets the run read the owner's own Gmail. Works only while the owner has Gmail connected. */
+  canReadGmail: z.boolean().optional(),
   postChannels: z.union([z.literal("joined"), z.array(z.string().min(1).max(80).trim()).max(20)]).optional(),
   github: githubSchema.optional(),
   /** The built-in tools it may use. Left out, a new routine gets them all. */

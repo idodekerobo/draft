@@ -5,6 +5,7 @@ const sourceDir = join(import.meta.dir, "../src/integrations/logos");
 const output = join(import.meta.dir, "../src/integrations/provider-logo-assets.ts");
 const assets = {
   slack: "slack.svg",
+  google: "google.svg",
   github: "github.svg",
   linear: "linear.svg",
   fireflies: "fireflies.ai.png",

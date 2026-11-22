@@ -34,6 +34,12 @@ The local machine is not the canonical home of hosted workspace context. Clients
 
 The remote MCP server provides authenticated, read-only access to workspace context and shared skills for connected agents. MCP calls are resolved against the caller's team workspace and checked against workspace access. The CLI uses authenticated API calls to read the same workspace and can also write project-local setup files or upload sessions when those features are enabled.
 
+## Gmail
+
+When you connect Google, Draft reads your Gmail live, with your own Google login, only when an agent asks. Draft does not copy or store your mail. Only your own agents can read it, plus the routines where you turn on **Read my Gmail**. Teammates and their agents cannot. Draft asks only for read-only Gmail access. Your Google refresh token is encrypted like other credentials. When you disconnect, Draft asks Google to revoke it and stops using it. Gmail search terms are not written to Draft's logs. If a captured coding session used a Gmail tool, Draft makes that session's summary private to you.
+
+Known gap: the raw transcript of a captured session is still visible to your teammates. If a session read your mail, parts of it can show in that transcript.
+
 ## Context export
 
 You can export your workspace context as markdown files from the web app, desktop app, CLI, or an MCP agent. An export is a copy that lives outside Draft's access control: anyone who has the files can read them, and removing a member from the workspace does not delete files they already exported. Agent download links expire after 5 minutes and re-check the user's workspace access when opened, but they are not single-use.

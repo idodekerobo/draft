@@ -133,7 +133,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
   const api = useDraftApi();
   const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(routinesQueryOptions(api, workspaceId));
-  const { canEdit, agents, connectedProviders } = data;
+  const { canEdit, agents, connectedProviders, gmailConnected } = data;
   // One-time routines are not listed here; the backend leaves them out by default too.
   const routines = data.routines.filter((routine) => routine.kind !== "once");
   const [filter, setFilter] = useState<RoutineFilter>("all");
@@ -372,6 +372,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onOpenRun={onOpenRun}
           agents={agents}
           connectedProviders={connectedProviders}
+          gmailConnected={gmailConnected}
           onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}
@@ -385,6 +386,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
           onCreate={onCreate}
           agents={agents}
           connectedProviders={connectedProviders}
+          gmailConnected={gmailConnected}
           onConnect={onReconnect}
           renderAgentSetup={renderAgentSetup}
           refreshAgents={refreshAgents}

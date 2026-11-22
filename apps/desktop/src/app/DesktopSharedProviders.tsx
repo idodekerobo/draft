@@ -16,6 +16,8 @@ export function DesktopSharedProviders({ children }: { children: ReactNode }) {
     connectFireflies: (input) => rpc.request.connectFireflies(input),
     connectGranola: (input) => rpc.request.connectGranola(input),
     connectLinear: (input) => rpc.request.connectLinear(input),
+    startGoogleConnect: () => rpc.request.startGoogleConnect(),
+    pollGoogleConnect: (code) => rpc.request.pollGoogleConnect({ code }),
     connectSessionTracking: async () => ({ ok: false, error: "Manage coding sessions with the Draft CLI." }),
     selectSessionRepoFolder: async () => ({}),
     enableSessionCaptureForRepo: async () => ({ ok: false, error: "Manage coding sessions with the Draft CLI." }),

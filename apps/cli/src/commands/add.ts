@@ -81,7 +81,7 @@ const MANAGED_BLOCK_BODY = [
   "### Hosted connections",
   "",
   "- `draft connections list` — see which of GitHub, Linear, Slack, Fireflies,",
-  "  Granola, and Claude Code are connected.",
+  "  Granola, Claude Code, and Google (your own Gmail) are connected.",
   `- \`draft connections connect <${CONNECT_PROVIDER_ARGUMENT}>\` —`,
   "  connect one. These need a human at a terminal (browser handoffs, hidden",
   "  credential prompts) — don't run this on the user's behalf unless asked.",

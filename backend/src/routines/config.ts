@@ -39,6 +39,8 @@ export interface AgentRoutineConfig {
   onSchedule?: false;
   /** Lets the run find people and message teammates. Fixed when the routine is saved, never by the model. */
   canNotify?: boolean;
+  /** Lets the run read the owner's own Gmail, while the owner has it connected. Fixed when the routine is saved. */
+  canReadGmail?: boolean;
   /** Slack channels the run may post in. */
   postChannels?: "joined" | string[];
   github?: { repos: string[]; access: "read" | "write" };
@@ -57,7 +59,7 @@ export function effectiveBuiltInTools(config: Pick<AgentRoutineConfig, "harness"
   return offered.filter((tool) => legacy.includes(tool));
 }
 
-export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "toolset" | "events" | "onSchedule" | "canNotify" | "postChannels" | "github" | "builtInTools" | "body" };
+export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "toolset" | "events" | "onSchedule" | "canNotify" | "canReadGmail" | "postChannels" | "github" | "builtInTools" | "body" };
 
 const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
@@ -85,7 +87,7 @@ export function validateRoutineToolset(value: unknown, harness: HarnessId): Rout
 /** Checks field by field so a caller can say which one is wrong. */
 export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, field: "body" };
-  const { title, prompt, harness, model, reasoningEffort, toolset, events, onSchedule, canNotify, postChannels, github, builtInTools } = value as Record<string, unknown>;
+  const { title, prompt, harness, model, reasoningEffort, toolset, events, onSchedule, canNotify, canReadGmail, postChannels, github, builtInTools } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
@@ -100,6 +102,7 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
   if (events !== undefined && !(Array.isArray(events) && events.every((event) => (ROUTINE_EVENTS as ReadonlyArray<unknown>).includes(event)))) return { ok: false, field: "events" };
   if (onSchedule !== undefined && typeof onSchedule !== "boolean") return { ok: false, field: "onSchedule" };
   if (canNotify !== undefined && typeof canNotify !== "boolean") return { ok: false, field: "canNotify" };
+  if (canReadGmail !== undefined && typeof canReadGmail !== "boolean") return { ok: false, field: "canReadGmail" };
   if (postChannels !== undefined && postChannels !== "joined" && !(Array.isArray(postChannels) && postChannels.length <= 20 && postChannels.every((channel) => typeof channel === "string" && channel.trim().length > 0 && channel.trim().length <= 80))) return { ok: false, field: "postChannels" };
   if (github !== undefined) {
     if (!github || typeof github !== "object" || Array.isArray(github)) return { ok: false, field: "github" };
@@ -118,6 +121,7 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
       ...(events !== undefined && (events as string[]).length ? { events: [...new Set(events as RoutineEventName[])] } : {}),
       ...(onSchedule === false ? { onSchedule: false as const } : {}),
       ...(canNotify !== undefined ? { canNotify: canNotify as boolean } : {}),
+      ...(canReadGmail !== undefined ? { canReadGmail: canReadGmail as boolean } : {}),
       ...(postChannels !== undefined ? { postChannels: postChannels === "joined" ? "joined" : [...new Set((postChannels as string[]).map((channel) => channel.trim()))] } : {}),
       ...(builtInTools !== undefined ? { builtInTools: offeredTools.filter((tool) => (builtInTools as string[]).includes(tool)) } : {}),
       ...(github !== undefined ? { github: { repos: [...new Set((github as { repos: string[] }).repos)], access: (github as { access: "read" | "write" }).access } } : {}),

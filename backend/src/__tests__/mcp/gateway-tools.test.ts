@@ -78,7 +78,7 @@ describe("MCP tools that go through the gateway", () => {
     expect(tool("skills.update").annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
   });
 
-  it("registers the tools that run through the gateway, and no run-only tool", async () => {
+  it("registers the tools that run through the gateway, and no run-only tool or tool that needs a connection the caller lacks", async () => {
     const result = await rpc("tools/list");
     const names = result.tools!.map((tool) => tool.name).sort();
     expect(names).toEqual(["activity.list", "connections.connect", "connections.disconnect", "connections.join", "connections.leave", "connections.list", "connections.post", "connections.read", "connections.search", "context.export", "context.list", "context.read", "people.approve", "people.create", "people.find", "people.notify", "people.reject", "people.update", "routines.create", "routines.delete", "routines.list", "routines.options", "routines.run", "routines.runs", "routines.update", "sessions.list", "sessions.read", "skills.add", "skills.delete", "skills.list", "skills.read", "skills.update", "sources.list", "sources.read", "sources.search"]);

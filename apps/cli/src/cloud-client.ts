@@ -306,6 +306,8 @@ export type FetchErrorCode =
   | "slack_channel_join_failed"
   | "slack_channel_leave_failed"
   | "github_installation_conflict"
+  | "google_already_connected"
+  | "google_oauth_not_configured"
   | "connection_update_conflict"
   | "skill_not_found"
   | "duplicate_name"
@@ -335,7 +337,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<{ ok: true
   return { ok: true, token: resolved.token, workspaceId: resolved.workspaceId, response };
 }
 
-export type BackendProvider = Exclude<HostedConnectionProvider, "claude-code"> | "claude_code";
+export type BackendProvider = Exclude<HostedConnectionProvider, "claude-code" | "google"> | "claude_code" | "gmail";
 export type BackendConnectionProvider = BackendProvider | "claude_session";
 export type BackendConnectionStatus = "pending" | "active" | "degraded" | "error" | "revoked" | "expired";
 
@@ -408,6 +410,8 @@ const SAFE_BACKEND_ERROR_CODES = new Set<FetchErrorCode>([
   "slack_channel_join_failed",
   "slack_channel_leave_failed",
   "github_installation_conflict",
+  "google_already_connected",
+  "google_oauth_not_configured",
   "connection_update_conflict",
   "skill_not_found",
   "duplicate_name",
@@ -424,6 +428,7 @@ const BACKEND_PROVIDERS = new Set<BackendConnectionProvider>([
   "granola",
   "claude_code",
   "claude_session",
+  "gmail",
 ]);
 const BACKEND_CONNECTION_STATUSES = new Set<BackendConnectionStatus>([
   "pending",
@@ -742,6 +747,36 @@ export function createGithubInstallPollAdapter(originWorkspaceId: string, code: 
       }
     }) as typeof fetch,
   };
+}
+
+export interface GoogleConnectSession {
+  code: string;
+  authUrl: string;
+}
+
+export type GoogleConnectPoll = { status: "pending" | "connected" } | { status: "error"; errorCode: string | null };
+
+export async function createGoogleConnectSession(signal?: AbortSignal): Promise<FetchResult<GoogleConnectSession>> {
+  return requestValue("/google/connect-sessions", { method: "POST", signal }, (value) => {
+    const body = recordValue(value);
+    if (!body || typeof body.code !== "string" || body.code.length === 0 || typeof body.authUrl !== "string") return null;
+    try {
+      const url = new URL(body.authUrl);
+      if (url.protocol !== "https:" || url.hostname !== "accounts.google.com") return null;
+    } catch {
+      return null;
+    }
+    return { code: body.code, authUrl: body.authUrl };
+  });
+}
+
+export function pollGoogleConnectSession(code: string, signal?: AbortSignal): Promise<FetchResult<GoogleConnectPoll>> {
+  return requestValue(`/google/connect-sessions/${encodeURIComponent(code)}`, { signal }, (value) => {
+    const body = recordValue(value);
+    if (body?.status === "pending" || body?.status === "connected") return { status: body.status };
+    if (body?.status === "error") return { status: "error", errorCode: typeof body.errorCode === "string" ? body.errorCode : null };
+    return null;
+  });
 }
 
 export interface MintSessionIngestTokenInput {

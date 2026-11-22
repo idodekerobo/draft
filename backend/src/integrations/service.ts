@@ -16,6 +16,7 @@ const CONNECTION_METADATA_BY_PROVIDER = {
   linear: { provider: "linear", label: "Linear", ingests: "issues, comments and projects", abilities: [] },
   fireflies: { provider: "fireflies", label: "Fireflies", ingests: "meeting transcripts and summaries", abilities: [] },
   granola: { provider: "granola", label: "Granola", ingests: "meeting notes", abilities: [] },
+  google: { provider: "google", label: "Google", ingests: "nothing: your agent searches and reads your Gmail only when you ask", abilities: ["A routine can read its owner's Gmail"] },
   "claude-code": { provider: "claude_session", label: "Claude Code", ingests: "summaries of captured Claude Code sessions", abilities: [] },
 } as const satisfies Record<HostedConnectionProvider, ConnectionMetadata>;
 
@@ -28,6 +29,12 @@ export type IntegrationProvider = (typeof INTEGRATIONS)[number]["provider"];
 export const INTEGRATION_PROVIDERS = INTEGRATIONS.map((entry) => entry.provider) as [IntegrationProvider, ...IntegrationProvider[]];
 
 const LIVE = new Set(["active", "degraded"]);
+// Google's connection rows are per product (provider "gmail") and private, so only the caller's own count.
+const connectionProviders = (provider: IntegrationProvider) => (provider === "google" ? ["gmail"] : [provider]);
+
+/** Where a connection's data goes: the shared company context, or only the person who connected it. */
+export const connectionDestination = (provider: string): "company_context" | "only_you" =>
+  provider === "google" || provider === "gmail" ? "only_you" : "company_context";
 const REQUEST_TTL_MS = 15 * 60_000;
 const MAX_OPEN_REQUESTS = 10;
 
@@ -42,16 +49,18 @@ export interface Integration {
   /** Routine triggers this connection offers. */
   triggers: Array<{ event: string; label: string }>;
   abilities: ReadonlyArray<string>;
+  destination: "company_context" | "only_you";
   connect: { cli: string; mcp: string };
 }
 
 /** Every provider and its state in the workspace, with what it unlocks and how to connect it. */
 export async function listIntegrations(client: SupabaseClient, workspaceId: string, userId: string): Promise<Integration[]> {
-  const { data, error } = await client.from("connections").select("provider, status, connected_by_user_id").eq("workspace_id", workspaceId).in("provider", INTEGRATION_PROVIDERS);
+  const { data, error } = await client.from("connections").select("provider, status, connected_by_user_id").eq("workspace_id", workspaceId).in("provider", INTEGRATION_PROVIDERS.flatMap(connectionProviders));
   if (error) throw error;
   const rows = (data ?? []) as Array<{ provider: string; status: string; connected_by_user_id: string | null }>;
   return INTEGRATIONS.map((entry) => {
-    const mine = rows.filter((row) => row.provider === entry.provider && row.status !== "revoked");
+    const mine = rows.filter((row) =>
+      connectionProviders(entry.provider).includes(row.provider) && row.status !== "revoked" && (entry.provider !== "google" || row.connected_by_user_id === userId));
     const live = mine.filter((row) => LIVE.has(row.status));
     return {
       provider: entry.provider,
@@ -61,6 +70,7 @@ export async function listIntegrations(client: SupabaseClient, workspaceId: stri
       ingests: entry.ingests,
       triggers: ROUTINE_TRIGGERS.filter((trigger) => trigger.provider === entry.provider).map(({ event, label }) => ({ event, label })),
       abilities: entry.abilities,
+      destination: connectionDestination(entry.provider),
       connect: { cli: `draft connections connect --provider ${entry.cliName}`, mcp: `connections.connect {"provider":"${entry.provider}"}` },
     };
   });

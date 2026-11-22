@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { completeConnectRequest, createConnectRequest, findConnectRequest, hashConnectToken, listIntegrations } from "../../integrations/service";
 import { fakeClient, fakeDb } from "../routines/fake-client";
+import { createIntegrationTools } from "../../metaharness/tools/definitions/integrations";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const ME = "22222222-2222-4222-8222-222222222222";
@@ -22,6 +23,29 @@ describe("listIntegrations", () => {
     expect(by("fireflies").status).toBe("pending");
     expect(by("claude_session").connect.cli).toBe("draft connections connect --provider claude-code");
     expect(by("linear").triggers.map((trigger) => trigger.event)).toEqual(["linear.issue_created", "linear.issue_completed"]);
+  });
+});
+
+describe("Google in listIntegrations", () => {
+  it("is connected only by the caller's own live gmail connection, and is private to them", async () => {
+    const db = fakeDb({ connections: [connection("gmail", "active", OTHER), connection("slack")] });
+    const theirs = (await listIntegrations(fakeClient(db), WS, ME)).find((item) => item.provider === "google")!;
+    expect(theirs).toMatchObject({ status: "not_connected", destination: "only_you", connect: { cli: "draft connections connect --provider google" } });
+    const mine = (await listIntegrations(fakeClient(db), WS, OTHER)).find((item) => item.provider === "google")!;
+    expect(mine).toMatchObject({ status: "connected", connectedByYou: true });
+    expect((await listIntegrations(fakeClient(db), WS, ME)).find((item) => item.provider === "slack")!.destination).toBe("company_context");
+  });
+
+  it("stores a google connect request and closes it once the requester connects Gmail", async () => {
+    const db = fakeDb({ connections: [] });
+    const result = await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps);
+    expect(result).toMatchObject({ status: "action_required", action: "connect_google", provider: "google" });
+    expect(db.tables.connection_requests![0]!.provider).toBe("google");
+    const found = await findConnectRequest(fakeClient(db), tokenOf((result as { url: string }).url), ME, NOW);
+    if (!found.ok) throw new Error("expected the request");
+    expect(await completeConnectRequest(fakeClient(db), found.request, NOW)).toBe(false);
+    db.tables.connections!.push(connection("gmail"));
+    expect(await completeConnectRequest(fakeClient(db), found.request, NOW)).toBe(true);
   });
 });
 
@@ -79,5 +103,11 @@ describe("connect links", () => {
     const db = fakeDb({ connections: [] });
     for (let index = 0; index < 10; index++) await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "mcp" }, deps);
     expect(await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "linear", via: "mcp" }, deps)).toEqual({ status: "too_many_requests" });
+  });
+
+  it("connections.connect accepts google", () => {
+    const connect = createIntegrationTools(fakeClient(fakeDb()))[1]!;
+    expect(connect.parse({ provider: "google" }).ok).toBe(true);
+    expect(connect.parse({ provider: "gmail" }).ok).toBe(false);
   });
 });

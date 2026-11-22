@@ -16,7 +16,7 @@ export interface ParentRoutine {
 }
 
 /** The access a routine holds. A run may give a routine no more than it holds itself. */
-export type RoutineAccess = Pick<AgentRoutineConfig, "canNotify" | "postChannels" | "github"> & Partial<Pick<AgentRoutineConfig, "harness" | "builtInTools" | "toolset">>;
+export type RoutineAccess = Pick<AgentRoutineConfig, "canNotify" | "canReadGmail" | "postChannels" | "github"> & Partial<Pick<AgentRoutineConfig, "harness" | "builtInTools" | "toolset">>;
 
 async function runTaskId(client: SupabaseClient, runId: string, workspaceId: string): Promise<string | null> {
   const { data, error } = await client.from("agent_runs").select("scheduled_task_id").eq("id", runId).eq("workspace_id", workspaceId).maybeSingle();
@@ -82,6 +82,7 @@ function isSubset(values: readonly string[], allowed: readonly string[], key: (v
 /** The first access setting the child gives that the parent does not hold, or null when none is wider. */
 export function widerAccess(parent: RoutineAccess | null, child: RoutineAccess): string | null {
   if (child.canNotify && !parent?.canNotify) return "canNotify";
+  if (child.canReadGmail && !parent?.canReadGmail) return "canReadGmail";
   if (child.postChannels !== undefined) {
     const allowed = parent?.postChannels;
     const wider = allowed === undefined || (allowed !== "joined" && (child.postChannels === "joined" || !isSubset(child.postChannels, allowed, channelKey)));

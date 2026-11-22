@@ -19,7 +19,7 @@ export function userInvokeDeps(client: SupabaseClient, registry: ToolRegistry): 
   return { registry, audit: auditToDatabase(client), authorizeUser: authorizeWorkspaceMember };
 }
 
-/** The tools a person may call, with the JSON schema of each input. */
+/** The tools a person may call, with the JSON schema of each input. Provider verbs are advertised by connections.list. */
 export function listUserTools(deps: InvokeToolDeps): Response {
   return Response.json({ tools: describeTools(deps.registry.listForUser()) });
 }

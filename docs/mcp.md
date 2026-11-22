@@ -106,7 +106,7 @@ Run rows include `routineKind` (`once`, `rule` or `null`) and `createdRoutines`,
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `connections.list` | `{ provider?, available?, query?, limit?, cursor? }` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; how to connect it; and `actions`, the verbs you may call on it with their fields. For Slack, `channels` lists the channels the bot has joined. With `provider: "slack"` and `available: true` (people only) it also returns `available`: every public channel as `{ id, name, memberCount, joined }`, biggest first, so you see the channels the bot is in and the ones it could join. `limit` is 1 to 100 (default 50), `query` narrows by name, and `available.nextCursor` is the `cursor` for the next page, or `null` on the last. |
+| `connections.list` | `{ provider?, available?, query?, limit?, cursor? }` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code, Google): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; how to connect it; and `actions`, the verbs you may call on it with their fields. For Slack, `channels` lists the channels the bot has joined. With `provider: "slack"` and `available: true` (people only) it also returns `available`: every public channel as `{ id, name, memberCount, joined }`, biggest first, so you see the channels the bot is in and the ones it could join. `limit` is 1 to 100 (default 50), `query` narrows by name, and `available.nextCursor` is the `cursor` for the next page, or `null` on the last. |
 | `connections.connect` | `{ provider }` | Start connecting a provider. Answers `{ status: "action_required", url, expiresAt }`. Your agent gives you the link, and you sign in or enter the key on that page in the Draft app. The link works once, only for you, for 15 minutes. Answers `{ status: "connected", message }` with no link if it already is, and `{ status: "pending", message }` if it is saved and waiting for its first event. |
 | `connections.disconnect` | `{ provider, accountKind?, confirm? }` | Disconnect a provider you connected. Without `confirm` it answers `{ status: "confirmation_required", stops, message }` and changes nothing. With `confirm: true` it disconnects. |
 | `connections.join` | `{ provider, channels?, folders? }` | Slack: have the bot join public channels (`channels`), by id or `#name`. It changes only the channels you name and answers which it joined (`changed`), which it was already in (`unchanged`) and which failed (`failed`). A provider that syncs folders takes `folders`. People only. |
@@ -116,6 +116,27 @@ Run rows include `routineKind` (`once`, `rule` or `null`) and `createdRoutines`,
 | `connections.post` | `{ provider, channel, text }` | Post a message through a connected provider. Slack today. Draft adds an attribution line. |
 
 Your agent never sees your keys: you enter them on the Draft page the link opens. Every refusal names what would have worked, such as the channels the bot has joined.
+
+### Gmail
+
+Gmail is a provider of `connections.search` and `connections.read`: pass `provider: "gmail"`. It reads the Gmail of the person who connected Google, live, with that person's own Google login. Nothing is stored in Draft. Connect Google first (`connections.connect` with `google`, or `draft connections connect --provider google`). `connections.list` then shows Gmail's verbs and fields under the Google connection.
+
+| Call | Input | Purpose |
+| --- | --- | --- |
+| `connections.search` | `{ provider: "gmail", query, since?, until?, limit?, cursor? }` | Search with Gmail search syntax (`from:`, `subject:`, `has:attachment`, ...). `cal meeting` needs both words, `"cal meeting"` the phrase. `since` and `until` are ISO dates. `limit` is 1 to 50 (default 20). Returns `results` (id, threadId, title as the subject, from, date, snippet), newest first, and `nextCursor`. |
+| `connections.read` | `{ provider: "gmail", messageId? \| threadId?, maxBytes?, cursor? }` | Read one message or a whole thread, with plain-text bodies and a list of attachments. Pass exactly one id. Bodies are cut to `maxBytes` (default 32 KB). When `truncated` is true, pass `nextCursor` as `cursor` with the same id for the rest. |
+| `connections.read` | `{ provider: "gmail", messageId, attachmentId, maxBytes?, cursor? }` | Download an attachment that the message listed, as base64. Each part is up to `maxBytes` (default 256 KB). When `truncated` is true, pass `nextCursor` as `cursor` for the next part. Attachments over 10 MB are refused. |
+
+A routine can use these only when its owner turns on **Read my Gmail** (`canReadGmail: true` in `routines.create` or `routines.update`). The routine then holds `connections.list`, `connections.search` and `connections.read` for `gmail`, and reads the owner's Gmail, never anyone else's. Turning it on is refused with `gmail_not_connected` until the owner connects Google. A session that searched or read Gmail has a private summary.
+
+| Code | Meaning |
+| --- | --- |
+| `google_not_connected` | You haven't connected Google. Offer to connect it with `connections.connect`. |
+| `google_reconnect_required` | Your Google login stopped working. Connect Google again. |
+| `gmail_requires_person` | The call does not act for a person, so there is no mailbox to read. |
+| `gmail_not_found` | The message or attachment does not exist, or you cannot open it. |
+| `gmail_rate_limited` | Gmail is limiting requests. Try again in a minute. |
+| `attachment_too_large` | The attachment is over 10 MB. |
 
 ### Skills and people
 

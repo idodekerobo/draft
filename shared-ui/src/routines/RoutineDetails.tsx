@@ -15,7 +15,7 @@ import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, s
 import type { AgentRoutineEdit, OpenRun, Routine, RoutineAgentStatus, RoutineEventName, RoutinePatch, RoutinePreset, RoutineRule, RoutinesResponse, RoutineWeekday } from "./types";
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
-export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onDelete, onOpenRun, agents = {}, connectedProviders, onConnect, renderAgentSetup, refreshAgents, returnFocusTo }: {
+export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onDelete, onOpenRun, agents = {}, connectedProviders, gmailConnected, onConnect, renderAgentSetup, refreshAgents, returnFocusTo }: {
   workspaceId: string;
   routine: Routine;
   canEdit: boolean;
@@ -28,6 +28,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   /** Whether each agent is connected for this workspace's routines, by harness id. */
   agents?: AgentStatuses;
   connectedProviders?: RoutinesResponse["connectedProviders"];
+  gmailConnected?: RoutinesResponse["gmailConnected"];
   /** Opens Connections, for a trigger or ability whose connection is missing. */
   onConnect?: () => void;
   /** Help to connect an agent, shown while it blocks Save. */
@@ -270,7 +271,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
                   fieldError={fieldError}
                   schedule={scheduleFields}
                 />
-                <AbilityFields harness={agent?.harness} value={capabilities} onChange={setCapabilities} disabled={busy} fieldError={fieldError} connectedProviders={connectedProviders} onConnect={onConnect} />
+                <AbilityFields harness={agent?.harness} value={capabilities} onChange={setCapabilities} disabled={busy} fieldError={fieldError} connectedProviders={connectedProviders} gmailConnected={routine.agent?.ownerGmailConnected ?? gmailConnected} gmailOwnerName={routine.agent?.ownedByViewer === false ? routine.agent.createdByName : undefined} onConnect={onConnect} />
               </div>
             ) : (
               <section className="ui-routines__agent">

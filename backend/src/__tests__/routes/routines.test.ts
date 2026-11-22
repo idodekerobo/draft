@@ -259,7 +259,14 @@ describe("schedules routes", () => {
 
     it("returns an empty list for a workspace with no rows", async () => {
       tables.scheduled_tasks = [];
-      expect(await (await get()).json()).toEqual({ routines: [], canEdit: true, connectedProviders: ["slack"], agents: { claude: "not_connected", codex: "not_connected" } });
+      expect(await (await get()).json()).toEqual({ routines: [], canEdit: true, connectedProviders: ["slack"], gmailConnected: false, agents: { claude: "not_connected", codex: "not_connected" } });
+    });
+
+    it("reports Gmail as connected only from the caller's own connection", async () => {
+      tables.connections!.push({ id: "gmail-2", workspace_id: "ws-1", provider: "gmail", status: "active", connected_by_user_id: "user-2" });
+      expect(((await (await get()).json()) as { gmailConnected: boolean }).gmailConnected).toBe(false);
+      tables.connections!.push({ id: "gmail-1", workspace_id: "ws-1", provider: "gmail", status: "degraded", connected_by_user_id: caller.userId });
+      expect(((await (await get()).json()) as { gmailConnected: boolean }).gmailConnected).toBe(true);
     });
 
     it("passes through an access denial", async () => {

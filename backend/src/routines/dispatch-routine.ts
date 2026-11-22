@@ -16,6 +16,7 @@ import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
 import { buildRoutineRunSpec } from "./run-spec";
+import { personalConnectionProvidersOrNone } from "../ingestion/gmail/access";
 import type { RoutineEventPayload } from "./event";
 
 const UNIQUE_VIOLATION = "23505";
@@ -133,8 +134,12 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       : manual
         ? { type: "manual" as const, requestedBy: parseUserId(manual.requestedBy) }
         : undefined;
+    const ownerConnectionProviders = routine.canReadGmail
+      ? await personalConnectionProvidersOrNone(client, task.workspace_id, task.created_by_user_id, "routine_dispatch")
+      : undefined;
     const run = buildRoutineRunSpec({
       mcpServers,
+      ...(ownerConnectionProviders ? { ownerConnectionProviders } : {}),
       id: randomUUID(),
       workspaceId: task.workspace_id,
       scheduledTaskId: task.id,

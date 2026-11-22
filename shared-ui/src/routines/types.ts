@@ -42,6 +42,12 @@ export interface AgentRoutine {
   createdByName: string | null;
   lastRun: RoutineRun | null;
   canNotify?: boolean;
+  /** Lets it search and read the owner's own Gmail. */
+  canReadGmail?: boolean;
+  /** Whether the routine's owner has their own Gmail connected. A teammate's never counts. */
+  ownerGmailConnected?: boolean;
+  /** Whether the viewer owns this routine. Only the owner can connect the Gmail it reads. */
+  ownedByViewer?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
   /** The built-in tools of its harness it may use. */
@@ -94,6 +100,8 @@ export interface RoutinesResponse {
   agents?: Partial<Record<string, RoutineAgentStatus>>;
   /** Providers with a live connection, such as "slack". Missing means the form treats every connection as present. */
   connectedProviders?: string[];
+  /** Whether the person viewing has their own Gmail connected. Missing means unknown, so the form treats it as connected. */
+  gmailConnected?: boolean;
 }
 
 /** What a person can change on an agent routine. Send only the fields that changed. */
@@ -104,6 +112,7 @@ export interface AgentRoutineEdit {
   model?: string | null;
   reasoningEffort?: string | null;
   canNotify?: boolean;
+  canReadGmail?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
   builtInTools?: string[];
@@ -132,6 +141,7 @@ export interface CreateRoutineInput {
   reasoningEffort?: string | null;
   when: RoutineRule;
   canNotify?: boolean;
+  canReadGmail?: boolean;
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
   builtInTools?: string[];

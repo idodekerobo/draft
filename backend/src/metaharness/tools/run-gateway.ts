@@ -44,7 +44,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
    * An interactive run that acts for a person is that person's own agent, as a local session is. It also gets
    * every tool the person can call over MCP, called as the person. Null for any other run.
    */
-  function personToolsFor(run: AgentRunSpec, runDeps: InvokeToolDeps): { deps: InvokeToolDeps; caller: ToolCaller; tools: RegisteredTool[] } | null {
+  async function personToolsFor(run: AgentRunSpec, runDeps: InvokeToolDeps): Promise<{ deps: InvokeToolDeps; caller: ToolCaller; tools: RegisteredTool[] } | null> {
     if (run.kind !== "interactive" || !run.onBehalfOf) return null;
     const runTools = new Set(runDeps.registry.listFor(run).map((tool) => tool.name));
     return {
@@ -75,7 +75,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
     const auth = await authenticate(request, runId);
     if (!auth.ok) return auth.response;
     const runDeps = await depsFor(auth.run);
-    const person = personToolsFor(auth.run, runDeps);
+    const person = await personToolsFor(auth.run, runDeps);
     const tools = describeTools([...runDeps.registry.listFor(auth.run), ...(person?.tools ?? [])]);
     return Response.json({ tools });
   }
@@ -86,7 +86,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
     const body = parseToolArgs(await request.text());
     if (!body.ok) return body.response;
     const runDeps = await depsFor(auth.run);
-    const person = personToolsFor(auth.run, runDeps);
+    const person = await personToolsFor(auth.run, runDeps);
     const result = person?.tools.some((tool) => tool.name === toolName)
       ? await invokeTool(person.deps, person.caller, toolName, body.args)
       : await invokeTool(runDeps, runCaller(auth.run), toolName, body.args);
@@ -98,7 +98,7 @@ export function createRunGateway(deps: RunGatewayDeps) {
     if (!auth.ok) return auth.response;
     const run = auth.run;
     const requestDeps = await depsFor(run);
-    const person = personToolsFor(run, requestDeps);
+    const person = await personToolsFor(run, requestDeps);
     // Stateless, like the person-facing MCP: a fresh server per request that lists only this run's tools.
     const handler = createMcpHandler(() => {
       const server = new McpServer({ name: "draft", version: "1.0.0" });

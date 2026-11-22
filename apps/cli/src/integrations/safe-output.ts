@@ -32,6 +32,8 @@ export type IntegrationErrorCode =
   | "aborted"
   | "poll_failed"
   | "github_installation_conflict"
+  | "google_already_connected"
+  | "google_oauth_not_configured"
   | "linear_webhook_create_failed"
   | "slack_channel_list_failed"
   | "slack_channel_join_failed"
@@ -72,6 +74,8 @@ export const INTEGRATION_ERROR_REGISTRY: Record<IntegrationErrorCode, ErrorDefin
   aborted: { message: "Connection setup was interrupted.", exitCode: 130 },
   poll_failed: { message: "Could not verify the connection. Retry shortly.", exitCode: 1 },
   github_installation_conflict: { message: "Another GitHub installation is already connected. Disconnect it first.", exitCode: 1 },
+  google_already_connected: { message: "Google is already connected for you.", exitCode: 1 },
+  google_oauth_not_configured: { message: "Google sign-in is not set up on this Draft server.", exitCode: 1 },
   linear_webhook_create_failed: { message: "Linear webhook setup failed. Retry shortly.", exitCode: 1 },
   slack_channel_list_failed: { message: "Could not list Slack channels. Retry shortly.", exitCode: 1 },
   slack_channel_join_failed: { message: "One or more Slack channels could not be joined.", exitCode: 1 },
@@ -85,6 +89,7 @@ export type IntegrationEvent =
   | { status: "awaiting_credentials"; provider: HostedConnectionProvider }
   | { status: "opening_browser"; provider: HostedConnectionProvider }
   | { status: "browser_required"; provider: "github" | "slack"; url: string; expires_in_seconds?: number }
+  | { status: "action_required"; provider: "google"; url: string }
   | { status: "handoff_required"; provider: "fireflies"; url: string; opened: boolean }
   | { status: "awaiting_install"; provider: "github" | "slack" }
   | { status: "connected"; provider: HostedConnectionProvider; cleanup_pending?: true }
@@ -221,6 +226,16 @@ function reviewedBrowserUrl(provider: "github" | "slack", value: string): string
   }
 }
 
+function reviewedGoogleUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.hostname !== "accounts.google.com" || url.username || url.password || url.port || url.hash) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function reviewedHandoffUrl(value: string): string | null {
   try {
     const url = new URL(value);
@@ -252,6 +267,10 @@ function eventPayload(event: IntegrationEvent): Record<string, unknown> | null {
         payload.expires_in_seconds = event.expires_in_seconds;
       }
       return payload;
+    }
+    case "action_required": {
+      const url = reviewedGoogleUrl(event.url);
+      return url ? { status: "action_required", provider: "google", url } : null;
     }
     case "handoff_required": {
       const url = reviewedHandoffUrl(event.url);
@@ -343,6 +362,10 @@ export class IntegrationOutput {
       if (event.provider === "github") {
         this.writeStderr("Install the Draft GitHub App and select the repositories to grant it access to.\n");
       }
+      return 0;
+    }
+    if (event.status === "action_required") {
+      this.writeStderr(`Open this URL to sign in to Google: ${String(payload.url)}\n`);
       return 0;
     }
     if (event.status === "handoff_required") {

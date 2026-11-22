@@ -59,7 +59,7 @@ describe("normalizeHostedConnection", () => {
 });
 
 describe("normalizeHostedConnections", () => {
-  it("returns a stable five-provider order and adds missing disconnected entries", () => {
+  it("returns a stable provider order and adds missing disconnected entries", () => {
     const connections = normalizeHostedConnections([
       { provider: "fireflies", status: "active", last_success_at: "2026-08-20T12:00:00Z" },
       { provider: "slack", status: "degraded", channel_ids: ["C1"] },
@@ -72,12 +72,14 @@ describe("normalizeHostedConnections", () => {
       "fireflies",
       "granola",
       "claude-code",
+      "google",
     ]);
     expect(connections.map(({ status }) => status)).toEqual([
       "disconnected",
       "degraded",
       "disconnected",
       "connected",
+      "disconnected",
       "disconnected",
       "disconnected",
     ]);
@@ -155,7 +157,7 @@ describe("normalizeHostedConnections", () => {
   ])("returns the stable disconnected list for malformed input %#", (value) => {
     const connections = normalizeHostedConnections(value);
 
-    expect(connections).toHaveLength(6);
+    expect(connections).toHaveLength(7);
     expect(connections.map(({ provider }) => provider)).toEqual([
       "github",
       "slack",
@@ -163,6 +165,7 @@ describe("normalizeHostedConnections", () => {
       "fireflies",
       "granola",
       "claude-code",
+      "google",
     ]);
     expect(connections.every(({ status, connected }) =>
       status === "disconnected" && connected === false
