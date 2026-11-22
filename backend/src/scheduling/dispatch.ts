@@ -3,6 +3,7 @@ import { RunNotAllowedError } from "../synthesis/check-run-allowed";
 import { OccurrenceAlreadyDispatchedError } from "../synthesis/prepare-run";
 import { materializeSlackBatches } from "../ingestion/slack/materialize-batches";
 import { runSlackBackfillDispatch } from "../ingestion/slack/backfill";
+import { syncDriveConnection } from "../ingestion/google-drive/sync";
 import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
 import { launchSynthesisRun } from "../synthesis/orchestrate-run";
 import { retryPlan } from "../synthesis/handle-run-failure";
@@ -18,6 +19,7 @@ import type { ScheduledTaskRow } from "../types/tables";
 export interface DispatchDependencies {
   materializeSlackBatches: typeof materializeSlackBatches;
   runSlackBackfillDispatch: typeof runSlackBackfillDispatch;
+  syncDriveConnection: typeof syncDriveConnection;
   launchSynthesisRun: typeof launchSynthesisRun;
   getPendingSynthesisSourceItemIds: typeof getPendingSynthesisSourceItemIds;
   getLatestSynthesisRun: typeof getLatestSynthesisRun;
@@ -27,6 +29,7 @@ export interface DispatchDependencies {
 const defaultDependencies: DispatchDependencies = {
   materializeSlackBatches,
   runSlackBackfillDispatch,
+  syncDriveConnection,
   launchSynthesisRun,
   getPendingSynthesisSourceItemIds,
   getLatestSynthesisRun,
@@ -65,6 +68,8 @@ async function dispatchIngestSource(
 
   if (connection.provider === "slack") {
     await deps.materializeSlackBatches(connection, client);
+  } else if (connection.provider === "google_drive") {
+    await deps.syncDriveConnection(connection, client);
   } else {
     throw new Error(
       `ingest_source task ${task.id} references unsupported provider "${connection.provider}"`,

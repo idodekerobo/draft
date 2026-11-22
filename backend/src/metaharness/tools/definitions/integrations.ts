@@ -24,6 +24,7 @@ export interface IntegrationToolDeps {
   slack?: ConnectionAdapterDeps["slack"];
   slackChannels?: SlackChannelDeps;
   gmail?: ConnectionAdapterDeps["gmail"];
+  drive?: ConnectionAdapterDeps["drive"];
   /** Tests add providers here. */
   adapters?: ReadonlyArray<ConnectionAdapter>;
 }
@@ -40,7 +41,7 @@ function grantedProviders(caller: ToolCaller, tool: string): Set<string> {
 }
 
 export function createIntegrationTools(client: SupabaseClient, deps: IntegrationToolDeps = {}) {
-  const adapters = createConnectionAdapters(client, { slack: deps.slack, slackChannels: deps.slackChannels, gmail: deps.gmail, extra: deps.adapters });
+  const adapters = createConnectionAdapters(client, { slack: deps.slack, slackChannels: deps.slackChannels, gmail: deps.gmail, drive: deps.drive, extra: deps.adapters });
   const adapterOf = (provider: string) => adapters.find((adapter) => adapter.provider === provider);
   const rowAdapters = (row: string) => adapters.filter((adapter) => (adapter.row ?? adapter.provider) === row);
   const providersWith = (has: (adapter: ConnectionAdapter) => boolean) => adapters.filter(has).map((adapter) => adapter.provider).join(", ");

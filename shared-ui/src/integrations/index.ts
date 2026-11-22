@@ -10,6 +10,7 @@ export * from "./SlackChannelPicker";
 export * from "./SlackConnectPanel";
 export * from "./GithubConnectPanel";
 export * from "./GoogleConnectPanel";
+export * from "./DriveFoldersPanel";
 export * from "./gmail-connect";
 export * from "./registry";
 export * from "./ToolList";

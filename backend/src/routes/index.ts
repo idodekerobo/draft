@@ -10,6 +10,7 @@ import * as githubCallback from "./github-callback";
 import * as githubInstall from "./github-install";
 import * as googleCallback from "./google-callback";
 import * as googleConnect from "./google-connect";
+import * as googleDriveFolders from "./google-drive-folders";
 import * as health from "./health";
 import * as mePrivacy from "./me-privacy";
 import * as onboarding from "./onboarding";
@@ -75,6 +76,9 @@ export const routes = {
   "/workspaces/:id/google/connect-sessions": { POST: withCors(googleConnect.createPOST), OPTIONS },
   "/workspaces/:id/google/connect-sessions/:code": { GET: withCors(googleConnect.pollGET), OPTIONS },
   "/workspaces/google/callback": { GET: googleCallback.GET },
+  "/workspaces/:id/google/drive-folders": { GET: withCors(googleDriveFolders.GET), POST: withCors(googleDriveFolders.POST), OPTIONS },
+  "/workspaces/:id/google/drive-folders/options": { GET: withCors(googleDriveFolders.FOLDER_OPTIONS_GET), OPTIONS },
+  "/workspaces/:id/google/drive-folders/:folderId": { DELETE: withCors(googleDriveFolders.DELETE), OPTIONS },
   "/workspaces/:id/sessions/tokens": { POST: sessionTokens.POST },
   "/workspaces/:id/sessions/tokens/:credentialId": { DELETE: sessionTokens.DELETE },
   "/workspaces/:id/sessions": { GET: sessions.GET },

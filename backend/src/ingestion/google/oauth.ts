@@ -4,7 +4,8 @@ import type { GoogleOAuthSettings } from "../../config";
 import { describeGoogleError, googleRequest, readGoogleError, type GoogleRequestOptions } from "./request";
 
 export const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
-const REQUESTED_SCOPES = ["openid", "email", GMAIL_READONLY_SCOPE];
+export const DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+const REQUESTED_SCOPES = ["openid", "email", GMAIL_READONLY_SCOPE, DRIVE_READONLY_SCOPE];
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";

@@ -14,7 +14,7 @@ const { handleGoogleCallback } = await import("../../routes/google-callback");
 const { createGoogleOAuthSession, getGoogleOAuthSession, resetGoogleOAuthSessionStore } = await import(
   "../../auth/google-oauth-state-store"
 );
-const { GMAIL_READONLY_SCOPE, GoogleOAuthError } = await import("../../ingestion/google/oauth");
+const { DRIVE_READONLY_SCOPE, GMAIL_READONLY_SCOPE, GoogleOAuthError } = await import("../../ingestion/google/oauth");
 const { decryptCredentialPayload } = await import("../../credentials/crypto");
 const { createFakeDb } = await import("./fake-db");
 
@@ -45,6 +45,7 @@ function makeDeps(db: ReturnType<typeof createFakeDb>, overrides: Record<string,
         .single();
       return data;
     }) as never,
+    registerDriveSyncTask: mock(async () => {}) as never,
     db: db.client,
     ...overrides,
   };
@@ -163,6 +164,104 @@ describe("handleGoogleCallback", () => {
 
     expect(getGoogleOAuthSession(state)).toMatchObject({ status: "error", errorCode: "google_scope_missing" });
     expect(db.tables.connections).toHaveLength(0);
+  });
+
+  it("connects Google Drive alone and registers its sync task", async () => {
+    const db = createFakeDb();
+    const state = createGoogleOAuthSession("ws-1", "user-1", "v");
+    const deps = makeDeps(db, { exchangeCode: mock(async () => tokens({ scopes: ["openid", "email", DRIVE_READONLY_SCOPE] })) });
+
+    const response = await handleGoogleCallback(request(state), deps);
+
+    expect(await response.text()).toContain("Google Drive connected");
+    expect(db.tables.connections!.map((row) => row.provider)).toEqual(["google_drive"]);
+    expect(deps.registerDriveSyncTask).toHaveBeenCalledTimes(1);
+    expect((deps.registerDriveSyncTask as any).mock.calls[0][0]).toMatchObject({ workspace_id: "ws-1" });
+  });
+
+  it("connects both products on one shared credential", async () => {
+    const db = createFakeDb();
+    const state = createGoogleOAuthSession("ws-1", "user-1", "v");
+    const deps = makeDeps(db, {
+      exchangeCode: mock(async () => tokens({ scopes: ["openid", "email", GMAIL_READONLY_SCOPE, DRIVE_READONLY_SCOPE] })),
+    });
+
+    const response = await handleGoogleCallback(request(state), deps);
+
+    expect(await response.text()).toContain("Gmail and Google Drive connected");
+    expect(db.tables.credentials).toHaveLength(1);
+    expect(db.tables.connections!.map((row) => row.provider).sort()).toEqual(["gmail", "google_drive"]);
+    expect(new Set(db.tables.connections!.map((row) => row.credential_id))).toEqual(new Set([db.tables.credentials![0]!.id]));
+    expect(deps.registerDriveSyncTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds Google Drive to a Gmail-only person and reuses the credential", async () => {
+    const db = createFakeDb({
+      credentials: [{ id: "cred-1", workspace_id: "ws-1", provider: "google", status: "active" }],
+      connections: [
+        { id: "conn-1", workspace_id: "ws-1", provider: "gmail", connection_key: "sub-1", credential_id: "cred-1", connected_by_user_id: "user-1", status: "active" },
+      ],
+    });
+    const state = createGoogleOAuthSession("ws-1", "user-1", "v");
+    const deps = makeDeps(db, {
+      exchangeCode: mock(async () => tokens({ scopes: ["openid", "email", GMAIL_READONLY_SCOPE, DRIVE_READONLY_SCOPE] })),
+    });
+
+    await handleGoogleCallback(request(state), deps);
+
+    expect(getGoogleOAuthSession(state).status).toBe("connected");
+    expect(db.tables.credentials).toHaveLength(1);
+    expect(db.tables.connections!.find((row) => row.provider === "google_drive")).toMatchObject({ credential_id: "cred-1", status: "active" });
+  });
+
+  it("keeps Drive sync progress on reconnect and clears only the reconnect flag", async () => {
+    const backfill = { seen: 3, folders: { "f-1": { done: true } } };
+    const db = createFakeDb({
+      credentials: [{ id: "cred-1", workspace_id: "ws-1", provider: "google", status: "active" }],
+      connections: [
+        { id: "conn-2", workspace_id: "ws-1", provider: "google_drive", connection_key: "sub-1", credential_id: "cred-1", connected_by_user_id: "user-1", status: "degraded", cursor_json: { start_page_token: "t-9", backfill, reauth_required: true } },
+      ],
+    });
+    const state = createGoogleOAuthSession("ws-1", "user-1", "v");
+    await handleGoogleCallback(request(state), makeDeps(db, { exchangeCode: mock(async () => tokens({ scopes: ["openid", "email", DRIVE_READONLY_SCOPE] })) }));
+
+    expect(db.tables.connections!.find((row) => row.provider === "google_drive")).toMatchObject({ status: "active", cursor_json: { start_page_token: "t-9", backfill } });
+    expect(db.tables.connections!.find((row) => row.provider === "google_drive")!.cursor_json).not.toHaveProperty("reauth_required");
+  });
+
+  it("does not bring back a disconnected Drive on a Gmail sign-in, but does on a Drive sign-in", async () => {
+    const seedDb = () => createFakeDb({
+      connections: [
+        { id: "conn-2", workspace_id: "ws-1", provider: "google_drive", connection_key: "sub-1", connected_by_user_id: "user-1", status: "revoked" },
+      ],
+    });
+    const both = () => mock(async () => tokens({ scopes: ["openid", "email", GMAIL_READONLY_SCOPE, DRIVE_READONLY_SCOPE] }));
+
+    const gmailDb = seedDb();
+    const gmailDeps = makeDeps(gmailDb, { exchangeCode: both() });
+    await handleGoogleCallback(request(createGoogleOAuthSession("ws-1", "user-1", "v", "gmail")), gmailDeps);
+    expect(gmailDb.tables.connections!.find((row) => row.provider === "google_drive")!.status).toBe("revoked");
+    expect(gmailDb.tables.connections!.find((row) => row.provider === "gmail")!.status).toBe("active");
+    expect(gmailDeps.registerDriveSyncTask).not.toHaveBeenCalled();
+
+    const driveDb = seedDb();
+    await handleGoogleCallback(request(createGoogleOAuthSession("ws-1", "user-1", "v", "google_drive")), makeDeps(driveDb, { exchangeCode: both() }));
+    expect(driveDb.tables.connections!.find((row) => row.provider === "google_drive")!.status).toBe("active");
+  });
+
+  it("refuses a Google account a teammate already connected for Drive", async () => {
+    const db = createFakeDb({
+      connections: [
+        { id: "conn-9", workspace_id: "ws-1", provider: "google_drive", connection_key: "sub-1", connected_by_user_id: "user-2", status: "active" },
+      ],
+    });
+    const state = createGoogleOAuthSession("ws-1", "user-1", "v");
+    const deps = makeDeps(db, { exchangeCode: mock(async () => tokens({ scopes: ["openid", "email", DRIVE_READONLY_SCOPE] })) });
+
+    await handleGoogleCallback(request(state), deps);
+
+    expect(getGoogleOAuthSession(state)).toMatchObject({ status: "error", errorCode: "drive_account_already_connected" });
+    expect(deps.registerDriveSyncTask).not.toHaveBeenCalled();
   });
 
   it("fails when Google returns no refresh token", async () => {

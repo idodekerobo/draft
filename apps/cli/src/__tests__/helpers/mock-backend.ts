@@ -43,6 +43,7 @@ export interface MockBackendState {
   connectionsDisconnectResponse: (workspaceId: string, provider: string) => Response | Promise<Response>;
   githubInstallSessionResponse: (workspaceId: string) => Response | Promise<Response>;
   githubInstallPollResponse: (workspaceId: string, code: string) => Response | Promise<Response>;
+  driveFoldersResponse: (method: string, id: string | null) => Response | Promise<Response>;
   slackChannelsResponse: (workspaceId: string) => Response | Promise<Response>;
   slackMembershipResponse: (workspaceId: string) => Response | Promise<Response>;
   skillsListResponse: (workspaceId: string) => Response | Promise<Response>;
@@ -92,6 +93,7 @@ export function createMockBackend() {
       installUrl: "https://github.com/apps/draft-context-test/installations/new?state=install-code",
     }),
     githubInstallPollResponse: () => Response.json({ status: "connected" }),
+    driveFoldersResponse: () => Response.json({ folders: [], status: "active", last_success_at: null }),
     slackChannelsResponse: () => Response.json({ ok: true, channels: [] }),
     slackMembershipResponse: () => Response.json({
       ok: true,
@@ -237,6 +239,9 @@ export function createMockBackend() {
       if (req.method === "POST" && url.pathname === "/sessions/ingest-errors") {
         state.sessionsIngestErrorRequests.push({ headers, body: await req.text() });
         return Response.json({ ok: true }, { status: 202 });
+      }
+      if (/^\/workspaces\/[^/]+\/google\/drive-folders(?:\/[^/]+)?$/.test(url.pathname)) {
+        return state.driveFoldersResponse(req.method, url.pathname.split("/")[5] ?? null);
       }
       if (req.method === "GET" && /^\/workspaces\/[^/]+\/connections$/.test(url.pathname)) {
         return state.connectionsListResponse(url.pathname.split("/")[2]!);

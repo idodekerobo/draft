@@ -36,6 +36,21 @@ describe("Google in listIntegrations", () => {
     expect((await listIntegrations(fakeClient(db), WS, ME)).find((item) => item.provider === "slack")!.destination).toBe("company_context");
   });
 
+  it("counts the caller's Google Drive row for Google, and lists Google Drive as company context for the workspace", async () => {
+    const db = fakeDb({ connections: [connection("google_drive", "active", OTHER)] });
+    const forMe = await listIntegrations(fakeClient(db), WS, ME);
+    expect(forMe.find((item) => item.provider === "google")!.status).toBe("not_connected");
+    expect(forMe.find((item) => item.provider === "google_drive")).toMatchObject({
+      status: "connected",
+      connectedByYou: false,
+      destination: "company_context",
+      connect: { cli: "draft connections connect --provider google" },
+    });
+    const forThem = await listIntegrations(fakeClient(db), WS, OTHER);
+    expect(forThem.find((item) => item.provider === "google")!.status).toBe("connected");
+    expect(forThem.find((item) => item.provider === "google_drive")!.connectedByYou).toBe(true);
+  });
+
   it("stores a google connect request and closes it once the requester connects Gmail", async () => {
     const db = fakeDb({ connections: [] });
     const result = await createConnectRequest(fakeClient(db), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps);
@@ -46,6 +61,17 @@ describe("Google in listIntegrations", () => {
     expect(await completeConnectRequest(fakeClient(db), found.request, NOW)).toBe(false);
     db.tables.connections!.push(connection("gmail"));
     expect(await completeConnectRequest(fakeClient(db), found.request, NOW)).toBe(true);
+  });
+});
+
+describe("Google connect links", () => {
+  it("issues a link while the caller lacks Gmail or Google Drive, and reports connected with both", async () => {
+    const gmailOnly = fakeDb({ connections: [connection("gmail"), connection("google_drive", "active", OTHER)] });
+    expect(await createConnectRequest(fakeClient(gmailOnly), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toMatchObject({ status: "action_required" });
+    const driveOnly = fakeDb({ connections: [connection("google_drive"), connection("gmail", "revoked")] });
+    expect(await createConnectRequest(fakeClient(driveOnly), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toMatchObject({ status: "action_required" });
+    const both = fakeDb({ connections: [connection("gmail"), connection("google_drive", "degraded")] });
+    expect(await createConnectRequest(fakeClient(both), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toMatchObject({ status: "connected", provider: "google" });
   });
 });
 

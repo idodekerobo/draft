@@ -9,7 +9,7 @@ process.env.GITHUB_APP_PRIVATE_KEY = process.env.GITHUB_APP_PRIVATE_KEY ?? "key"
 process.env.GITHUB_APP_WEBHOOK_SECRET = process.env.GITHUB_APP_WEBHOOK_SECRET ?? "secret";
 
 const { createGoogleConnectSession, pollGoogleConnectSession } = await import("../../routes/google-connect");
-const { createGoogleOAuthSession, resetGoogleOAuthSessionStore, resolveGoogleOAuthSession } = await import(
+const { createGoogleOAuthSession, getGoogleOAuthSession, resetGoogleOAuthSessionStore, resolveGoogleOAuthSession } = await import(
   "../../auth/google-oauth-state-store"
 );
 const { createFakeDb } = await import("./fake-db");
@@ -38,15 +38,33 @@ describe("createGoogleConnectSession", () => {
     expect(pollGoogleConnectSession("ws-1", "user-1", body.code).status).toBe(200);
   });
 
-  it("refuses a new connect when the user already has an active Gmail connection", async () => {
+  it("refuses a new connect when the user already has both Google products active", async () => {
+    const db = createFakeDb({
+      connections: [
+        { id: "c1", workspace_id: "ws-1", provider: "gmail", connected_by_user_id: "user-1", status: "active" },
+        { id: "c2", workspace_id: "ws-1", provider: "google_drive", connected_by_user_id: "user-1", status: "active" },
+      ],
+    });
+    const response = await createGoogleConnectSession("ws-1", "user-1", { settings: () => settings, db: db.client });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "google_already_connected" });
+  });
+
+  it("lets a Gmail-only person connect again to add Google Drive", async () => {
     const db = createFakeDb({
       connections: [
         { id: "c1", workspace_id: "ws-1", provider: "gmail", connected_by_user_id: "user-1", status: "active" },
       ],
     });
     const response = await createGoogleConnectSession("ws-1", "user-1", { settings: () => settings, db: db.client });
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "google_already_connected" });
+    expect(response.status).toBe(200);
+  });
+
+  it("remembers which product the sign-in was started for", async () => {
+    const db = createFakeDb();
+    const response = await createGoogleConnectSession("ws-1", "user-1", { settings: () => settings, db: db.client }, "google_drive");
+    const { code } = (await response.json()) as { code: string };
+    expect(getGoogleOAuthSession(code)).toMatchObject({ status: "pending", product: "google_drive" });
   });
 
   it("ignores a teammate's Gmail connection", async () => {

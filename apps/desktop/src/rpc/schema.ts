@@ -11,7 +11,7 @@ import type { SessionViewQuery, SessionViewResponse } from "draft-core/live-sess
 //   webview.requests  — bun calls → renderer responds
 //   webview.messages  — bun sends fire-and-forget → renderer handles
 
-import type { SynthesisRunsPage } from "draft-shared-ui";
+import type { IntegrationActions, SynthesisRunsPage } from "draft-shared-ui";
 import type { RPCSchema } from "electrobun/bun";
 
 export interface UserIdentity {
@@ -211,6 +211,7 @@ export interface ConnectedAppsStatus {
   /** Every Granola connection in the workspace, personal rows plus the workspace-key row if any (Settings list view only) -- see MultiAccountConnectionListItem. */
   granolaConnections: MultiAccountConnectionListItem[];
   /** The caller's own Gmail rows. The server never lists a teammate's Gmail. */
+  driveConnections: Array<{ provider: "google_drive"; status: string | null; display_name: string | null }>;
   gmailConnections: Array<{ provider: "gmail"; status: string | null; display_name: string | null }>;
 }
 
@@ -299,7 +300,7 @@ export type AppRPCType = {
       listRoutineRuns: { params: { id: string; before?: string }; response: RoutineRun[] };
 
       /** Disconnect an input source by revoking its cloud connections row. Granola also takes an optional accountKind (default "personal") to pick which of the caller's rows to revoke. */
-      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "gmail"; accountKind?: "personal" | "workspace" }; response: ActionResult };
+      disconnectIntegration: { params: { source: "granola" | "slack" | "github" | "fireflies" | "linear" | "gmail" | "google_drive"; accountKind?: "personal" | "workspace" }; response: ActionResult };
 
       /**
        * Connect GitHub via the GitHub App install flow: opens the system
@@ -330,10 +331,15 @@ export type AppRPCType = {
       connectLinear: { params: { apiKey: string }; response: ActionResult };
 
       /** Start a Google sign-in for the caller's own Gmail. Returns the code to poll and the page to open. */
-      startGoogleConnect: { params: void; response: ActionResult & { code?: string; authUrl?: string } };
+      startGoogleConnect: { params: { product?: "gmail" | "google_drive" }; response: ActionResult & { code?: string; authUrl?: string } };
 
       /** Poll a Google sign-in started by startGoogleConnect. */
       pollGoogleConnect: { params: { code: string }; response: { status: "pending" | "connected" | "error"; message?: string } };
+
+      listSyncedGoogleDriveFolders: { params: void; response: Awaited<ReturnType<IntegrationActions["listSyncedGoogleDriveFolders"]>> };
+      listDriveFolderOptions: { params: { parent: string }; response: Awaited<ReturnType<IntegrationActions["listDriveFolderOptions"]>> };
+      addSyncedGoogleDriveFolder: { params: Parameters<IntegrationActions["addSyncedGoogleDriveFolder"]>[0]; response: Awaited<ReturnType<IntegrationActions["addSyncedGoogleDriveFolder"]>> };
+      removeSyncedGoogleDriveFolder: { params: { id: string }; response: ActionResult };
 
       /** Persist a Claude Code OAuth token in Draft Cloud for the workspace's cloud sandbox to use. */
       connectClaudeCode: { params: { token: string }; response: ActionResult };

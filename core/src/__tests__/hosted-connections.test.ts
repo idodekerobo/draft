@@ -122,6 +122,14 @@ describe("normalizeHostedConnections", () => {
     expect(fireflies.status).toBe("disconnected");
   });
 
+  it("counts Google as connected when either the Gmail or the Google Drive row is live", () => {
+    const google = (rows: unknown[]) => normalizeHostedConnections(rows).find((item) => item.provider === "google")!;
+    expect(google([{ provider: "google_drive", status: "active" }]).connected).toBe(true);
+    expect(google([{ provider: "gmail", status: "revoked" }, { provider: "google_drive", status: "active" }]).connected).toBe(true);
+    expect(google([{ provider: "gmail", status: "active" }, { provider: "google_drive", status: "revoked" }]).connected).toBe(true);
+    expect(google([{ provider: "google_drive", status: "revoked" }]).connected).toBe(false);
+  });
+
   it("ignores unsupported providers and the session-capture toggle", () => {
     const connections = normalizeHostedConnections([
       { provider: "claude_session", status: "active" },

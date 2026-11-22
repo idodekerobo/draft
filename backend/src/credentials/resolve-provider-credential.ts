@@ -29,10 +29,10 @@ export interface GoogleProviderCredential {
   scopes: string[];
 }
 
-// Credentials describe who issued the token, not the product, so Gmail
-// connections read a "google" credential that later Google products can share.
+// Credentials describe who issued the token, not the product, so Gmail and Google Drive
+// connections read one shared "google" credential.
 export function credentialProviderFor(provider: ConnectionProvider): CredentialProvider {
-  return provider === "gmail" ? "google" : (provider as CredentialProvider);
+  return provider === "gmail" || provider === "google_drive" ? "google" : (provider as CredentialProvider);
 }
 
 export type ProviderCredential<P extends ConnectionProvider> = P extends "fireflies"
@@ -43,7 +43,7 @@ export type ProviderCredential<P extends ConnectionProvider> = P extends "firefl
       ? LinearProviderCredential
       : P extends "granola"
         ? GranolaProviderCredential
-        : P extends "gmail"
+        : P extends "gmail" | "google_drive"
           ? GoogleProviderCredential
           : string;
 
@@ -53,7 +53,7 @@ interface ConnectionCredentialRow {
   status: string;
 }
 
-const NAMED_SECRET_PROVIDERS = new Set<ConnectionProvider>(["fireflies", "slack", "linear", "granola", "gmail"]);
+const NAMED_SECRET_PROVIDERS = new Set<ConnectionProvider>(["fireflies", "slack", "linear", "granola", "gmail", "google_drive"]);
 
 async function resolveCredentialById<P extends ConnectionProvider>(
   workspaceId: string,

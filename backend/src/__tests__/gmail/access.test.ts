@@ -29,6 +29,7 @@ function seed(status = "active", connectedBy = "user-1") {
         encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
       },
     ],
+    errors: [],
   });
 }
 
@@ -55,6 +56,10 @@ describe("gmailAccessFor", () => {
     });
     expect(access).toMatchObject({ ok: false, code: "google_reconnect_required", message: "Reconnect Google" });
     expect(db.tables.connections![0]).toMatchObject({ status: "degraded", last_error_at: "2026-11-19T12:00:00.000Z" });
+    expect(db.tables.errors).toEqual([expect.objectContaining({ workspace_id: "ws-1", connection_id: "conn-1", operation: "auth", detail_json: expect.objectContaining({ code: "gmail_access_degraded", reason: "invalid_grant" }) })]);
+
+    await gmailAccessFor(fakeClient(db), "ws-1", "user-1", { settings: () => settings, fetchImpl: tokenFetch(400, { error: "invalid_grant" }), now });
+    expect(db.tables.errors).toHaveLength(1);
   });
 
   it("returns a client and sets a degraded connection back to active when the refresh works", async () => {

@@ -20,6 +20,13 @@ const GMAIL_READ = `Gmail:
 `;
 
 export const PROVIDER_HELP: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "google-drive": {
+    list: `Google Drive: lists your synced folders and last sync. Add --available to browse folders and shared drives; --query filters names and --cursor continues the page.`,
+    search: `Google Drive: --query searches stored file text. --include-history searches older versions; --file-id narrows to a file. --since and --until take ISO dates.`,
+    read: `Google Drive: --file-id is required. Use --version or --as-of for history, --include versions to list captured versions, and --max-bytes with --cursor for long files.`,
+    join: `Google Drive: --folder takes a Google folder or shared drive id. Its files become shared company context.`,
+    leave: `Google Drive: --folder takes a synced folder id from connections list. Captured files stay.`,
+  },
   gmail: { search: GMAIL_SEARCH, read: GMAIL_READ },
 };
 

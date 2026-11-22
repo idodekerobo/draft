@@ -176,6 +176,26 @@
 .ui-panel__copy-row { display: flex; align-items: center; gap: 8px; width: 100%; }
 .ui-panel__copy-row code { flex: 1; padding: 6px 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); font: var(--font-size-small) var(--font-mono); overflow-x: auto; white-space: nowrap; }
 .ui-panel__copy-row button { min-height: 30px; padding: 0 12px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: transparent; color: var(--color-text-primary); cursor: pointer; }
+.ui-drive { width: 100%; max-width: 560px; }
+.ui-drive__list { width: 100%; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--color-border); }
+.ui-drive__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--color-border); }
+.ui-drive__name { display: flex; flex-direction: column; min-width: 0; color: var(--color-text-primary); font-size: var(--font-size-secondary); }
+.ui-drive__name > span, .ui-drive__open { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-drive__name small { color: var(--color-text-secondary); font-size: var(--font-size-small); }
+.ui-drive__action { display: flex; justify-content: flex-end; }
+.ui-drive__row-error { grid-column: 1 / -1; }
+.ui-drive__open { padding: 0; border: 0; background: none; color: var(--color-text-primary); font: inherit; text-align: left; cursor: pointer; touch-action: manipulation; }
+.ui-drive__open:focus-visible, .ui-drive__crumb-path:focus-visible { outline: 2px solid var(--color-accent-text); outline-offset: 2px; border-radius: var(--radius-sm); }
+.ui-drive__synced { color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
+.ui-drive__browser { display: flex; flex-direction: column; gap: 8px; width: 100%; padding-top: 8px; border-top: 1px solid var(--color-border-strong); }
+.ui-drive__crumbs { display: flex; align-items: center; gap: 12px; min-width: 0; font-size: var(--font-size-secondary); }
+.ui-drive__crumb-path { overflow: hidden; color: var(--color-text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.ui-drive__group { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.ui-drive__group-label { color: var(--color-text-secondary); font-size: var(--font-size-small); font-weight: 500; }
+.ui-drive__notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+@media (hover: hover) and (pointer: fine) {
+  .ui-drive__open:hover { color: var(--color-accent-text); }
+}
 
 /* ── Settings rows, toggle, segmented control ──────────────────────────────── */
 

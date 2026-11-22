@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { IntegrationActionsProvider, SessionViewStateProvider, queryKeys, useQueryClient, useWorkspaceDataSignals, type IntegrationActions, type SlackChannelsResult, type TrackFn } from "draft-shared-ui";
 import { buildSlackManifestUrl, validateSlackTokenFormat } from "draft-core/integrations/slack-hosted";
+import { folderOptionsFromBody, syncedFoldersFromBody } from "draft-core/integrations/google-drive-folders";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { watchSignals } from "@/lib/live-sessions-api";
@@ -127,9 +128,9 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
           return { ok: false, channelIds: [], failed: [], error: errorMessage(error, "Could not update Slack channels.") };
         }
       },
-      startGoogleConnect: async () => {
+      startGoogleConnect: async (input) => {
         try {
-          const body = await apiFetch<{ code: string; authUrl: string }>(`/workspaces/${workspaceId}/google/connect-sessions`, { method: "POST" });
+          const body = await apiFetch<{ code: string; authUrl: string }>(`/workspaces/${workspaceId}/google/connect-sessions`, { method: "POST", body: JSON.stringify({ product: input?.product }) });
           return { ok: true, ...body };
         } catch (error) {
           return { ok: false, error: error instanceof ApiError ? error.code : undefined };
@@ -140,6 +141,39 @@ export function WorkspaceProvider({ identity: initialIdentity, children }: { ide
           `/workspaces/${workspaceId}/google/connect-sessions/${encodeURIComponent(code)}`,
         );
         return { status: body.status, message: body.errorMessage };
+      },
+      listSyncedGoogleDriveFolders: async () => {
+        try {
+          return { ok: true, ...syncedFoldersFromBody(await apiFetch<unknown>(`/workspaces/${workspaceId}/google/drive-folders`)) };
+        } catch (error) {
+          return { ok: false, error: error instanceof ApiError ? error.code : undefined };
+        }
+      },
+      listDriveFolderOptions: async ({ parent }) => {
+        try {
+          const body = await apiFetch<unknown>(`/workspaces/${workspaceId}/google/drive-folders/options?parent=${encodeURIComponent(parent)}`);
+          return { ok: true, options: folderOptionsFromBody(body) };
+        } catch (error) {
+          return { ok: false, error: error instanceof ApiError ? error.code : undefined };
+        }
+      },
+      addSyncedGoogleDriveFolder: async (input) => {
+        try {
+          await apiFetch<{ folder: Record<string, unknown> }>(`/workspaces/${workspaceId}/google/drive-folders`, { method: "POST", body: JSON.stringify(input) });
+          return { ok: true };
+        } catch (error) {
+          if (!(error instanceof ApiError)) return { ok: false };
+          const message = typeof error.detail?.message === "string" ? error.detail.message : undefined;
+          return { ok: false, error: error.code, message };
+        }
+      },
+      removeSyncedGoogleDriveFolder: async ({ id }) => {
+        try {
+          await apiFetch(`/workspaces/${workspaceId}/google/drive-folders/${encodeURIComponent(id)}`, { method: "DELETE" });
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, error: error instanceof ApiError ? error.code : undefined };
+        }
       },
       // Folder actions need a desktop.
       connectSessionTracking: () => connect<{ ok: true }>({ provider: "claude_session" }, "Could not turn on coding sessions."),

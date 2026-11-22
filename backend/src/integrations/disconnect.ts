@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
 import { recordRouteError } from "../errors/route-error";
+import { removeAllSyncedGoogleDriveFolders } from "../ingestion/google-drive/synced-folders";
 import { releaseGoogleCredential } from "../ingestion/google/release-credential";
 import { stopSlackListener } from "../ingestion/slack/bootstrap";
 import { deleteGranolaWebhookEndpoint } from "../ingestion/granola/webhook-endpoints";
@@ -17,8 +18,16 @@ export async function disconnectConnection(
   client: SupabaseClient,
   input: { workspaceId: string; userId: string; provider: ConnectionProvider | "google"; accountKind: "personal" | "workspace" | null },
 ): Promise<DisconnectResult> {
-  // Google is connected as "google" but stored as the person's "gmail" connection.
-  const provider: ConnectionProvider = input.provider === "google" ? "gmail" : input.provider;
+  if (input.provider === "google") {
+    let outcome: DisconnectOutcome = "not_found";
+    for (const provider of ["gmail", "google_drive"] as const) {
+      const result = await disconnectConnection(client, { ...input, provider, accountKind: "personal" });
+      if (!result.ok || result.outcome === "not_owner") return result;
+      if (result.outcome === "disconnected") outcome = "disconnected";
+    }
+    return { ok: true, outcome };
+  }
+  const provider = input.provider;
   const { data, error } = await client.rpc("disconnect_connection", {
     p_workspace_id: input.workspaceId,
     p_provider: provider,
@@ -33,7 +42,14 @@ export async function disconnectConnection(
 
   if (provider === "slack") await stopSlackListener(result.connection_id);
   if (provider === "granola") await deleteGranolaWebhookBestEffort(client, input.workspaceId, result.connection_id);
-  if (provider === "gmail") await releaseGoogleBestEffort(client, input.workspaceId, result.connection_id);
+  if (provider === "google_drive") {
+    try {
+      await removeAllSyncedGoogleDriveFolders(client, input.workspaceId, result.connection_id);
+    } catch (error) {
+      recordRouteError({ workspaceId: input.workspaceId, connectionId: result.connection_id, operation: "auth", errorCode: "drive_synced_folders_cleanup_failed", error });
+    }
+  }
+  if (provider === "gmail" || provider === "google_drive") await releaseGoogleBestEffort(client, input.workspaceId, result.connection_id);
   return { ok: true, outcome };
 }
 

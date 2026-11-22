@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
-import { createGoogleOAuthSession, getGoogleOAuthSession } from "../auth/google-oauth-state-store";
+import { createGoogleOAuthSession, getGoogleOAuthSession, type GoogleConnectProduct } from "../auth/google-oauth-state-store";
 import { googleOAuthSettings } from "../config";
 import { serviceClient } from "../db/client";
 import { buildGoogleAuthUrl, generatePkcePair } from "../ingestion/google/oauth";
@@ -21,25 +21,26 @@ export async function createGoogleConnectSession(
   workspaceId: string,
   userId: string,
   deps: GoogleConnectDependencies = defaultDependencies,
+  product?: GoogleConnectProduct,
 ): Promise<Response> {
   const settings = deps.settings();
   if (!settings) return Response.json({ error: "google_oauth_not_configured" }, { status: 503 });
 
-  // A degraded connection may connect again to fix an expired grant; the
-  // callback upserts the same row.
+  // A degraded connection may connect again to fix an expired grant, and a
+  // person with only one Google product may connect again to add the other.
   const { data: existing, error: existingError } = await deps.db
     .from("connections")
-    .select("id")
+    .select("provider")
     .eq("workspace_id", workspaceId)
-    .eq("provider", "gmail")
+    .in("provider", ["gmail", "google_drive"])
     .eq("connected_by_user_id", userId)
-    .eq("status", "active")
-    .limit(1);
+    .eq("status", "active");
   if (existingError) {
-    recordRouteError({ workspaceId, operation: "auth", errorCode: "gmail_connect_lookup_failed", error: existingError });
+    recordRouteError({ workspaceId, operation: "auth", errorCode: "google_connect_lookup_failed", error: existingError });
     return Response.json({ error: "lookup_failed" }, { status: 500 });
   }
-  if ((existing ?? []).length > 0) {
+  const activeProviders = new Set(((existing ?? []) as Array<{ provider: string }>).map((row) => row.provider));
+  if (activeProviders.has("gmail") && activeProviders.has("google_drive")) {
     return Response.json({ error: "google_already_connected" }, { status: 409 });
   }
 
@@ -51,7 +52,7 @@ export async function createGoogleConnectSession(
     .maybeSingle<{ email: string | null }>();
 
   const { verifier, challenge } = generatePkcePair();
-  const state = createGoogleOAuthSession(workspaceId, userId, verifier);
+  const state = createGoogleOAuthSession(workspaceId, userId, verifier, product);
   return Response.json({
     code: state,
     authUrl: buildGoogleAuthUrl(settings, { state, codeChallenge: challenge, loginHint: user?.email }),
@@ -78,7 +79,12 @@ export function pollGoogleConnectSession(workspaceId: string, userId: string, co
 export const createPOST = withAuth<CreateSessionRequest>(async (req, caller) => {
   const denied = await assertWorkspaceAccess(req.params.id, caller.userId);
   if (denied) return denied;
-  return createGoogleConnectSession(req.params.id, caller.userId);
+  const body = (await req.json().catch(() => null)) as { product?: unknown } | null;
+  const product = body?.product;
+  if (product !== undefined && product !== "gmail" && product !== "google_drive") {
+    return Response.json({ error: "invalid_product" }, { status: 400 });
+  }
+  return createGoogleConnectSession(req.params.id, caller.userId, defaultDependencies, product);
 });
 
 export const pollGET = withAuth<PollSessionRequest>(async (req, caller) => {

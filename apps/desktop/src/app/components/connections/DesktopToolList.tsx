@@ -3,6 +3,11 @@ import {
   AGENT_SETUP_PROMPT,
   FirefliesConnectPanel,
   GoogleConnectPanel,
+  DriveFoldersPanel,
+  driveToolStatus,
+  hasDriveConnection,
+  hasGmailConnection,
+  useSyncedGoogleDriveFolders,
   GranolaConnectPanel,
   LinearConnectPanel,
   SlackConnectPanel,
@@ -20,7 +25,7 @@ import { rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { GithubConnectPanel } from "../../adapters/GithubConnectPanel";
 
-type Source = "slack" | "fireflies" | "linear" | "github" | "granola" | "gmail";
+type Source = "slack" | "fireflies" | "linear" | "github" | "granola" | "gmail" | "google_drive";
 
 export function desktopToolStatuses(apps: ConnectedAppsStatus): Partial<Record<ToolId, ToolStatus>> {
   const team = (["slack", "github", "linear"] as const).map((provider) => ({
@@ -35,6 +40,7 @@ export function desktopToolStatuses(apps: ConnectedAppsStatus): Partial<Record<T
   return {
     ...toolStatusesFromConnections(personal, team),
     gmail: gmailToolStatus(apps.gmailConnections),
+    "google-drive": driveToolStatus(apps.driveConnections ?? [], null),
   };
 }
 
@@ -71,6 +77,8 @@ export function DesktopToolList({ apps, refresh, groups, allowManage = false, st
   allowManage?: boolean;
   startHere?: ToolId;
 }) {
+  const driveFolders = useSyncedGoogleDriveFolders(hasDriveConnection(apps.driveConnections ?? []));
+  const statuses = { ...desktopToolStatuses(apps), "google-drive": driveToolStatus(apps.driveConnections ?? [], driveFolders.status === "ready" ? driveFolders.folders.length : null) };
   const reload = async () => { await refresh(); };
   const connectedAndClose = (close: () => void) => async () => { await refresh(); close(); };
   const panels: Partial<Record<ToolId, (close: () => void) => ReactNode>> = {
@@ -84,12 +92,14 @@ export function DesktopToolList({ apps, refresh, groups, allowManage = false, st
         </GoogleConnectPanel>
       );
     },
+    "google-drive": () => <GoogleConnectPanel product="drive" hasGmail={hasGmailConnection(apps.gmailConnections)} needsReconnect={statuses["google-drive"].state === "error"} classPrefix="ui-panel" onStatusRefresh={refresh} onDone={driveFolders.reload}>{statuses["google-drive"].state === "error" && allowManage && <DisconnectButton source="google_drive" onDone={refresh} />}</GoogleConnectPanel>,
     linear: (close) => <LinearConnectPanel detail={apps.integrations.linear} classPrefix="ui-panel" onConnected={connectedAndClose(close)} />,
     slack: (close) => <SlackConnectPanel detail={apps.integrations.slack} mode="connect" classPrefix="ui-panel" onMembershipUpdated={reload} onConnected={connectedAndClose(close)} />,
     github: (close) => <GithubConnectPanel detail={apps.integrations.github} classPrefix="ui-panel" onConnected={connectedAndClose(close)} />,
   };
 
   const managePanels: Partial<Record<ToolId, ManagePanel>> = allowManage ? {
+    "google-drive": { label: "Edit", render: () => <DriveFoldersPanel state={driveFolders} /> },
     slack: { label: "Manage channels", render: () => <SlackConnectPanel detail={apps.integrations.slack} mode="manage" classPrefix="ui-panel" onMembershipUpdated={reload} onConnected={reload} /> },
   } : {};
 
@@ -100,13 +110,14 @@ export function DesktopToolList({ apps, refresh, groups, allowManage = false, st
     github: <DisconnectButton source="github" onDone={refresh} />,
     linear: <DisconnectButton source="linear" onDone={refresh} />,
     gmail: <DisconnectButton source="gmail" onDone={refresh} />,
+    "google-drive": <DisconnectButton source="google_drive" onDone={refresh} />,
   } : {};
 
   return (
     <ToolList
       platform="desktop"
       groups={groups}
-      statuses={desktopToolStatuses(apps)}
+      statuses={statuses}
       agentPrompt={AGENT_SETUP_PROMPT}
       agentLastUsedAt={apps.agentLastUsedAt}
       mcpUrl={mcpUrl(apps.apiBaseUrl)}

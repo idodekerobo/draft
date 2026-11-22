@@ -63,3 +63,28 @@ export function gmailToolStatus(raw: unknown[]): ToolStatus {
   const name = rows.map((row) => row.display_name).find((value): value is string => typeof value === "string" && value.length > 0);
   return { state: "connected", detail: name ? `Connected · ${name}` : "Connected" };
 }
+
+type DriveRow = { provider: "google_drive"; status?: unknown };
+
+/** The caller's own Google Drive rows. Like Gmail, the list never carries a teammate's. */
+function driveRows(raw: unknown[]): DriveRow[] {
+  return raw.filter((row): row is DriveRow => {
+    const candidate = row as { provider?: unknown; status?: unknown } | null;
+    return typeof candidate === "object" && candidate !== null && candidate.provider === "google_drive" && candidate.status !== "revoked";
+  });
+}
+
+export function hasDriveConnection(raw: unknown[]): boolean {
+  return driveRows(raw).length > 0;
+}
+
+/** Synced folder count, or null while it loads or failed to load. */
+export function driveToolStatus(raw: unknown[], syncedFolderCount: number | null): ToolStatus {
+  const rows = driveRows(raw);
+  if (rows.length === 0) return { state: "disconnected" };
+  if (rows.some((row) => row.status === "degraded" || row.status === "error")) return { state: "error", detail: "Reconnect needed" };
+  if (rows.some((row) => row.status === "pending")) return { state: "pending", detail: "Waiting for Google" };
+  if (syncedFolderCount === null) return { state: "connected", detail: "Connected" };
+  if (syncedFolderCount === 0) return { state: "pending", detail: "Choose folders", linked: true };
+  return { state: "connected", detail: `Connected · ${syncedFolderCount} synced ${syncedFolderCount === 1 ? "folder" : "folders"}` };
+}

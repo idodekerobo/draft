@@ -1,3 +1,4 @@
+import { folderOptionsFromBody, syncedFoldersFromBody } from "draft-core/integrations/google-drive-folders";
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
 import type { SynthesisRunsPage } from "draft-shared-ui";
@@ -399,6 +400,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // (already fetched once above) instead of a second round trip.
           firefliesConnections: normalizeHostedConnectionList("fireflies", cloudConnections ?? []),
           granolaConnections: normalizeHostedConnectionList("granola", cloudConnections ?? []),
+          driveConnections: (Array.isArray(cloudConnections) ? cloudConnections : []).flatMap((row: unknown) => {
+            const connection = row as { provider?: unknown; status?: unknown; display_name?: unknown };
+            if (connection.provider !== "google_drive") return [];
+            return [{
+              provider: "google_drive" as const,
+              status: typeof connection.status === "string" ? connection.status : null,
+              display_name: typeof connection.display_name === "string" ? connection.display_name : null,
+            }];
+          }),
           gmailConnections: (Array.isArray(cloudConnections) ? cloudConnections : []).flatMap((row: unknown) => {
             const connection = row as { provider?: unknown; status?: unknown; display_name?: unknown };
             if (connection.provider !== "gmail") return [];
@@ -590,11 +600,15 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startGoogleConnect: async () => {
+      startGoogleConnect: async ({ product }) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
         try {
-          const body = await fetchServerJSON<{ code: string; authUrl: string }>(`workspaces/${workspaceId}/google/connect-sessions`, { method: "POST" });
+          const body = await fetchServerJSON<{ code: string; authUrl: string }>(`workspaces/${workspaceId}/google/connect-sessions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ product }),
+          });
           return { ok: true, ...body };
         } catch (err) {
           return { ok: false, error: err instanceof ServerError ? err.code : undefined };
@@ -608,6 +622,39 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           `workspaces/${workspaceId}/google/connect-sessions/${encodeURIComponent(code)}`,
         );
         return { status: body.status, message: body.errorMessage };
+      },
+
+      listSyncedGoogleDriveFolders: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "not_authenticated" };
+        try {
+          return { ok: true, ...syncedFoldersFromBody(await fetchServerJSON(`workspaces/${workspaceId}/google/drive-folders`)) };
+        } catch (err) { return { ok: false, error: err instanceof ServerError ? err.code : undefined }; }
+      },
+      listDriveFolderOptions: async ({ parent }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "not_authenticated" };
+        try {
+          return { ok: true, options: folderOptionsFromBody(await fetchServerJSON(`workspaces/${workspaceId}/google/drive-folders/options?parent=${encodeURIComponent(parent)}`)) };
+        } catch (err) { return { ok: false, error: err instanceof ServerError ? err.code : undefined }; }
+      },
+      addSyncedGoogleDriveFolder: async (input) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "not_authenticated" };
+        try {
+          await fetchServerJSON(`workspaces/${workspaceId}/google/drive-folders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err instanceof ServerError ? err.code : undefined, message: err instanceof ServerError && typeof err.detail?.message === "string" ? err.detail.message : undefined };
+        }
+      },
+      removeSyncedGoogleDriveFolder: async ({ id }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, error: "not_authenticated" };
+        try {
+          await fetchServer(`workspaces/${workspaceId}/google/drive-folders/${encodeURIComponent(id)}`, { method: "DELETE" });
+          return { ok: true };
+        } catch (err) { return { ok: false, error: err instanceof ServerError ? err.code : undefined }; }
       },
 
       connectClaudeCode: async ({ token }) => {

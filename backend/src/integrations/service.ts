@@ -16,7 +16,7 @@ const CONNECTION_METADATA_BY_PROVIDER = {
   linear: { provider: "linear", label: "Linear", ingests: "issues, comments and projects", abilities: [] },
   fireflies: { provider: "fireflies", label: "Fireflies", ingests: "meeting transcripts and summaries", abilities: [] },
   granola: { provider: "granola", label: "Granola", ingests: "meeting notes", abilities: [] },
-  google: { provider: "google", label: "Google", ingests: "nothing: your agent searches and reads your Gmail only when you ask", abilities: ["A routine can read its owner's Gmail"] },
+  google: { provider: "google", label: "Google", ingests: "nothing from Gmail: your agent searches and reads your Gmail only when you ask. Google Drive is listed separately", abilities: ["A routine can read its owner's Gmail"] },
   "claude-code": { provider: "claude_session", label: "Claude Code", ingests: "summaries of captured Claude Code sessions", abilities: [] },
 } as const satisfies Record<HostedConnectionProvider, ConnectionMetadata>;
 
@@ -29,8 +29,8 @@ export type IntegrationProvider = (typeof INTEGRATIONS)[number]["provider"];
 export const INTEGRATION_PROVIDERS = INTEGRATIONS.map((entry) => entry.provider) as [IntegrationProvider, ...IntegrationProvider[]];
 
 const LIVE = new Set(["active", "degraded"]);
-// Google's connection rows are per product (provider "gmail") and private, so only the caller's own count.
-const connectionProviders = (provider: IntegrationProvider) => (provider === "google" ? ["gmail"] : [provider]);
+// Google's connection rows are per product ("gmail", "google_drive"); only the caller's own count for "google".
+const connectionProviders = (provider: IntegrationProvider) => (provider === "google" ? ["gmail", "google_drive"] : [provider]);
 
 /** Where a connection's data goes: the shared company context, or only the person who connected it. */
 export const connectionDestination = (provider: string): "company_context" | "only_you" =>
@@ -39,7 +39,7 @@ const REQUEST_TTL_MS = 15 * 60_000;
 const MAX_OPEN_REQUESTS = 10;
 
 export interface Integration {
-  provider: IntegrationProvider;
+  provider: IntegrationProvider | "google_drive";
   label: string;
   /** "pending": saved, waiting for the provider's first event (Fireflies and Granola wait for a webhook). */
   status: "connected" | "pending" | "needs_reconnect" | "not_connected";
@@ -58,7 +58,7 @@ export async function listIntegrations(client: SupabaseClient, workspaceId: stri
   const { data, error } = await client.from("connections").select("provider, status, connected_by_user_id").eq("workspace_id", workspaceId).in("provider", INTEGRATION_PROVIDERS.flatMap(connectionProviders));
   if (error) throw error;
   const rows = (data ?? []) as Array<{ provider: string; status: string; connected_by_user_id: string | null }>;
-  return INTEGRATIONS.map((entry) => {
+  const integrations = INTEGRATIONS.map((entry): Integration => {
     const mine = rows.filter((row) =>
       connectionProviders(entry.provider).includes(row.provider) && row.status !== "revoked" && (entry.provider !== "google" || row.connected_by_user_id === userId));
     const live = mine.filter((row) => LIVE.has(row.status));
@@ -72,8 +72,35 @@ export async function listIntegrations(client: SupabaseClient, workspaceId: stri
       abilities: entry.abilities,
       destination: connectionDestination(entry.provider),
       connect: { cli: `draft connections connect --provider ${entry.cliName}`, mcp: `connections.connect {"provider":"${entry.provider}"}` },
-    };
+    } satisfies Integration;
   });
+  return [...integrations, googleDriveIntegration(rows, userId)];
+}
+
+// Google Drive is connected through the Google sign-in, but its files go into company context, so the
+// workspace counts as connected when anyone's Drive connection is live.
+function googleDriveIntegration(rows: Array<{ provider: string; status: string; connected_by_user_id: string | null }>, userId: string): Integration {
+  const drive = rows.filter((row) => row.provider === "google_drive" && row.status !== "revoked");
+  const live = drive.filter((row) => LIVE.has(row.status));
+  return {
+    provider: "google_drive",
+    label: "Google Drive",
+    status: live.length ? "connected" : drive.length ? "needs_reconnect" : "not_connected",
+    connectedByYou: live.some((row) => row.connected_by_user_id === userId),
+    ingests: "Google Docs, Sheets and Slides in the synced Google Drive folders, with comments and every captured version",
+    triggers: [],
+    abilities: [],
+    destination: "company_context",
+    connect: { cli: "draft connections connect --provider google", mcp: 'connections.connect {"provider":"google"}' },
+  };
+}
+
+// One Google sign-in connects Gmail and Google Drive, so a connect link is still useful while either is missing.
+async function hasEveryGoogleProduct(client: SupabaseClient, workspaceId: string, userId: string): Promise<boolean> {
+  const { data, error } = await client.from("connections").select("provider, status").eq("workspace_id", workspaceId).eq("connected_by_user_id", userId).in("provider", connectionProviders("google"));
+  if (error) throw error;
+  const live = new Set(((data ?? []) as Array<{ provider: string; status: string }>).filter((row) => LIVE.has(row.status)).map((row) => row.provider));
+  return connectionProviders("google").every((provider) => live.has(provider));
 }
 
 export const hashConnectToken = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -95,9 +122,13 @@ export async function createConnectRequest(
 ): Promise<ConnectResult> {
   const now = deps.now ?? new Date();
   const entry = INTEGRATIONS.find((item) => item.provider === input.provider)!;
+  if (input.provider === "google") {
+    if (await hasEveryGoogleProduct(client, input.workspaceId, input.userId)) return { status: "connected", provider: input.provider, message: `${entry.label} is already connected. No link is needed.` };
+  } else {
   const current = (await listIntegrations(client, input.workspaceId, input.userId)).find((item) => item.provider === input.provider);
   if (current?.status === "connected") return { status: "connected", provider: input.provider, message: `${entry.label} is already connected. No link is needed.` };
   if (current?.status === "pending") return { status: "pending", provider: input.provider, message: `${entry.label} is saved and waiting for its first event from the provider. No link is needed.` };
+  }
 
   const { count, error: countError } = await client
     .from("connection_requests")

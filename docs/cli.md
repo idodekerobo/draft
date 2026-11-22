@@ -374,7 +374,7 @@ If any of the given directories fail validation, `status` is `partial_error`, ea
 
 ## Hosted connections
 
-`draft connections` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, Claude Code, and Google (Gmail). This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `connections` is workspace-level and has nothing to do with any one project's directory. Run `draft connections <command> --help` for details.
+`draft connections` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, Claude Code, and Google (Gmail and Google Drive). This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `connections` is workspace-level and has nothing to do with any one project's directory. Run `draft connections <command> --help` for details.
 
 ### `draft connections list [--provider <provider>] [--available ...] [--json]`
 
@@ -475,18 +475,35 @@ echo '{"api_token":"grn_..."}' | draft connections connect --provider granola --
 
 draft connections connect --provider google                         # opens Google sign-in, then waits until you finish
 draft connections connect --provider google --json                  # prints action_required with the sign-in URL, then connected
-draft connections disconnect --provider google                      # disconnects your Gmail and revokes Draft's access at Google
+draft connections disconnect --provider google                      # disconnects your Google products; captured Drive files stay
 ```
 
-**Google** connects only your own Gmail, not the workspace's. Sign-in always
-happens in the browser, so it works the same in a terminal and from an agent.
-Draft asks only for read-only Gmail access. With `--json`, the CLI first
-prints `{"status":"action_required","provider":"google","url":"…"}`, then
-`{"status":"connected","provider":"google"}` when you finish. It stops
-waiting after 10 minutes. Gmail is read live when your agent asks; nothing is
-copied into Draft. After you connect, search it with
-`draft connections search --provider gmail --query 'cal meeting'` and read a
-result with `draft connections read --provider gmail --message-id <id>`.
+**Google** connects your Gmail and Google Drive with read-only access. Sign-in
+happens in the browser. You can grant either product; reconnect Google to add
+Drive after connecting Gmail. Gmail is read live by your own agents; nothing
+is copied into Draft. Drive starts syncing after you choose folders. Every
+native Google Doc, Sheet and Slide in those folders goes into shared company
+context, including files only you can see.
+
+With `--json`, the interactive Google flow prints
+`{"status":"action_required","provider":"google","url":"…"}`, then
+`{"status":"connected","provider":"google"}` when you finish, and stops
+waiting after 10 minutes. Use `draft connections list` to see the actions available after connecting.
+
+```bash
+draft connections list --provider google-drive --json
+draft connections join --provider google-drive --folder <folder-or-shared-drive-id> --json
+draft connections leave --provider google-drive --folder <synced-folder-id> --json
+draft connections list --provider google-drive --json
+```
+
+`add` takes the Google folder or shared drive ID; Draft resolves its name using
+your own Google login. `remove` takes the stored synced folder ID from `list`.
+Only the person who added a folder can remove it. A folder already synced by
+another connection is refused. `status` reports your folders, connection state,
+last successful sync and whether reconnection is needed. `connections list` returns synced folders and the connection state.
+The Connections page also has a folder browser under Google Drive → Edit.
+See [Google Drive](google-drive.md) for sync limits, history and deletion behavior.
 
 `github`, `linear`, `claude-code`, `slack`, and `granola` accept
 `--credential-stdin` (a single JSON object on stdin) or `--credential-fd <n>`

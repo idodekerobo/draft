@@ -7,7 +7,7 @@ let agentQueries: Array<{ workspace_id: string; user_id: string; occurred_at: st
 
 interface Connection {
   id: string;
-  provider: "slack" | "fireflies" | "linear" | "github" | "claude_session" | "granola" | "gmail";
+  provider: "slack" | "fireflies" | "linear" | "github" | "claude_session" | "granola" | "gmail" | "google_drive";
   credential_id: string | null;
   connection_key: string;
   status: string;
@@ -64,7 +64,8 @@ const state: {
   workspaces: Workspace[];
   errors: OperatorError[];
   users: User[];
-} = { connections: [], credentials: [], scheduledTasks: [], workspaces: [], errors: [], users: [] };
+  syncedFolders: Array<{ id: string; workspace_id: string; connection_id: string; google_folder_id: string }>;
+} = { connections: [], credentials: [], scheduledTasks: [], workspaces: [], errors: [], users: [], syncedFolders: [] };
 
 function matches(row: object, filters: Record<string, unknown>): boolean {
   const values = row as Record<string, unknown>;
@@ -74,7 +75,7 @@ function matches(row: object, filters: Record<string, unknown>): boolean {
 function createFakeClient() {
   return {
     from(table: string) {
-      let operation: "select" | "update" | "insert" | "upsert" = "select";
+      let operation: "select" | "update" | "insert" | "upsert" | "delete" = "select";
       let payload: Record<string, unknown> = {};
       const filters: Record<string, unknown> = {};
       const inFilters: Record<string, unknown[]> = {};
@@ -195,6 +196,11 @@ function createFakeClient() {
           }
         }
 
+        if (table === "synced_google_drive_folders" && operation === "delete") {
+          state.syncedFolders = state.syncedFolders.filter((row) => !rowMatches(row));
+          return { data: null, error: null };
+        }
+
         if (table === "users" && operation === "select") {
           const rows = state.users.filter(rowMatches).map((row) => ({ ...row }));
           return { data: returnSingle ? rows[0] ?? null : rows, error: null };
@@ -256,6 +262,10 @@ function createFakeClient() {
         insert(nextPayload: Record<string, unknown>) {
           operation = "insert";
           payload = nextPayload;
+          return builder;
+        },
+        delete() {
+          operation = "delete";
           return builder;
         },
         upsert(nextPayload: Record<string, unknown>) {
@@ -578,6 +588,7 @@ afterAll(() => {
 
 beforeEach(() => {
   accessResult = null;
+  state.syncedFolders = [];
   agentQueries = [];
   restartedSlackListeners = [];
   stoppedSlackListeners = [];
@@ -2145,6 +2156,64 @@ describe("granola connections", () => {
     const gmailRows = body.connections.filter((c) => c.provider === "gmail");
 
     expect(gmailRows).toEqual([expect.objectContaining({ id: "gmail-mine", status: "active", is_mine: true })]);
+  });
+
+  it("disconnecting Google Drive removes its synced folders, keeps items and keeps a credential Gmail still uses", async () => {
+    const googleRow = (id: string, provider: "gmail" | "google_drive", userId: string, credentialId: string): Connection => ({
+      id,
+      provider,
+      credential_id: credentialId,
+      connection_key: `${userId}-sub`,
+      status: "active",
+      display_name: null,
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: userId,
+    });
+    state.connections = [
+      googleRow("drive-teammate", "google_drive", "user-2", "cred-2"),
+      googleRow("gmail-mine", "gmail", caller.userId, "cred-1"),
+      googleRow("drive-mine", "google_drive", caller.userId, "cred-1"),
+    ];
+    state.credentials = [{ id: "cred-1", workspace_id: workspaceId, provider: "google", encrypted_payload: "x", encryption_key_version: "v1", status: "active" }];
+    state.syncedFolders = [
+      { id: "f1", workspace_id: workspaceId, connection_id: "drive-mine", google_folder_id: "folder-a" },
+      { id: "f2", workspace_id: workspaceId, connection_id: "drive-teammate", google_folder_id: "folder-b" },
+    ];
+
+    const response = await routeModule.DELETE(request("DELETE", { id: workspaceId, provider: "google_drive" }) as never);
+
+    expect(response.status).toBe(200);
+    expect(state.connections.find((c) => c.id === "drive-mine")!.status).toBe("revoked");
+    expect(state.connections.find((c) => c.id === "drive-teammate")!.status).toBe("active");
+    expect(state.syncedFolders.map((row) => row.id)).toEqual(["f2"]);
+    expect(state.credentials[0]!.status).toBe("active");
+  });
+
+  it("GET lists the caller's own Google Drive row, not a teammate's", async () => {
+    const driveRow = (id: string, userId: string): Connection => ({
+      id,
+      provider: "google_drive",
+      credential_id: null,
+      connection_key: `${id}-key`,
+      status: "active",
+      display_name: null,
+      last_success_at: null,
+      last_error_at: null,
+      config_json: {},
+      workspace_id: workspaceId,
+      connected_by_user_id: userId,
+    });
+    state.connections = [driveRow("drive-mine", caller.userId), driveRow("drive-teammate", "user-2")];
+
+    const response = await routeModule.GET(request("GET", { id: workspaceId }) as never);
+    const body = await response.json() as { connections: Array<Record<string, unknown>> };
+
+    expect(body.connections.filter((c) => c.provider === "google_drive")).toEqual([
+      expect.objectContaining({ id: "drive-mine", is_mine: true }),
+    ]);
   });
 
   it("disconnects only the caller's own personal Granola connection, leaving a teammate's untouched", async () => {

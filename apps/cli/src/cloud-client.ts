@@ -306,6 +306,12 @@ export type FetchErrorCode =
   | "slack_channel_join_failed"
   | "slack_channel_leave_failed"
   | "github_installation_conflict"
+  | "drive_not_connected"
+  | "google_reconnect_required"
+  | "drive_folder_already_synced"
+  | "drive_not_a_folder"
+  | "drive_folder_forbidden"
+  | "not_folder_owner"
   | "google_already_connected"
   | "google_oauth_not_configured"
   | "connection_update_conflict"
@@ -337,7 +343,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<{ ok: true
   return { ok: true, token: resolved.token, workspaceId: resolved.workspaceId, response };
 }
 
-export type BackendProvider = Exclude<HostedConnectionProvider, "claude-code" | "google"> | "claude_code" | "gmail";
+export type BackendProvider = Exclude<HostedConnectionProvider, "claude-code" | "google"> | "claude_code" | "gmail" | "google_drive";
 export type BackendConnectionProvider = BackendProvider | "claude_session";
 export type BackendConnectionStatus = "pending" | "active" | "degraded" | "error" | "revoked" | "expired";
 
@@ -410,6 +416,12 @@ const SAFE_BACKEND_ERROR_CODES = new Set<FetchErrorCode>([
   "slack_channel_join_failed",
   "slack_channel_leave_failed",
   "github_installation_conflict",
+  "drive_not_connected",
+  "google_reconnect_required",
+  "drive_folder_already_synced",
+  "drive_not_a_folder",
+  "drive_folder_forbidden",
+  "not_folder_owner",
   "google_already_connected",
   "google_oauth_not_configured",
   "connection_update_conflict",
@@ -429,6 +441,7 @@ const BACKEND_PROVIDERS = new Set<BackendConnectionProvider>([
   "claude_code",
   "claude_session",
   "gmail",
+  "google_drive",
 ]);
 const BACKEND_CONNECTION_STATUSES = new Set<BackendConnectionStatus>([
   "pending",
