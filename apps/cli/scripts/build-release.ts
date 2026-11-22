@@ -71,7 +71,7 @@ async function smokeTest(binaryPath: string, assetName: string): Promise<void> {
     // "ignore" stdin (fd 0 -> /dev/null) hits EOF immediately and the command
     // fails fast on invalid_credential_input, but only after emitting the
     // manifest-derived browser_required line first, which is what this checks.
-    const slack = await capture([binaryPath, "connections", "connect", "slack", "--no-open", "--credential-stdin", "--json"], runOpts);
+    const slack = await capture([binaryPath, "connections", "connect", "--provider", "slack", "--no-open", "--credential-stdin", "--json"], runOpts);
     const slackPayload = JSON.parse(slack.stdout.trim().split("\n")[0]!);
     if (
       slackPayload.status !== "browser_required" ||
@@ -79,7 +79,7 @@ async function smokeTest(binaryPath: string, assetName: string): Promise<void> {
       typeof slackPayload.url !== "string" ||
       !slackPayload.url.startsWith("https://api.slack.com/apps?new_app=1&manifest_json=")
     ) {
-      throw new Error(`'connections connect slack --no-open' didn't emit a valid manifest URL from a directory with no source tree: ${slack.stdout}`);
+      throw new Error(`'connections connect --provider slack --no-open' didn't emit a valid manifest URL from a directory with no source tree: ${slack.stdout}`);
     }
   } finally {
     rmSync(emptyCwd, { recursive: true, force: true });
