@@ -89,7 +89,7 @@ describe("invokeTool", () => {
 
   it("denies an unknown tool name", async () => {
     const { deps, audits } = setup();
-    const result = await invokeTool(deps, runWith([{ tool: "context.read" }]), "slack.post_message", {});
+    const result = await invokeTool(deps, runWith([{ tool: "context.read" }]), "no.such_tool", {});
     expect(result).toMatchObject({ status: "denied", code: "unknown_tool" });
     expect(audits[0]).toMatchObject({ status: "denied" });
   });

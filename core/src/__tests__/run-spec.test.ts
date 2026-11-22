@@ -72,4 +72,19 @@ describe("findToolPermission", () => {
     expect(findToolPermission(run, "context.write")).toEqual({ tool: "context.write", limits: { pathPrefixes: ["memory/"] } });
     expect(findToolPermission(run, "context.read")).toBeNull();
   });
+
+  it("finds a permission for a tool and provider, and not for another provider", () => {
+    const slack = { tool: "connections.post", provider: "slack", limits: { channels: "joined" } } as const;
+    const run = spec([slack, { tool: "connections.read", provider: "slack" }]);
+    expect(findToolPermission(run, "connections.post", "slack")).toEqual(slack);
+    expect(findToolPermission(run, "connections.post", "linear")).toBeNull();
+    expect(findToolPermission(run, "connections.post")).toEqual(slack);
+    expect(findToolPermission(run, "connections.list", "slack")).toBeNull();
+  });
+
+  it("does not take a permission without a provider as one for a provider", () => {
+    const run = spec([{ tool: "connections.post" }]);
+    expect(findToolPermission(run, "connections.post", "slack")).toBeNull();
+    expect(findToolPermission(run, "connections.post")).toEqual({ tool: "connections.post" });
+  });
 });

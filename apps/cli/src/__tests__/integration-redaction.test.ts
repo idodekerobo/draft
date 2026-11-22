@@ -48,6 +48,8 @@ describe("integration safe output", () => {
       "not_supported",
       "poll_failed",
       "request_failed",
+      "run_credentials_incomplete",
+      "run_token_refused",
       "session_refresh_transient",
       "slack_channel_join_failed",
       "slack_channel_leave_failed",

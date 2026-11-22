@@ -27,8 +27,8 @@ export function routinePermissions(routine: Pick<AgentRoutineConfig, "canNotify"
   ];
   if (routine.canNotify) permissions.push({ tool: "people.find" }, { tool: "people.notify", limits: { recipients: "members", maxPerRun: ROUTINE_NOTIFY_MAX_PER_RUN } });
   if (routine.postChannels) permissions.push(
-    { tool: "slack.list_channels" }, { tool: "slack.read_channel" },
-    { tool: "slack.post_message", limits: { channels: routine.postChannels, maxPerRun: 10 } },
+    { tool: "connections.list", provider: "slack" }, { tool: "connections.read", provider: "slack" },
+    { tool: "connections.post", provider: "slack", limits: { channels: routine.postChannels, maxPerRun: 10 } },
   );
   if (routine.github) permissions.push({ tool: "github.credential", limits: routine.github });
   return permissions;

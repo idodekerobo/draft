@@ -5,14 +5,14 @@ const call = (tool_name: string, result_summary: string, args: Record<string, un
 
 test("results count delivered actions and unique recipients and documents", () => {
   expect(runResultLine([
-    call("slack.post_message", "Posted in #general"),
+    call("connections.post", "Posted in #general", { provider: "slack" }),
     call("people.notify", "slack: sent", { personId: "a" }),
     call("people.notify", "slack: sent", { personId: "a" }),
     call("people.notify", "slack: failed", { personId: "b" }),
     call("context.write", "wrote product.md, team.md"),
     call("context.write", "wrote product.md"),
     call("context.write", "no change"),
-    call("slack.post_message", "Posted in #private", {}, "refused"),
+    call("connections.post", "Posted in #private", { provider: "slack" }, "refused"),
   ])).toBe("Posted in #general · DM'd 1 person · Updated 2 docs");
 });
 

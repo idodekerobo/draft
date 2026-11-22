@@ -131,7 +131,7 @@ draft/
 
 The backend currently supports connections for Slack, Fireflies, Linear, GitHub, and Claude Code session capture. GitHub is a connection and source of activity, and can also be used for source import. It is no longer the primary team-context synchronization layer.
 
-Connect or manage any of these from the desktop app, or from the CLI: `draft connections list` reports each provider's status, `draft connections connect <provider>` walks through that provider's setup (a browser handoff for github/slack, a hidden credential prompt for linear/claude-code/slack/fireflies, or both), and `draft connections disconnect <provider>` revokes it. Slack additionally supports `draft connections slack channels list`/`set` to manage which channels the bot has joined. See [docs/cli.md](./docs/cli.md#hosted-connections) for the full command reference, including automation flags (`--credential-stdin`/`--credential-fd`) and the JSON Lines event contract.
+Connect or manage any of these from the desktop app, or from the CLI: `draft connections list` reports each provider's status, `draft connections connect --provider <provider>` walks through that provider's setup (a browser handoff for github/slack, a hidden credential prompt for linear/claude-code/slack/fireflies, or both), and `draft connections disconnect --provider <provider> --yes` revokes it. Slack additionally supports `draft connections list --provider slack --available` to see every public channel, `join` and `leave` to choose the bot's channels, and `read` and `post` to use them. See [docs/cli.md](./docs/cli.md#hosted-connections) for the full command reference, including automation flags (`--credential-stdin`/`--credential-fd`) and the JSON Lines event contract.
 
 ## Connect agents with MCP or CLI
 
@@ -163,7 +163,7 @@ draft skills list
 draft skills read <name>
 draft sessions list
 draft connections list
-draft connections connect github
+draft connections connect --provider github
 draft --help
 ~~~
 

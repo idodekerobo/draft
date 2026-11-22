@@ -74,12 +74,14 @@ describe("MCP tools that go through the gateway", () => {
     const tool = (name: string) => (result.tools as Array<{ name: string; annotations?: Record<string, unknown> }>).find((item) => item.name === name)!;
     expect(tool("routines.list").annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     expect(tool("routines.delete").annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(tool("skills.delete").annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(tool("skills.update").annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
   });
 
   it("registers the tools that run through the gateway, and no run-only tool", async () => {
     const result = await rpc("tools/list");
     const names = result.tools!.map((tool) => tool.name).sort();
-    expect(names).toEqual(["activity.list", "connections.connect", "connections.list", "context.export", "context.list", "context.read", "people.add_identity", "people.approve", "people.create", "people.find", "people.notify", "people.reject", "routines.create", "routines.delete", "routines.list", "routines.options", "routines.run", "routines.runs", "routines.update", "sessions.list", "sessions.read", "skills.add", "skills.list", "skills.read", "slack.list_channels", "slack.post_message", "slack.read_channel", "sources.list", "sources.read", "sources.search"]);
+    expect(names).toEqual(["activity.list", "connections.connect", "connections.disconnect", "connections.join", "connections.leave", "connections.list", "connections.post", "connections.read", "context.export", "context.list", "context.read", "people.approve", "people.create", "people.find", "people.notify", "people.reject", "people.update", "routines.create", "routines.delete", "routines.list", "routines.options", "routines.run", "routines.runs", "routines.update", "sessions.list", "sessions.read", "skills.add", "skills.delete", "skills.list", "skills.read", "skills.update", "sources.list", "sources.read", "sources.search"]);
   });
 
   it("context.read returns the shape clients already read, and audits it as an MCP call by this person", async () => {

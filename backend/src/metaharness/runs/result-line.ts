@@ -14,7 +14,7 @@ export function runResultLine(calls: ReadonlyArray<ActionCall>): string | null {
   const documents = new Set<string>();
   for (const call of calls) {
     if (call.status !== "ok") continue;
-    if (call.tool_name === "slack.post_message") {
+    if (call.tool_name === "connections.post" && call.arguments.provider === "slack") {
       const channel = call.result_summary?.match(/^Posted in (#[^\s·]+)/)?.[1];
       if (channel) channels.add(channel);
     }
@@ -42,7 +42,7 @@ export async function loadRunResults(
   const { data, error } = await client.from("agent_run_tool_calls")
     .select("agent_run_id, tool_name, status, arguments, result_summary")
     .eq("workspace_id", workspaceId).in("agent_run_id", runs.map((run) => run.id))
-    .eq("status", "ok").in("tool_name", ["slack.post_message", "people.notify", "context.write"]);
+    .eq("status", "ok").in("tool_name", ["connections.post", "people.notify", "context.write"]);
   if (error) throw error;
   const grouped = new Map<string, ActionCall[]>();
   for (const call of (data ?? []) as ActionCall[]) {

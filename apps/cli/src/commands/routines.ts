@@ -5,7 +5,7 @@
 import { readFile } from "node:fs/promises";
 import type { RoutineListFilter } from "draft-core/routines";
 import { ROUTINE_EVENT_NAMES, ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS } from "draft-core/routine-triggers";
-import { callPersonTool, type FetchErrorCode, type RoutineAgent, type RoutineRun, type RoutineSummary, type ToolCallResult } from "../cloud-client.ts";
+import { callPersonTool, runModeErrorMessage, type FetchErrorCode, type RoutineAgent, type RoutineRun, type RoutineSummary, type ToolCallResult } from "../cloud-client.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine, type ErrorPayload } from "../utils/json-output.ts";
 import { bold, dim, red, yellow } from "../utils/output.ts";
 
@@ -86,6 +86,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function transportError(code: FetchErrorCode): ErrorPayload {
+  const runMode = runModeErrorMessage(code);
+  if (runMode) return errorPayload(code, runMode);
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
   return errorPayload(code, "Could not reach routines right now. Retry shortly.");
@@ -93,7 +95,7 @@ function transportError(code: FetchErrorCode): ErrorPayload {
 
 function refusalPayload(code: string, message: string): ErrorPayload {
   const provider = code.match(/^(.+)_not_connected$/)?.[1];
-  return provider && CONNECTABLE.has(provider) ? errorPayload(code, message, `draft connections connect ${provider}`) : errorPayload(code, message);
+  return provider && CONNECTABLE.has(provider) ? errorPayload(code, message, `draft connections connect --provider ${provider}`) : errorPayload(code, message);
 }
 
 function failurePayload(result: ToolFailure): ErrorPayload {
@@ -324,7 +326,7 @@ function accessLines(agent: RoutineAgent): string[] {
 }
 
 function missingLine(provider: string): string {
-  const hint = CONNECTABLE.has(provider) ? ` Connect it with: draft connections connect ${provider}` : "";
+  const hint = CONNECTABLE.has(provider) ? ` Connect it with: draft connections connect --provider ${provider}` : "";
   return `  ${yellow("missing connection")}: ${provider}. Its triggers or access will not work.${hint}`;
 }
 

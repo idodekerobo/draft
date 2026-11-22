@@ -11,7 +11,7 @@ import { createPerson } from "../../../people/create";
 import { notifyAdminsOfPending } from "../../../people/notify-admins";
 import { decidePerson, isAdmin } from "../../../people/decide";
 import { findPeople } from "../../../people/find";
-import { addPersonIdentity } from "../../../people/identities";
+import { addPersonIdentity, removePersonIdentity, replacePersonIdentity } from "../../../people/identities";
 import { countRunToolCalls } from "../../../people/limits";
 import { syncMembers } from "../../../people/sync-members";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
@@ -22,6 +22,13 @@ const PROVIDERS = ["email", "slack", "linear", "github", "whatsapp"] as const;
 const DEFAULT_MAX_CREATES_PER_RUN = 5;
 const DEFAULT_MAX_IDENTITIES_PER_RUN = 10;
 const DEFAULT_MAX_NOTIFIES_PER_RUN = 10;
+
+const IDENTITY_REFUSALS: Record<string, string> = {
+  person_not_found: "No person with that id in this workspace.",
+  identity_taken: "That id already belongs to another person.",
+  identity_not_found: "That person has no such id recorded. Only an id someone added can be removed or replaced.",
+  identity_trusted: "That id comes from a workspace member or a connection, and Draft keeps it in step with that source. Only a guess can be removed or replaced.",
+};
 
 const evidenceSchema = z.object({
   sourceItemId: z.string().uuid().optional().describe("The source the person was found in, from sources.search."),
@@ -35,12 +42,12 @@ const identitySchema = z.object({
 });
 
 /** The most times a run may use a tool, from the permission that was fixed when the run started. */
-function runLimit(run: AgentRunSpec, tool: "people.create" | "people.add_identity" | "people.notify", fallback: number): number {
+function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update" | "people.notify", fallback: number): number {
   const limits = findToolPermission(run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
   return limits?.maxPerRun ?? fallback;
 }
 
-async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.add_identity" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
+async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
   if (caller.origin.kind !== "run") return null;
   const { run } = caller.origin;
   const max = runLimit(run, tool, fallback);
@@ -122,27 +129,45 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
   });
 
   const addIdentityTool = defineTool({
-    name: "people.add_identity",
+    name: "people.update",
     mcp: true,
     description:
-      "Record another way to recognise a known person, such as their Slack id. What you add is a guess until a connection or an admin confirms it, so it cannot be used to message them. " +
-      "Fails with identity_taken if that id belongs to someone else.",
+      "Update a known person: record another way to recognise them, such as their Slack id, correct one that was recorded wrongly, or remove one. " +
+      "Give externalId to add an id, externalId and replaces to swap a wrong id for the right one in one step, or remove to remove an id. " +
+      "What you add is a guess until a connection sees the same id, so it cannot be used to message them. " +
+      "Only a guess can be removed or replaced: an id that comes from a workspace member or a connection is kept in step with that source, and fails with identity_trusted. " +
+      "Fails with identity_taken if the id belongs to someone else.",
     input: z.object({
       personId: z.string().uuid(),
       provider: z.enum(PROVIDERS),
-      externalId: z.string().min(1),
+      externalId: z.string().min(1).optional().describe("The id to record. With replaces, the corrected id that takes its place."),
+      replaces: z.string().min(1).optional().describe("A wrong id that was recorded before, to swap for externalId in one step."),
+      remove: z.string().min(1).optional().describe("An id that was recorded before, to remove."),
       handle: z.string().optional(),
-      evidence: evidenceSchema.partial(),
+      evidence: evidenceSchema.partial().default({}),
+    }).superRefine((input, context) => {
+      const adding = input.externalId !== undefined && input.replaces === undefined && input.remove === undefined;
+      const replacing = input.externalId !== undefined && input.replaces !== undefined && input.remove === undefined;
+      const removing = input.remove !== undefined && input.externalId === undefined && input.replaces === undefined && input.handle === undefined;
+      if (!adding && !replacing && !removing) {
+        context.addIssue({ code: "custom", message: "Give externalId to add an id, externalId and replaces to correct one, or remove (alone) to remove one." });
+      }
     }),
     handler: async ({ input, caller }) => {
       const workspaceId = callerWorkspaceId(caller);
-      const limited = await overRunLimit(client, caller, "people.add_identity", DEFAULT_MAX_IDENTITIES_PER_RUN);
+      const limited = await overRunLimit(client, caller, "people.update", DEFAULT_MAX_IDENTITIES_PER_RUN);
       if (limited) return limited;
 
-      const result = await addPersonIdentity(client, workspaceId, input);
-      if (!result.ok) {
-        return refuse(result.code, result.code === "identity_taken" ? "That id already belongs to another person." : "No person with that id in this workspace.");
+      if (input.remove !== undefined) {
+        const removed = await removePersonIdentity(client, workspaceId, { personId: input.personId, provider: input.provider, externalId: input.remove });
+        if (!removed.ok) return refuse(removed.code, IDENTITY_REFUSALS[removed.code]!);
+        return { status: "ok", output: { outcome: removed.outcome }, summary: removed.outcome };
       }
+      const externalId = input.externalId!;
+      const result = input.replaces !== undefined
+        ? await replacePersonIdentity(client, workspaceId, { personId: input.personId, provider: input.provider, replaces: input.replaces, externalId, handle: input.handle, evidence: input.evidence })
+        : await addPersonIdentity(client, workspaceId, { personId: input.personId, provider: input.provider, externalId, handle: input.handle, evidence: input.evidence });
+      if (!result.ok) return refuse(result.code, IDENTITY_REFUSALS[result.code]!);
       return { status: "ok", output: { outcome: result.outcome }, summary: result.outcome };
     },
   });
@@ -152,7 +177,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     mcp: true,
     description:
       "Send a short message to one teammate, by their id from people.find. Only active teammates can be messaged, and only on channels where Draft can reach them. " +
-      "Read recent messages with slack.read_channel first and do not repeat a message already sent. " +
+      "Read recent messages with connections.read first and do not repeat a message already sent. " +
       "The message starts with a line saying a Draft agent sent it; you cannot change that line. Write only the body. Message only the people your instructions name. " +
       "The result has one entry per channel: sent, or failed with not_reachable or provider_error. A failure on one channel does not stop the others.",
     input: z.object({

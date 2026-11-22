@@ -29,7 +29,7 @@ export function fakeDb(tables: Record<string, Row[]> = {}, extra: Partial<Pick<F
 
 class Query implements PromiseLike<{ data: unknown; error: unknown }> {
   private filters: Filter[] = [];
-  private mode: "select" | "insert" | "update" | "upsert" = "select";
+  private mode: "select" | "insert" | "update" | "upsert" | "delete" = "select";
   private payload: Row | Row[] = {};
   private conflict: string[] = [];
   private ignoreDuplicates = false;
@@ -51,6 +51,7 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
     return this;
   }
   update(row: Row) { this.mode = "update"; this.payload = row; return this; }
+  delete() { this.mode = "delete"; return this; }
   eq(column: string, value: unknown) { this.filters.push((r) => r[column] === value); return this; }
   neq(column: string, value: unknown) { this.filters.push((r) => r[column] !== value); return this; }
   in(column: string, values: unknown[]) { this.filters.push((r) => values.includes(r[column])); return this; }
@@ -116,6 +117,10 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
     matched = matched.slice(0, this.cap);
     if (this.mode === "update") {
       for (const row of matched) Object.assign(row, this.payload);
+      return { data: this.returning ? matched : null, error: null };
+    }
+    if (this.mode === "delete") {
+      for (const row of matched) rows.splice(rows.indexOf(row), 1);
       return { data: this.returning ? matched : null, error: null };
     }
     return { data: matched, error: null, count: matched.length } as { data: unknown; error: unknown };

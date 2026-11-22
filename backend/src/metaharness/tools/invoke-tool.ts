@@ -118,6 +118,12 @@ export async function invokeTool(
     return finish({ status: "invalid", issues: parsed.issues }, { arguments: {}, code: "invalid_arguments" });
   }
 
+  if (origin.kind === "run" && tool.providerOf) {
+    const grant = tool.permission(origin.run, parsed.value);
+    if (!grant) return deny("not_permitted", `This run may not call ${toolName} for ${tool.providerOf(parsed.value) ?? "that provider"}`);
+    limits = grant.limits;
+  }
+
   const limitReason = tool.checkLimits(limits, parsed.value);
   if (limitReason) return finish({ status: "denied", code: "outside_limits", message: limitReason }, { arguments: tool.auditArguments(parsed.value), code: "outside_limits", summary: limitReason });
 

@@ -2,7 +2,9 @@
 
 import {
   DraftQueryProvider,
+  slackChannelsFromConnections,
   toRoutineError,
+  type ConnectionsListAnswer,
   type DraftApi,
   type Routine,
   type RoutineRun,
@@ -52,9 +54,7 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
       }
     },
     getRoutineSlackChannels: async () => {
-      const result = await apiFetch<{ status: string; output?: Array<{ id: string; name: string }>; message?: string }>(`/workspaces/${workspaceId}/tools/slack.list_channels`, { method: "POST", body: "{}" });
-      if (result.status !== "ok" || !result.output) throw new Error(result.message ?? "Could not load Slack channels.");
-      return result.output;
+      return slackChannelsFromConnections(await apiFetch<ConnectionsListAnswer>(`/workspaces/${workspaceId}/tools/connections.list`, { method: "POST", body: JSON.stringify({ provider: "slack" }) }));
     },
     getRoutineGithubRepos: async () => (await apiFetch<{ repos: string[] }>(`/workspaces/${workspaceId}/routine-repositories`)).repos,
     getRoutineRuns: async (id, before) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs${before ? `?before=${encodeURIComponent(before)}` : ""}`)).runs,

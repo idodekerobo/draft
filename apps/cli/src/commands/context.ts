@@ -1,6 +1,6 @@
 // commands/context.ts — draft context list|read|export
 
-import { discoverDimensions, fetchContextExport, fetchWorkspaceContext, type WorkspaceContextSnapshot } from "../cloud-client.ts";
+import { discoverDimensions, fetchContextExport, fetchWorkspaceContext, runModeErrorMessage, type WorkspaceContextSnapshot } from "../cloud-client.ts";
 import type { ContextExportError } from "../utils/context-export.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { red } from "../utils/output.ts";
@@ -8,6 +8,8 @@ import { red } from "../utils/output.ts";
 const SELECTOR_PATTERN = /^[a-z0-9-]+$/;
 
 function fetchErrorPayload(code: string) {
+  const runMode = runModeErrorMessage(code);
+  if (runMode) return errorPayload(code, runMode);
   if (code === "not_authenticated") return errorPayload(code, "Not signed in.", "draft auth login");
   if (code === "no_workspace") return errorPayload(code, "No workspace yet — finish onboarding in the Draft app.");
   if (code === "no_context") return errorPayload(code, "No context yet — Draft has not built your company brain.");

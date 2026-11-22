@@ -48,7 +48,7 @@ const SAMPLE_INTEGRATIONS = [
     ingests: "pull requests and commits",
     triggers: [{ event: "github.pull_request", label: "Pull request opened" }],
     abilities: ["A routine can read repos, or open pull requests in them"],
-    connect: { cli: "draft connections connect github", mcp: 'connections.connect {"provider":"github"}' },
+    connect: { cli: "draft connections connect --provider github", mcp: 'connections.connect {"provider":"github"}' },
   },
   {
     provider: "slack",
@@ -58,7 +58,7 @@ const SAMPLE_INTEGRATIONS = [
     ingests: "messages in the channels you pick",
     triggers: [],
     abilities: ["A routine can post in channels"],
-    connect: { cli: "draft connections connect slack", mcp: 'connections.connect {"provider":"slack"}' },
+    connect: { cli: "draft connections connect --provider slack", mcp: 'connections.connect {"provider":"slack"}' },
   },
   {
     provider: "linear",
@@ -68,7 +68,7 @@ const SAMPLE_INTEGRATIONS = [
     ingests: "issues, comments and projects",
     triggers: [],
     abilities: [],
-    connect: { cli: "draft connections connect linear", mcp: 'connections.connect {"provider":"linear"}' },
+    connect: { cli: "draft connections connect --provider linear", mcp: 'connections.connect {"provider":"linear"}' },
   },
 ];
 
@@ -99,11 +99,11 @@ describe("draft connections list", () => {
       "Slack: needs reconnect",
       "  brings in: messages in the channels you pick",
       "  lets routines: A routine can post in channels",
-      "  connect: draft connections connect slack",
+      "  connect: draft connections connect --provider slack",
       "",
       "Linear: not connected",
       "  brings in: issues, comments and projects",
-      "  connect: draft connections connect linear",
+      "  connect: draft connections connect --provider linear",
     ].join("\n"));
     expect(result.stderr).toBe("");
   });
@@ -130,36 +130,78 @@ describe("draft connections list", () => {
 });
 
 describe("draft connections disconnect", () => {
+  const disconnectRequests = () => backend.state.requests
+    .filter((request) => new URL(request.url).pathname.endsWith("/tools/connections.disconnect"))
+    .map((request) => JSON.parse(request.body));
+
+  const label = (provider: string) => (provider === "github" ? "GitHub" : provider[0]!.toUpperCase() + provider.slice(1));
+
   it.each(["github", "fireflies", "linear", "slack"] as const)(
-    "maps %s exactly in JSON and human mode, including idempotent success",
+    "reports what %s would stop and changes nothing without --yes",
     async (provider) => {
-      backend.state.connectionsDisconnectResponse = () => Response.json({
-        ok: true,
-        already_revoked: true,
-        raw_detail: "must-not-pass-through",
-      });
-
-      const json = await runCli(["connections", "disconnect", provider, "--json"], { home, apiUrl: backend.url });
-      expect(json.exitCode).toBe(0);
-      expect(JSON.parse(json.stdout)).toEqual({
-        schema_version: 1,
-        status: "disconnected",
+      backend.state.toolOutputs["connections.disconnect"] = () => ({
+        status: "confirmation_required",
         provider,
+        connectedByYou: true,
+        stops: { ingests: "things", triggers: [], abilities: [] },
+        message: `Disconnecting ${label(provider)} stops new items from coming in. To go ahead, call connections.disconnect again with {"provider":"${provider}","confirm":true}.`,
       });
-      expect(json.stderr).toBe("");
 
-      const human = await runCli(["connections", "disconnect", provider], { home, apiUrl: backend.url });
-      expect(human.exitCode).toBe(0);
-      expect(human.stdout).toBe(`${provider === "github" ? "GitHub" : provider[0]!.toUpperCase() + provider.slice(1)}: disconnected`);
-      expect(human.stderr).toBe("");
+      const json = await runCli(["connections", "disconnect", "--provider", provider, "--json"], { home, apiUrl: backend.url });
+      expect(json.exitCode).toBe(1);
+      expect(JSON.parse(json.stdout)).toMatchObject({
+        schema_version: 1,
+        status: "confirmation_required",
+        provider,
+        confirm_with: `draft connections disconnect --provider ${provider} --yes`,
+      });
 
-      const requests = providerRequests();
-      expect(requests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
-        ["DELETE", `/workspaces/ws-1/connections/${provider}`],
-        ["DELETE", `/workspaces/ws-1/connections/${provider}`],
-      ]);
+      const human = await runCli(["connections", "disconnect", "--provider", provider], { home, apiUrl: backend.url });
+      expect(human.exitCode).toBe(1);
+      expect(human.stderr).toContain(`Disconnecting ${label(provider)} stops new items from coming in.`);
+      expect(human.stderr).toContain(`To go ahead, run: draft connections disconnect --provider ${provider} --yes`);
+      expect(human.stderr).not.toContain("connections.disconnect again");
+      expect(disconnectRequests()).toEqual([{ provider }, { provider }]);
     },
   );
+
+  it.each(["github", "fireflies", "linear", "slack"] as const)("disconnects %s with --yes, in JSON and human mode", async (provider) => {
+    backend.state.toolOutputs["connections.disconnect"] = () => ({ status: "disconnected", provider, message: `${label(provider)} is disconnected.` });
+
+    const json = await runCli(["connections", "disconnect", "--provider", provider, "--yes", "--json"], { home, apiUrl: backend.url });
+    expect(json.exitCode).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({ schema_version: 1, status: "disconnected", provider });
+    expect(json.stderr).toBe("");
+
+    const human = await runCli(["connections", "disconnect", "--provider", provider, "--yes"], { home, apiUrl: backend.url });
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toBe(`Disconnected: ${label(provider)}.`);
+    expect(disconnectRequests()).toEqual([{ provider, confirm: true }, { provider, confirm: true }]);
+  });
+
+  it("sends Granola's account kind", async () => {
+    backend.state.toolOutputs["connections.disconnect"] = () => ({ status: "disconnected", provider: "granola" });
+    await runCli(["connections", "disconnect", "--provider", "granola", "--workspace-key", "--yes", "--json"], { home, apiUrl: backend.url });
+    await runCli(["connections", "disconnect", "--provider", "granola", "--yes", "--json"], { home, apiUrl: backend.url });
+    expect(disconnectRequests()).toEqual([
+      { provider: "granola", accountKind: "workspace", confirm: true },
+      { provider: "granola", accountKind: "personal", confirm: true },
+    ]);
+  });
+
+  it("says so when the provider is not connected, and succeeds", async () => {
+    backend.state.toolOutputs["connections.disconnect"] = () => ({ status: "not_connected", provider: "linear", message: "Linear is not connected." });
+    const result = await runCli(["connections", "disconnect", "--provider", "linear", "--yes"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Linear is not connected.");
+  });
+
+  it("shows the tool's refusal when someone else connected it", async () => {
+    backend.state.toolOutputs["connections.disconnect"] = () => ({ __refusal: { code: "not_connection_owner", message: "Only the person who connected Slack can disconnect it." } });
+    const result = await runCli(["connections", "disconnect", "--provider", "slack", "--yes"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Only the person who connected Slack can disconnect it.");
+  });
 });
 
 describe("draft connections grammar and safe failures", () => {
@@ -171,10 +213,19 @@ describe("draft connections grammar and safe failures", () => {
       ["connections", "list", "--json", "--json"],
       ["connections", "list", "--unknown"],
       ["connections", "disconnect"],
-      ["connections", "disconnect", "github", "extra"],
-      ["connections", "disconnect", "future-provider"],
-      ["connections", "disconnect", "slack", "--json", "--json"],
-      ["connections", "disconnect", "slack", "--unknown"],
+      ["connections", "disconnect", "--provider", "github", "extra"],
+      ["connections", "disconnect", "--provider", "future-provider"],
+      ["connections", "disconnect", "--provider", "slack", "--json", "--json"],
+      ["connections", "disconnect", "--provider", "slack", "--unknown"],
+      ["connections", "disconnect", "--provider", "slack", "--workspace-key"],
+      ["connections", "disconnect", "slack"],
+      ["connections", "list", "--provider"],
+      ["connections", "list", "--provider", "future-provider"],
+      ["connections", "read", "--provider", "slack"],
+      ["connections", "read", "--provider", "slack", "--channel", "C1", "--limit", "0"],
+      ["connections", "post", "--provider", "slack", "--channel", "C1"],
+      ["connections", "post", "--provider", "slack", "--channel", "C1", "--text", "  "],
+      ["connections", "post", "slack", "C1", "hello"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });
@@ -187,7 +238,7 @@ describe("draft connections grammar and safe failures", () => {
   });
 
   it("disconnects claude-code deterministically as not_supported, without a network call", async () => {
-    const result = await runCli(["connections", "disconnect", "claude-code", "--json"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "disconnect", "--provider", "claude-code", "--json"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "not_supported" });
     expect(backend.state.requests).toHaveLength(0);
@@ -229,26 +280,61 @@ describe("connections help and completion", () => {
     const result = await runCli(["--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("connections list");
-    expect(result.stdout).toContain("connections connect <provider>");
-    expect(result.stdout).toContain("connections disconnect <provider>");
-    expect(result.stdout).toContain("connections slack channels list|set");
+    expect(result.stdout).toContain("connections connect --provider <provider>");
+    expect(result.stdout).toContain("connections disconnect --provider <provider>");
+    expect(result.stdout).toContain("connections read --provider <provider>");
+    expect(result.stdout).toContain("connections post --provider <provider>");
+    expect(result.stdout).toContain("connections join --provider <provider>");
+    expect(result.stdout).toContain("connections leave --provider <provider>");
     expect(result.stdout).toContain("Connect github, slack, linear, fireflies, granola, or claude-code");
   });
 
   it("lists every integrations subcommand with a pointer to per-command help", async () => {
     const result = await runCli(["connections", "--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    for (const command of ["list", "connect <provider>", "disconnect <provider>", "slack channels list|set"]) {
+    for (const command of ["list", "connect --provider <provider>", "disconnect --provider <provider>", "join --provider <provider>", "leave --provider <provider>", "read --provider <provider>", "post --provider <provider>"]) {
       expect(result.stdout).toContain(command);
     }
     expect(result.stdout).toContain("Run `draft connections <command> --help` for details.");
   });
 
-  it.each(["list", "connect", "disconnect", "slack"])("prints full usage for integrations %s --help", async (subcommand) => {
+  it.each(["list", "connect", "disconnect", "join", "leave", "read", "post"])("prints full usage for integrations %s --help", async (subcommand) => {
     const result = await runCli(["connections", subcommand, "--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`Usage: draft connections ${subcommand}`);
     expect(result.stdout).toContain("Examples:");
+  });
+
+  it("list --provider slack --help shows every way to see the channels", async () => {
+    const result = await runCli(["connections", "list", "--provider", "slack", "--help"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    for (const form of [
+      "draft connections list --provider slack\n",
+      "draft connections list --provider slack --available\n",
+      "draft connections list --provider slack --available --query eng",
+      "draft connections list --provider slack --available --limit 100",
+      "draft connections list --provider slack --available --cursor '<cursor>'",
+      "draft connections list --provider slack --json",
+      "draft connections list --provider slack --available --json",
+    ]) expect(result.stdout).toContain(form);
+    expect(result.stdout).toContain("The channels the bot is already in are listed too.");
+    expect(result.stdout).toContain('"More:" line');
+    expect(result.stdout).toContain("available.nextCursor");
+    for (const next of ["connections join --provider slack", "connections leave --provider slack", "connections read --provider slack", "connections post --provider slack"]) {
+      expect(result.stdout).toContain(next);
+    }
+  });
+
+  it("list --help without a provider points to the Slack page", async () => {
+    const result = await runCli(["connections", "list", "--help"], { home, apiUrl: backend.url });
+    expect(result.stdout).toContain("--available");
+    expect(result.stdout).toContain("draft connections list --provider slack --help");
+  });
+
+  it("join --help explains the picker and that an agent must pass --channel", async () => {
+    const result = await runCli(["connections", "join", "--help"], { home, apiUrl: backend.url });
+    expect(result.stdout).toContain("draft connections list --provider slack --available");
+    expect(result.stdout).toContain("A script or an agent has no terminal, so it must pass --channel.");
   });
 
   it("connect --help names every provider and explains the agent link flow", async () => {
@@ -271,29 +357,35 @@ describe("connections help and completion", () => {
     const bash = await runCli(["completion"], { home, apiUrl: backend.url });
     expect(bash.exitCode).toBe(0);
     expect(bash.stdout).toContain('commands="add auth context people routines activity sources sessions skills connections update uninstall completion"');
-    expect(bash.stdout).toContain('compgen -W "list connect disconnect slack"');
+    expect(bash.stdout).toContain('compgen -W "list connect disconnect join leave read post"');
     expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola claude-code"');
     expect(bash.stdout).toContain('compgen -W "list options create update delete run runs"');
-    expect(bash.stdout).toContain('connections:connect) flags="--json --wait --no-open');
+    expect(bash.stdout).toContain('connections:connect) flags="--provider --json --wait --no-open');
+    expect(bash.stdout).toContain('connections:list) flags="--provider --available --query --limit --cursor --json"');
+    expect(bash.stdout).toContain('connections:join) flags="--provider --channel --json"');
+    expect(bash.stdout).toContain('connections:leave) flags="--provider --channel --json"');
+    expect(bash.stdout).toContain('connections:read) flags="--provider --channel --limit --json"');
+    expect(bash.stdout).toContain('connections:post) flags="--provider --channel --text --json"');
     expect(bash.stdout).toContain('routines:*) flags="--on --github --github-access');
-    expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola"');
+    expect(bash.stdout).toContain('--provider)');
 
     const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
     expect(zsh.exitCode).toBe(0);
     for (const command of ["add:", "auth:", "context:", "people:", "sources:", "sessions:", "skills:", "connections:", "update:", "completion:"]) {
       expect(zsh.stdout).toContain(`'${command}`);
     }
-    expect(zsh.stdout).toContain("'list:Show each connection and what it unlocks'");
-    expect(zsh.stdout).toContain("'connect:Connect a hosted connection'");
-    expect(zsh.stdout).toContain("'disconnect:Disconnect a hosted connection'");
-    expect(zsh.stdout).toContain("'github:GitHub'");
-    expect(zsh.stdout).toContain("'claude-code:Claude Code'");
+    expect(zsh.stdout).toContain("'list:Show each connection and what you can do with it'");
+    expect(zsh.stdout).toContain("'connect:Connect a provider'");
+    expect(zsh.stdout).toContain("'disconnect:Disconnect a provider'");
+    expect(zsh.stdout).toContain("'join:Have the bot join channels'");
+    expect(zsh.stdout).toContain("'leave:Have the bot leave channels'");
+    expect(zsh.stdout).toContain("'--available[Also list every public channel]'");
+    expect(zsh.stdout).toContain("'read:Read recent messages from a provider'");
+    expect(zsh.stdout).toContain("'post:Post a message through a provider'");
+    expect(zsh.stdout).toContain("'--provider[The provider to connect]:provider:(github slack linear fireflies granola claude-code)'");
+    expect(zsh.stdout).toContain("'--yes[Confirm and disconnect]'");
     expect(zsh.stdout).toContain("'--wait[Wait until connected]'");
     expect(zsh.stdout).toContain("'runs:List the runs of a routine'");
     expect(zsh.stdout).toContain("'--github-access=[GitHub access level]:access:'");
-    expect(zsh.stdout).toContain("'fireflies:Fireflies'");
-    expect(zsh.stdout).toContain("'linear:Linear'");
-    expect(zsh.stdout).toContain("'slack:Slack'");
-    expect(zsh.stdout).toContain("'granola:Granola'");
   });
 });

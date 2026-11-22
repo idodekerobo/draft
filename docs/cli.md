@@ -196,11 +196,46 @@ Instructions must be a self-contained brief: what to do, why, and what done mean
 
 One-time routines are hidden from `list` by default. `--once` selects them; `--upcoming` and `--fired` imply `--once` and cannot be combined. `--mine` shows routines created by you. Filters apply to the list, so do not combine them with an individual `<id>`.
 
-One-time rows show their scheduled time or when they fired. Routines an agent made have a “made by an agent” label. A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft connections connect linear`. An agent that isn't set up for routines in your workspace is refused too, with how to set it up. Failed commands print the error and exit nonzero.
+One-time rows show their scheduled time or when they fired. Routines an agent made have a “made by an agent” label. A trigger or access that needs a provider you haven't connected is refused, with the command to connect it, for example `draft connections connect --provider linear`. An agent that isn't set up for routines in your workspace is refused too, with how to set it up. Failed commands print the error and exit nonzero.
 
 `run <id>` requests an immediate run, including for a paused routine or a one-time routine that already fired. If work for it is in progress, the request is queued until that work ends; the response has `queued: true` and no run ID. In that case `--wait` returns the queued result rather than waiting. Otherwise, use the returned run ID with `runs`, or use `--wait` to follow it immediately. A manual run does not repeat the original one-time delay.
 
 `runs` lists status, what started each run, its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time. When there are older runs or more transcript, the output ends with the command for the next page.
+
+## People
+
+`draft people` shows who Draft knows in your workspace and how to reach them. A person is not always a Draft user: it can be someone named in a meeting who has no account. Each command calls one MCP tool as you, and `--json` prints the tool's answer.
+
+| Command | What it does |
+| --- | --- |
+| `draft people find [name] [--me] [--email <address>] [--status <s>]` | Find people. It never prints emails or ids of other systems |
+| `draft people create <name> [--email <a>] [--slack <id>] [--quote <why>] [--force]` | Add a teammate. An admin's addition is active, anyone else's waits for approval |
+| `draft people update <id or name> --provider <p> ...` | Record, correct or remove a way to recognise a person (below) |
+| `draft people pending` | Who is waiting for approval |
+| `draft people approve <id or name>` / `reject <id or name> [--reason <why>]` | Admins only |
+| `draft people notify <id or name> <message> [--link <url>]` | Send a message to a person |
+
+### `draft people update`
+
+A person has several ways to be recognised: an email, a Slack id, a Linear or GitHub id, a phone number. `update` changes them. Name the person by id or by name; a name has to match exactly one person, whatever their status. `--provider` is one of `email`, `slack`, `linear`, `github`, `whatsapp`. Each command makes one change, never a mix:
+
+```bash
+# Add one
+draft people update cory --provider slack --external-id U0123 --handle cory --quote "Cory posted as U0123"
+
+# Correct one, in a single step
+draft people update cory --provider email --replace cory@typo.com --external-id cory@right.com
+
+# Remove one
+draft people update cory --provider slack --remove U0123
+```
+
+- `--external-id` is the id: an email address, a Slack member id, and so on. Emails are matched without regard to case.
+- `--handle` is a display name only. It is never used to match. `--quote` and `--source-item <id>` (from `draft sources search`) say where you learned the id.
+- **What you add is a guess** until a connection sees the same id, such as Slack's member sync. A guess cannot be used to message the person.
+- **Only a guess can be replaced or removed.** An id that comes from a workspace member or a connection is kept in step with that source, so the command refuses it with `identity_trusted`. Change it at the source.
+- An id that belongs to someone else is refused with `identity_taken` when you add or replace. When you remove or replace an id the person doesn't have, the answer is `identity_not_found`, whoever owns it.
+- A replace adds the corrected id first. If it belongs to someone else, the old id stays.
 
 ## Activity
 
@@ -341,7 +376,7 @@ If any of the given directories fail validation, `status` is `partial_error`, ea
 
 `draft connections` connects and manages your workspace's data sources: GitHub, Linear, Slack, Fireflies, Granola, and Claude Code. This is different from `draft add`: `add` points a coding agent *inside a project* at the CLI's read commands (`auth login`, `context list`, `context read`); `connections` is workspace-level and has nothing to do with any one project's directory. Run `draft connections <command> --help` for details.
 
-### `draft connections list [--json]`
+### `draft connections list [--provider <provider>] [--available ...] [--json]`
 
 Shows each provider: its status, what it brings into Draft, the routine triggers and abilities it unlocks, and how to connect it if it isn't connected. Status is one of:
 
@@ -350,10 +385,31 @@ Shows each provider: its status, what it brings into Draft, the routine triggers
 - `needs_reconnect`: it stopped working and needs to be connected again.
 - `not_connected`
 
-`--json` prints the same answer as the MCP tool `connections.list`. For Slack's channels, use `draft connections slack channels list`.
+It also lists what you can do with each provider: for Slack, `read`, `post`, `join` and `leave`. For Slack it lists the channels the bot has joined, with their ids.
+
+`--json` prints the same answer as the MCP tool `connections.list`.
+
+#### See every Slack channel
+
+`--available` also lists every public Slack channel, including the ones the bot is already in. It needs `--provider slack`, and it is for people: a routine sees only the channels it may use.
+
+| Form | Shows |
+| --- | --- |
+| `list --provider slack` | Slack's status and the channels the bot has joined, with ids |
+| `list --provider slack --available` | Also every public channel, biggest first: name, id, member count, and whether the bot is in it (`in` or `not in`). 50 per page |
+| `list --provider slack --available --query eng` | Only channels whose name contains `eng`. Case and a leading `#` do not matter |
+| `list --provider slack --available --limit 100` | How many channels per page, 1 to 100 |
+| `list --provider slack --available --cursor '<cursor>'` | The next page. A page that has more ends with a `More:` line holding the exact command. The last page has none |
+| add `--json` to any of them | The tool's answer: `channels` is the joined list, and `available.channels` and `available.nextCursor` (`null` on the last page) are the page |
+
+Slack has no search or offset call for channels, so each request walks Slack's pages and then filters and slices. That is fine for hundreds or a few thousand channels, and every page repeats the walk.
+
+`draft connections list --provider slack --help` shows all of these forms.
 
 ```bash
 draft connections list
+draft connections list --provider slack
+draft connections list --provider slack --available --query eng --limit 20
 draft connections list --json
 ```
 
@@ -368,11 +424,11 @@ When you run `connect` with `--json`, or without a terminal (for example, when a
 Open the link and connect the provider on that page in the Draft app. The link works once, only for you, for 15 minutes, and your key never passes through the CLI or the agent. Add `--wait` to keep checking until the provider is connected.
 
 ```bash
-draft connections connect linear --json
-draft connections connect linear --json --wait
+draft connections connect --provider linear --json
+draft connections connect --provider linear --json --wait
 ```
 
-### `draft connections connect <provider> [--json] ...`
+### `draft connections connect --provider <provider> [--json] ...`
 
 In an interactive terminal, without `--json`, `connect` runs each provider's own flow:
 
@@ -385,30 +441,36 @@ In an interactive terminal, without `--json`, `connect` runs each provider's own
 | `fireflies` | `--no-open` | **Yes — always** | `credentials_stored_webhook_pending` |
 | `granola` | `--workspace-key`, `--credential-stdin` \| `--credential-fd <n>` | No | `connected` |
 
-Omitting `<provider>`, or passing one that isn't in the table above, fails
-immediately with `invalid_connect_usage` (exit `2`) and prints the exact
+The provider is always a flag. Omitting `--provider`, passing a bare provider
+word (`connect slack`), or passing a provider that isn't in the table above,
+fails immediately with `invalid_connect_usage` (exit `2`) and prints the exact
 list of valid providers — it never falls through to any one provider's
 flow by default.
 
+If the provider is already connected, `connect` says so and prints no link:
+`{"status":"connected","provider":"linear","message":"Linear is already connected. No link is needed."}`.
+A connection that is saved and waiting for its first event answers
+`{"status":"pending",...}` the same way.
+
 ```bash
-draft connections connect github                        # prints install-app guidance, then waits for install
-draft connections connect github --no-open --json      # print the install URL instead of opening a browser
+draft connections connect --provider github                        # prints install-app guidance, then waits for install
+draft connections connect --provider github --no-open --json      # print the install URL instead of opening a browser
 
-draft connections connect linear                        # prompts for a Linear API key on the terminal
-echo '{"api_key":"..."}' | draft connections connect linear --credential-stdin --json
+draft connections connect --provider linear                        # prompts for a Linear API key on the terminal
+echo '{"api_key":"..."}' | draft connections connect --provider linear --credential-stdin --json
 
-draft connections connect claude-code
-echo '{"setup_token":"..."}' | draft connections connect claude-code --credential-stdin
+draft connections connect --provider claude-code
+echo '{"setup_token":"..."}' | draft connections connect --provider claude-code --credential-stdin
 
-draft connections connect slack                         # opens the Slack app-manifest page, then prompts for
+draft connections connect --provider slack                         # opens the Slack app-manifest page, then prompts for
                                                            # xoxb-/xapp- tokens, then an interactive channel picker
-draft connections connect slack --credential-fd 3 3<tokens.json   # automation mode — channel_ids default to []
+draft connections connect --provider slack --credential-fd 3 3<tokens.json   # automation mode — channel_ids default to []
 
-draft connections connect fireflies                      # requires an attended terminal end to end
+draft connections connect --provider fireflies                      # requires an attended terminal end to end
 
-draft connections connect granola                        # prompts for a personal Granola API key
-draft connections connect granola --workspace-key         # connects the workspace's shared key instead
-echo '{"api_token":"grn_..."}' | draft connections connect granola --credential-stdin --json
+draft connections connect --provider granola                        # prompts for a personal Granola API key
+draft connections connect --provider granola --workspace-key         # connects the workspace's shared key instead
+echo '{"api_token":"grn_..."}' | draft connections connect --provider granola --credential-stdin --json
 ```
 
 `github`, `linear`, `claude-code`, `slack`, and `granola` accept
@@ -449,14 +511,15 @@ grant repo access), then "Waiting for installation." while it polls for
 completion — it resolves to `connected` or an error once you finish the
 install in the browser.
 
-**Slack**'s channel picker (during `connect slack`, and during
-`slack channels set` with no IDs given) only runs when you're at an attended
+**Slack**'s channel picker (during the first `connect --provider slack`, and
+during `join` with no `--channel`) only runs when you're at an attended
 terminal; scripted/automated runs default to an empty channel selection
-(`[]`) rather than prompting. Slack message capture depends on exactly one
-backend replica holding the account's Socket Mode connection at a time —
-this doesn't affect the CLI directly, but it's why a fresh `connect`/
-`channels set` may take a moment to show captured activity after a backend
-deploy.
+(`[]`) at connect, and `join` without `--channel` fails with a usage error
+rather than prompting. To change channels after connecting, use `join` and
+`leave` below. Slack message capture depends on exactly one backend replica
+holding the account's Socket Mode connection at a time — this doesn't affect
+the CLI directly, but it's why a fresh `connect`/`join` may take a moment to
+show captured activity after a backend deploy.
 
 **Fireflies** ends in `credentials_stored_webhook_pending`, not `connected`
 — the CLI stores the token and shows you the webhook details, but can't
@@ -483,12 +546,17 @@ backend registers a webhook with Granola directly using the key (no
 paste-into-Granola-UI step) and backfills the last 7 days of existing notes;
 everything after that arrives via the webhook.
 
-### `draft connections disconnect <provider> [--json] [--workspace-key]`
+### `draft connections disconnect --provider <provider> [--yes] [--json] [--workspace-key]`
+
+Without `--yes` it reports what would stop and changes nothing (exit `1`). Run
+it again with `--yes` to disconnect. Only the person who connected a provider
+can disconnect it.
 
 ```bash
-draft connections disconnect github
-draft connections disconnect linear --json
-draft connections disconnect granola --workspace-key   # the workspace key, not your own
+draft connections disconnect --provider github            # prints what would stop, and the command to confirm
+draft connections disconnect --provider github --yes
+draft connections disconnect --provider linear --yes --json
+draft connections disconnect --provider granola --workspace-key --yes   # the workspace key, not your own
 ```
 
 Supported for `github`, `fireflies`, `linear`, `slack`, `granola` — each
@@ -499,35 +567,38 @@ credential to revoke server-side.
 
 `--workspace-key` only applies to `granola`, which is the one provider that
 can have two live connections at once (your personal key and the workspace
-key); it selects which one to disconnect and is ignored (rejected as
-`invalid_usage`) for every other provider. Omitting it disconnects your own
-personal Granola connection.
+key); it selects which one to disconnect and is rejected as `invalid_usage`
+for every other provider. Omitting it disconnects your own personal Granola
+connection.
 
-### `draft connections slack channels list [--json]`
+### Slack channels: `join`, `leave`, `read`, `post`
 
-Lists the connected Slack workspace's channels — `id`, `name`,
-`memberCount`, `isMember` — as seen by the backend today.
-
-```bash
-draft connections slack channels list
-```
-
-### `draft connections slack channels set [<channel-id>...] [--json]`
-
-Replaces the bot's channel membership with exactly the given set (not a
-diff — omitted channels are left). Given no IDs at all: on an attended
-terminal, lists the current channels and offers the same interactive picker
-as `connect slack`; without a TTY, defaults to `[]` (leaves every channel).
+Connect Slack once, then choose its channels one at a time. Each command
+takes `--provider slack` and channel ids or `#names`. Names match case-insensitively.
 
 ```bash
-draft connections slack channels set C0123 C0456
-draft connections slack channels set                # interactive picker (TTY) or [] (automation)
+draft connections list --provider slack --available      # which channels exist, and which the bot is in
+draft connections join --provider slack --channel '#eng,#ops'
+draft connections leave --provider slack --channel '#eng'
+draft connections read --provider slack --channel '#general' --limit 20
+draft connections post --provider slack --channel '#standup' --text 'Deploy is done.'
+echo 'Deploy is done.' | draft connections post --provider slack --channel '#standup' --text -
 ```
 
-A join/leave that fails for one channel doesn't fail the whole command —
-the response's `failed` array (and a printed warning per failure) reports
-which channels didn't converge; retrying `channels set` with the same
-target set is safe and will retry only what didn't converge.
+- **`join` and `leave`** change only the channels you name, and say which
+  changed, which were already so, and which failed. They work on public
+  channels, and `--channel` takes a comma-separated list. A failure for one
+  channel doesn't fail the others; the exit code is `1` when any failed.
+  Without `--channel`, `join` in a terminal (and without `--json`) shows the 100
+  biggest channels the bot is not in and asks which to join. A script or an
+  agent has no terminal, so it must pass `--channel`.
+- **`read`** prints recent messages from a channel the bot has joined (`--limit`
+  is 1 to 50, default 20). Read before you post.
+- **`post`** posts to a channel the bot has joined. Draft adds a line saying
+  who sent it. `--text -` reads the message from stdin.
+
+Joining and leaving are for people. A routine can read and post only in the
+channels its permissions name.
 
 ### JSON Lines event vocabulary
 
@@ -627,9 +698,9 @@ Follow the printed instructions to install into your shell profile.
 
 ## Machine-readable output
 
-Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `connections connect github`/`slack`/`fireflies`/`linear`/`granola` (one `browser_required`/`handoff_required` line for github/slack/fireflies, plus `awaiting_install`/`awaiting_credentials` progress lines for some providers, then one terminal line) — see [Hosted connections](#hosted-connections) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
+Every command accepts `--json`. Most `--json` invocations write exactly one JSON object to stdout with `schema_version: 1`. A few stream JSON Lines instead — one object per line, ending with a terminal line: `auth login` (one `pairing_required` line, then one terminal line) and `connections connect --provider github`/`slack`/`fireflies`/`linear`/`granola` (one `browser_required`/`handoff_required` line for github/slack/fireflies, plus `awaiting_install`/`awaiting_credentials` progress lines for some providers, then one terminal line) — see [Hosted connections](#hosted-connections) above. stdout carries JSON only in `--json` mode; human-readable errors go to stderr.
 
-**Exit codes:** `0` success · `1` authentication/API/operational error · `2` invalid usage · `130` interrupted (Ctrl+C — during `auth login`, or during an `connections connect`/`slack channels set` prompt).
+**Exit codes:** `0` success · `1` authentication/API/operational error · `2` invalid usage · `130` interrupted (Ctrl+C — during `auth login`, or during a `connections connect`/`connections join` prompt).
 
 ---
 

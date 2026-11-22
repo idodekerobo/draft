@@ -5,7 +5,7 @@ import {
   type HostedConnectionStatus,
   type HostedConnectionSummary,
 } from "draft-core/integrations/hosted-connections";
-import type { HostedSlackChannel, SlackMembershipReconcileResult } from "../cloud-client.ts";
+import { runModeErrorMessage, type HostedSlackChannel, type SlackMembershipReconcileResult } from "../cloud-client.ts";
 import { PROVIDER_LABELS } from "./types.ts";
 
 export type IntegrationErrorCode =
@@ -19,6 +19,8 @@ export type IntegrationErrorCode =
   | "session_refresh_transient"
   | "whoami_failed"
   | "no_workspace"
+  | "run_credentials_incomplete"
+  | "run_token_refused"
   | "request_failed"
   | "malformed_response"
   | "not_supported"
@@ -46,7 +48,7 @@ interface ErrorDefinition {
 export const INTEGRATION_ERROR_REGISTRY: Record<IntegrationErrorCode, ErrorDefinition> = {
   invalid_usage: { message: "Invalid connections command.", action: "draft --help", exitCode: 2 },
   invalid_connect_usage: {
-    message: `Usage: draft connections connect <${HOSTED_CONNECTION_PROVIDERS.join("|")}> [options].`,
+    message: `Usage: draft connections connect --provider <${HOSTED_CONNECTION_PROVIDERS.join("|")}> [options].`,
     exitCode: 2,
   },
   credential_input_required: { message: "Credential input requires a controlling terminal or an explicit credential source.", exitCode: 2 },
@@ -57,6 +59,8 @@ export const INTEGRATION_ERROR_REGISTRY: Record<IntegrationErrorCode, ErrorDefin
   session_refresh_transient: { message: "Could not refresh the current session. Retry shortly.", exitCode: 1 },
   whoami_failed: { message: "Could not verify the current workspace. Retry shortly.", exitCode: 1 },
   no_workspace: { message: "No workspace yet — finish onboarding in the Draft app.", exitCode: 1 },
+  run_credentials_incomplete: { message: runModeErrorMessage("run_credentials_incomplete")!, exitCode: 1 },
+  run_token_refused: { message: runModeErrorMessage("run_token_refused")!, exitCode: 1 },
   request_failed: { message: "Could not complete the connection request. Retry shortly.", exitCode: 1 },
   malformed_response: { message: "The Draft backend returned an invalid response. Retry shortly.", exitCode: 1 },
   not_supported: { message: "That connection operation is not supported.", exitCode: 1 },

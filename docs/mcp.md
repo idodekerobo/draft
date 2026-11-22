@@ -106,19 +106,26 @@ Run rows include `routineKind` (`once`, `rule` or `null`) and `createdRoutines`,
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `connections.list` | `{}` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; and how to connect it. |
-| `connections.connect` | `{ provider }` | Start connecting a provider. Answers `{ status: "action_required", url, expiresAt }`. Your agent gives you the link, and you sign in or enter the key on that page in the Draft app. The link works once, only for you, for 15 minutes. Answers `{ status: "connected" }` if it already is. |
+| `connections.list` | `{ provider?, available?, query?, limit?, cursor? }` | Every provider (GitHub, Slack, Linear, Fireflies, Granola, Claude Code): `connected`, `pending` (saved, waiting for its first event), `needs_reconnect` or `not_connected`; what it brings in; which routine triggers and abilities it unlocks; how to connect it; and `actions`, the verbs you may call on it with their fields. For Slack, `channels` lists the channels the bot has joined. With `provider: "slack"` and `available: true` (people only) it also returns `available`: every public channel as `{ id, name, memberCount, joined }`, biggest first, so you see the channels the bot is in and the ones it could join. `limit` is 1 to 100 (default 50), `query` narrows by name, and `available.nextCursor` is the `cursor` for the next page, or `null` on the last. |
+| `connections.connect` | `{ provider }` | Start connecting a provider. Answers `{ status: "action_required", url, expiresAt }`. Your agent gives you the link, and you sign in or enter the key on that page in the Draft app. The link works once, only for you, for 15 minutes. Answers `{ status: "connected", message }` with no link if it already is, and `{ status: "pending", message }` if it is saved and waiting for its first event. |
+| `connections.disconnect` | `{ provider, accountKind?, confirm? }` | Disconnect a provider you connected. Without `confirm` it answers `{ status: "confirmation_required", stops, message }` and changes nothing. With `confirm: true` it disconnects. |
+| `connections.join` | `{ provider, channels }` | Slack: have the bot join public channels, by id or `#name`. It changes only the channels you name and answers which it joined (`changed`), which it was already in (`unchanged`) and which failed (`failed`). People only. |
+| `connections.leave` | `{ provider, channels }` | Slack: have the bot leave public channels, by id or `#name`. Draft stops reading them, and messages it already read stay. Answers `changed`, `unchanged` and `failed` like join. People only. |
+| `connections.read` | `{ provider, channel, limit? }` | Read recent messages from a connected provider. Slack today: a channel id or `#name` the bot has joined. |
+| `connections.post` | `{ provider, channel, text }` | Post a message through a connected provider. Slack today. Draft adds an attribution line. |
 
-Your agent never sees your keys: you enter them on the Draft page the link opens. To disconnect a provider, use the Draft app or `draft connections disconnect`.
+Your agent never sees your keys: you enter them on the Draft page the link opens. Every refusal names what would have worked, such as the channels the bot has joined.
 
-### Skills, people and Slack
+### Skills and people
 
 | Tool | Purpose |
 | --- | --- |
 | `skills.list`, `skills.read` | List and read shared workspace skills. |
 | `skills.add` | Create a new shared skill. Fails with `duplicate_name` if the name exists. |
-| `people.find`, `people.create`, `people.add_identity`, `people.notify`, `people.approve`, `people.reject` | Find the workspace's people, add people and their identities, and message a teammate. |
-| `slack.list_channels`, `slack.read_channel`, `slack.post_message` | List the channels Draft's bot is in, read one, and post to one. |
+| `skills.update` | Replace an existing skill's content and fields. Fails with `skill_not_found` if the name does not exist. |
+| `skills.delete` | Remove a skill from the workspace. A client asks before it runs, because the tool is marked destructive. Fails with `skill_not_found` if the name does not exist. |
+| `people.find`, `people.create`, `people.notify`, `people.approve`, `people.reject` | Find the workspace's people, add people, message a teammate, and approve or reject a pending one. |
+| `people.update` | `{ personId, provider, externalId?, replaces?, remove?, handle?, evidence? }` | Record another way to recognise a known person (a Slack id, an email), correct one, or remove one. Give `externalId` to add, `externalId` and `replaces` to swap a wrong id for the right one in one step, or `remove` alone to remove one. What you add is a guess until a connection sees the same id, so it cannot be used to message them. Only a guess can be removed or replaced: an id that comes from a workspace member or a connection is kept in step with that source, and the tool refuses it with `identity_trusted`. `identity_taken` means the id belongs to someone else; an id someone else owns reads as `identity_not_found`. |
 
 ## Connect Claude Code
 

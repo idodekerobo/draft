@@ -179,7 +179,7 @@ describe("draft connections connect linear / claude-code", () => {
   afterEach(() => backend.stop());
 
   it("connects linear end-to-end through --credential-stdin", async () => {
-    const result = await runCli(["connections", "connect", "linear", "--credential-stdin", "--json"], {
+    const result = await runCli(["connections", "connect", "--provider", "linear", "--credential-stdin", "--json"], {
       home,
       apiUrl: backend.url,
       stdin: JSON.stringify({ api_key: "lin_api_e2e" }),
@@ -196,7 +196,7 @@ describe("draft connections connect linear / claude-code", () => {
   });
 
   it("connects claude-code end-to-end through --credential-stdin", async () => {
-    const result = await runCli(["connections", "connect", "claude-code", "--credential-stdin", "--json"], {
+    const result = await runCli(["connections", "connect", "--provider", "claude-code", "--credential-stdin", "--json"], {
       home,
       apiUrl: backend.url,
       stdin: JSON.stringify({ setup_token: "setup_e2e" }),
@@ -217,7 +217,7 @@ describe("draft connections connect linear / claude-code", () => {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-    const result = await runCli(["connections", "connect", "linear", "--credential-stdin", "--json"], {
+    const result = await runCli(["connections", "connect", "--provider", "linear", "--credential-stdin", "--json"], {
       home,
       apiUrl: backend.url,
       stdin: JSON.stringify({ api_key: "canary-malformed-secret" }),
@@ -230,12 +230,12 @@ describe("draft connections connect linear / claude-code", () => {
 
   it("rejects invalid grammar before any request", async () => {
     const cases = [
-      ["connections", "connect", "linear", "extra"],
-      ["connections", "connect", "linear", "--json", "--json"],
-      ["connections", "connect", "linear", "--no-open"],
-      ["connections", "connect", "linear", "--credential-stdin", "--credential-fd", "3"],
-      ["connections", "connect", "claude-code", "extra"],
-      ["connections", "connect", "claude-code", "--no-open"],
+      ["connections", "connect", "--provider", "linear", "extra"],
+      ["connections", "connect", "--provider", "linear", "--json", "--json"],
+      ["connections", "connect", "--provider", "linear", "--no-open"],
+      ["connections", "connect", "--provider", "linear", "--credential-stdin", "--credential-fd", "3"],
+      ["connections", "connect", "--provider", "claude-code", "extra"],
+      ["connections", "connect", "--provider", "claude-code", "--no-open"],
     ];
     for (const args of cases) {
       const result = await runCli(args, { home, apiUrl: backend.url });
@@ -245,7 +245,7 @@ describe("draft connections connect linear / claude-code", () => {
   });
 
   it("disconnects claude-code deterministically as not_supported without a network call", async () => {
-    const result = await runCli(["connections", "disconnect", "claude-code", "--json"], {
+    const result = await runCli(["connections", "disconnect", "--provider", "claude-code", "--json"], {
       home,
       apiUrl: backend.url,
     });

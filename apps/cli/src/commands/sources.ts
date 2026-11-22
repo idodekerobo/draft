@@ -1,5 +1,5 @@
 import type { SourceListInput, SourceReadInput, SourceSearchInput, SourceRepresentation } from "draft-core/sources";
-import { fetchSourceRead, fetchSourcesList, fetchSourcesSearch } from "../cloud-client.ts";
+import { fetchSourceRead, fetchSourcesList, fetchSourcesSearch, runModeErrorMessage } from "../cloud-client.ts";
 import { runSessionsCapture } from "./sessions.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { cyan, red } from "../utils/output.ts";
@@ -61,7 +61,8 @@ function valueAfter(args: string[], index: number, flag: string): { value?: stri
 }
 
 function printFailure(command: string, code: string, json: boolean): number {
-  const payload = errorPayload(code, code === "not_authenticated" ? "Not signed in." : "Could not complete the source request.", code === "not_authenticated" ? "draft auth login" : undefined);
+  const runMode = runModeErrorMessage(code);
+  const payload = errorPayload(code, runMode ?? (code === "not_authenticated" ? "Not signed in." : "Could not complete the source request."), code === "not_authenticated" ? "draft auth login" : undefined);
   if (json) printJsonLine(payload);
   else console.error(red(`${command}: ${payload.message}${payload.action ? ` Run \`${payload.action}\`.` : ""}`));
   return EXIT_OPERATIONAL_ERROR;
