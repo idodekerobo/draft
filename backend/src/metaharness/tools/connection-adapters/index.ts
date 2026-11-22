@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSlackAdapter, type SlackChannelDeps, type SlackDeps } from "./slack";
 import type { ConnectionAdapter } from "./types";
 
-export type { AdapterContext, BrowseInput, BrowseResult, ConnectionAdapter, ConnectionVerb, PostInput, ProviderAction, ReadInput, ScopeInput } from "./types";
+export type { AdapterContext, BrowseInput, BrowseResult, ConnectionAdapter, ConnectionVerb, PostInput, ProviderAction, ReadInput, ScopeInput, SearchInput } from "./types";
 
 export interface ConnectionAdapterDeps {
   slack?: SlackDeps;

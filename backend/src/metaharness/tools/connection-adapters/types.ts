@@ -19,9 +19,29 @@ export interface AdapterContext {
   caller: ToolCaller;
 }
 
+/** Every field `connections.read` takes. Each is for one provider, and that provider refuses a call that lacks what it needs. */
 export interface ReadInput {
   channel?: string;
   limit?: number;
+  messageId?: string;
+  threadId?: string;
+  attachmentId?: string;
+  fileId?: string;
+  version?: string;
+  asOf?: string;
+  include?: string[];
+  maxBytes?: number;
+  cursor?: string;
+}
+
+export interface SearchInput {
+  query: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  cursor?: string;
+  fileId?: string;
+  includeHistory?: boolean;
 }
 
 export interface PostInput {
@@ -31,6 +51,7 @@ export interface PostInput {
 
 export interface ScopeInput {
   channels?: string[];
+  folders?: string[];
 }
 
 export interface BrowseInput {
@@ -59,6 +80,8 @@ export interface ConnectionAdapter {
   actions: ReadonlyArray<ProviderAction>;
   read?(context: AdapterContext, input: ReadInput): Promise<ToolHandlerResult>;
   post?(context: AdapterContext, input: PostInput): Promise<ToolHandlerResult>;
+  /** Answers `{ provider, results: [{ id, title, snippet, date, ... }], nextCursor }`, with nextCursor null on the last page. */
+  search?(context: AdapterContext, input: SearchInput): Promise<ToolHandlerResult>;
   join?(context: AdapterContext, input: ScopeInput): Promise<ToolHandlerResult>;
   leave?(context: AdapterContext, input: ScopeInput): Promise<ToolHandlerResult>;
   /** Everything a person could join, one page at a time. For connections.list with available. */

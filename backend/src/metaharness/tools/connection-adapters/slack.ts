@@ -216,7 +216,8 @@ export function createSlackAdapter(client: SupabaseClient, slackDeps: SlackDeps 
     audit: (verb, input) => {
       if (verb === "read") return { provider: "slack", channel: input.channel, limit: input.limit ?? null };
       if (verb === "post") return { provider: "slack", channel: input.channel, textBytes: Buffer.byteLength(String(input.text ?? ""), "utf8") };
-      return { provider: "slack", channelCount: Array.isArray(input.channels) ? input.channels.length : 0 };
+      if (verb === "join" || verb === "leave") return { provider: "slack", channelCount: Array.isArray(input.channels) ? input.channels.length : 0 };
+      return { provider: "slack" };
     },
   };
 }

@@ -11,7 +11,13 @@ import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { requireUser } from "./shared";
 
 /** The tool a run needs a grant for to use a verb. Joining and leaving are for people. */
-const VERB_TOOL: Partial<Record<ConnectionVerb, string>> = { read: "connections.read", post: "connections.post" };
+const VERB_TOOL: Partial<Record<ConnectionVerb, string>> = { read: "connections.read", post: "connections.post", search: "connections.search" };
+
+/**
+ * What a caller names after connecting. Gmail and Google Drive are connected together as "google", then used by their own names.
+ * connect and disconnect take only INTEGRATION_PROVIDERS.
+ */
+export const SERVICE_PROVIDERS = [...INTEGRATION_PROVIDERS, "gmail", "google_drive"] as const;
 
 export interface IntegrationToolDeps {
   slack?: ConnectionAdapterDeps["slack"];
@@ -49,7 +55,7 @@ export function createIntegrationTools(client: SupabaseClient, deps: Integration
   const list = defineTool({
     name: "connections.list", mcp: true,
     input: z.object({
-      provider: z.enum(INTEGRATION_PROVIDERS).optional().describe("Only this provider. Omit for all."),
+      provider: z.enum(SERVICE_PROVIDERS).optional().describe("Only this provider. Omit for all."),
       available: z.boolean().optional().describe("Slack only, with provider: also list every public channel, whether or not the bot has joined it, biggest first. People only."),
       query: z.string().min(1).optional().describe("With available: only channels whose name contains this."),
       limit: z.number().int().min(1).max(100).optional().describe("With available: how many channels to return, up to 100. Default 50."),
@@ -71,12 +77,16 @@ export function createIntegrationTools(client: SupabaseClient, deps: Integration
 
       const granted = grantedProviders(caller, "connections.list");
       const all = await listIntegrations(client, caller.workspaceId, actingUserId(caller));
-      const visible = all.filter((item) => (!input.provider || item.provider === input.provider) && (caller.origin.kind === "person" || granted.has(item.provider)));
+      const visible = all.filter((item) => {
+        const mine = rowAdapters(item.provider);
+        const named = !input.provider || item.provider === input.provider || mine.some((adapter) => adapter.provider === input.provider);
+        return named && (caller.origin.kind === "person" || granted.has(item.provider) || mine.some((adapter) => granted.has(adapter.provider)));
+      });
       let badCursor: ToolHandlerResult | null = null;
       const connections = await Promise.all(visible.map(async (item) => {
         const mine = rowAdapters(item.provider);
         const row: Record<string, unknown> = { ...item, actions: mine.flatMap((adapter) => actionsFor(caller, adapter)) };
-        const browseTarget = browsing ? mine.find((adapter) => adapter.browse) : undefined;
+        const browseTarget = browsing ? mine.find((adapter) => adapter.provider === input.provider && adapter.browse) : undefined;
         if (item.status !== "connected") {
           if (browseTarget) row.availableError = browseTarget.notConnectedMessage;
           return row;
@@ -110,25 +120,29 @@ export function createIntegrationTools(client: SupabaseClient, deps: Integration
     },
   });
 
-  const channelsField = z.array(z.string().min(1)).min(1).max(100).describe("Slack channel ids or #names. connections.list with available: true shows the ids.");
+  const scopeFields = {
+    provider: z.enum(SERVICE_PROVIDERS),
+    channels: z.array(z.string().min(1)).min(1).max(100).optional().describe("Slack: channel ids or #names. connections.list with available: true shows the ids."),
+    folders: z.array(z.string().min(1)).min(1).max(100).optional().describe("Google Drive: folder ids. connections.list with available: true shows them."),
+  };
   const join = defineTool({
     name: "connections.join", mcp: true, allowedOrigins: ["person"],
-    input: z.object({ provider: z.enum(INTEGRATION_PROVIDERS), channels: channelsField }),
+    input: z.object(scopeFields),
     description: "Have a connected provider join channels: Slack's bot joins public channels, so Draft reads them and a routine can post in them. It changes only the channels you name, and says which it joined, which it was already in, and which failed. To see every public channel, call connections.list with provider \"slack\" and available: true.",
     auditArguments: (input) => adapterOf(input.provider)?.audit?.("join", input) ?? { provider: input.provider },
     handler: ({ caller, input }) => {
       const adapter = adapterOf(input.provider);
-      return adapter?.join ? adapter.join({ client, caller }, { channels: input.channels }) : Promise.resolve(unsupported(input.provider, "join"));
+      return adapter?.join ? adapter.join({ client, caller }, { channels: input.channels, folders: input.folders }) : Promise.resolve(unsupported(input.provider, "join"));
     },
   });
   const leave = defineTool({
     name: "connections.leave", mcp: true, allowedOrigins: ["person"],
-    input: z.object({ provider: z.enum(INTEGRATION_PROVIDERS), channels: channelsField }),
+    input: z.object(scopeFields),
     description: "Have a connected provider leave channels: Slack's bot leaves public channels and Draft stops reading them. Messages Draft already read stay. It changes only the channels you name, and says which it left and which it was not in.",
     auditArguments: (input) => adapterOf(input.provider)?.audit?.("leave", input) ?? { provider: input.provider },
     handler: ({ caller, input }) => {
       const adapter = adapterOf(input.provider);
-      return adapter?.leave ? adapter.leave({ client, caller }, { channels: input.channels }) : Promise.resolve(unsupported(input.provider, "leave"));
+      return adapter?.leave ? adapter.leave({ client, caller }, { channels: input.channels, folders: input.folders }) : Promise.resolve(unsupported(input.provider, "leave"));
     },
   });
 
@@ -185,23 +199,59 @@ export function createIntegrationTools(client: SupabaseClient, deps: Integration
   const read = defineTool({
     name: "connections.read", mcp: true,
     input: z.object({
-      provider: z.enum(INTEGRATION_PROVIDERS),
-      channel: z.string().min(1).describe("Slack: a channel id or #name the bot has joined. connections.list shows them."),
+      provider: z.enum(SERVICE_PROVIDERS),
+      channel: z.string().min(1).optional().describe("Slack: a channel id or #name the bot has joined. connections.list shows them."),
       limit: z.number().int().min(1).max(50).optional().describe("Slack: how many recent messages, up to 50. Default 20."),
+      messageId: z.string().min(1).optional().describe("Gmail: one message, from connections.search."),
+      threadId: z.string().min(1).optional().describe("Gmail: a whole thread, from connections.search."),
+      attachmentId: z.string().min(1).optional().describe("Gmail, with messageId: one attachment that reading the message listed."),
+      fileId: z.string().min(1).optional().describe("Google Drive: a file, from connections.search."),
+      version: z.string().min(1).optional().describe("Google Drive: a version id of the file."),
+      asOf: z.string().min(1).optional().describe("Google Drive: the version that was current at this ISO time."),
+      include: z.array(z.enum(["versions"])).optional().describe("Google Drive: [\"versions\"] also lists the file's stored versions."),
+      maxBytes: z.number().int().min(1).optional().describe("Gmail and Google Drive: how many bytes of text or data to return at a time."),
+      cursor: z.string().min(1).optional().describe("Gmail and Google Drive: the nextCursor of the previous page, to read the rest."),
     }),
     providerOf: (input) => input.provider,
-    description: "Read recent messages from a connected provider. Providers that support it: slack. Call connections.list first to see what is connected and which channels the bot has joined. Read before posting and do not repeat a message already sent.",
+    description: "Read from a connected provider. Slack: recent messages of a channel (channel). Gmail: one message or thread found with connections.search (messageId or threadId), or an attachment (messageId and attachmentId). Google Drive: a stored file (fileId). connections.list shows each provider's verbs and fields. Read before posting and do not repeat a message already sent.",
     auditArguments: (input) => adapterOf(input.provider)?.audit?.("read", input) ?? { provider: input.provider },
     handler: ({ caller, input }) => {
       const adapter = adapterOf(input.provider);
-      return adapter?.read ? adapter.read({ client, caller }, { channel: input.channel, limit: input.limit }) : Promise.resolve(unsupported(input.provider, "read"));
+      const { provider: _provider, ...fields } = input;
+      return adapter?.read ? adapter.read({ client, caller }, fields) : Promise.resolve(unsupported(input.provider, "read"));
+    },
+  });
+
+  const search = defineTool({
+    name: "connections.search", mcp: true,
+    input: z.object({
+      provider: z.enum(SERVICE_PROVIDERS),
+      query: z.string().min(1).max(500).describe("Words to look for. Gmail takes Gmail search syntax (from:, subject:, has:attachment): cal meeting needs both words, \"cal meeting\" the phrase."),
+      since: z.string().min(1).optional().describe("Only items on or after this ISO date."),
+      until: z.string().min(1).optional().describe("Only items before this ISO date."),
+      limit: z.number().int().min(1).max(50).optional().describe("How many results, up to 50. Default 20."),
+      cursor: z.string().min(1).optional().describe("The nextCursor of the previous page."),
+      fileId: z.string().min(1).optional().describe("Google Drive: only inside this file."),
+      includeHistory: z.boolean().optional().describe("Google Drive: also search older versions, not only the latest."),
+    }),
+    providerOf: (input) => input.provider,
+    description: "Search a connected provider live. Answers { provider, results: [{ id, title, snippet, date, ... }], nextCursor }; pass nextCursor back as cursor for the next page. Providers that support it: see `actions` in connections.list. Then connections.read takes a result's id. For Slack messages Draft already stored, use sources.search with provider slack.",
+    auditArguments: (input) => adapterOf(input.provider)?.audit?.("search", input) ?? { provider: input.provider, queryBytes: Buffer.byteLength(input.query, "utf8") },
+    handler: ({ caller, input }) => {
+      const adapter = adapterOf(input.provider);
+      if (adapter?.search) {
+        const { provider: _provider, ...fields } = input;
+        return adapter.search({ client, caller }, fields);
+      }
+      const hint = input.provider === "slack" ? " Slack messages Draft stored are searched with sources.search and provider slack." : "";
+      return Promise.resolve(refuse("unsupported_action", `${input.provider} does not support search.${providersWithVerb("search") ? ` Providers that do: ${providersWithVerb("search")}.` : ""}${hint}`));
     },
   });
 
   const post = defineTool({
     name: "connections.post", mcp: true,
     input: z.object({
-      provider: z.enum(INTEGRATION_PROVIDERS),
+      provider: z.enum(SERVICE_PROVIDERS),
       channel: z.string().min(1).describe("Slack: a channel id or #name the bot has joined. connections.list shows them."),
       text: z.string().min(1).max(4000).describe("The message to post."),
     }),
@@ -214,5 +264,5 @@ export function createIntegrationTools(client: SupabaseClient, deps: Integration
     },
   });
 
-  return [list, connect, disconnect, join, leave, read, post];
+  return [list, connect, disconnect, join, leave, read, search, post];
 }

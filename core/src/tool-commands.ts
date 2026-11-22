@@ -33,6 +33,7 @@ export const TOOL_COMMANDS: Record<DraftToolName, string | null> = {
   "connections.join": "connections join",
   "connections.leave": "connections leave",
   "connections.read": "connections read",
+  "connections.search": "connections search",
   "connections.post": "connections post",
   "activity.list": "activity list",
   "github.credential": null,
