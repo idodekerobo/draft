@@ -48,7 +48,7 @@ const SAMPLE_INTEGRATIONS = [
     ingests: "pull requests and commits",
     triggers: [{ event: "github.pull_request", label: "Pull request opened" }],
     abilities: ["A routine can read repos, or open pull requests in them"],
-    connect: { cli: "draft connections connect github", mcp: 'connections.connect {"provider":"github"}' },
+    connect: { cli: "draft connections connect --provider github", mcp: 'connections.connect {"provider":"github"}' },
   },
   {
     provider: "slack",
@@ -58,7 +58,7 @@ const SAMPLE_INTEGRATIONS = [
     ingests: "messages in the channels you pick",
     triggers: [],
     abilities: ["A routine can post in channels"],
-    connect: { cli: "draft connections connect slack", mcp: 'connections.connect {"provider":"slack"}' },
+    connect: { cli: "draft connections connect --provider slack", mcp: 'connections.connect {"provider":"slack"}' },
   },
   {
     provider: "linear",
@@ -68,7 +68,7 @@ const SAMPLE_INTEGRATIONS = [
     ingests: "issues, comments and projects",
     triggers: [],
     abilities: [],
-    connect: { cli: "draft connections connect linear", mcp: 'connections.connect {"provider":"linear"}' },
+    connect: { cli: "draft connections connect --provider linear", mcp: 'connections.connect {"provider":"linear"}' },
   },
 ];
 
@@ -99,11 +99,11 @@ describe("draft connections list", () => {
       "Slack: needs reconnect",
       "  brings in: messages in the channels you pick",
       "  lets routines: A routine can post in channels",
-      "  connect: draft connections connect slack",
+      "  connect: draft connections connect --provider slack",
       "",
       "Linear: not connected",
       "  brings in: issues, comments and projects",
-      "  connect: draft connections connect linear",
+      "  connect: draft connections connect --provider linear",
     ].join("\n"));
     expect(result.stderr).toBe("");
   });

@@ -95,7 +95,7 @@ function transportError(code: FetchErrorCode): ErrorPayload {
 
 function refusalPayload(code: string, message: string): ErrorPayload {
   const provider = code.match(/^(.+)_not_connected$/)?.[1];
-  return provider && CONNECTABLE.has(provider) ? errorPayload(code, message, `draft connections connect ${provider}`) : errorPayload(code, message);
+  return provider && CONNECTABLE.has(provider) ? errorPayload(code, message, `draft connections connect --provider ${provider}`) : errorPayload(code, message);
 }
 
 function failurePayload(result: ToolFailure): ErrorPayload {
@@ -326,7 +326,7 @@ function accessLines(agent: RoutineAgent): string[] {
 }
 
 function missingLine(provider: string): string {
-  const hint = CONNECTABLE.has(provider) ? ` Connect it with: draft connections connect ${provider}` : "";
+  const hint = CONNECTABLE.has(provider) ? ` Connect it with: draft connections connect --provider ${provider}` : "";
   return `  ${yellow("missing connection")}: ${provider}. Its triggers or access will not work.${hint}`;
 }
 
