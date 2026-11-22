@@ -600,6 +600,34 @@ echo 'Deploy is done.' | draft connections post --provider slack --channel '#sta
 Joining and leaving are for people. A routine can read and post only in the
 channels its permissions name.
 
+### Search and read: `search`, `read`
+
+`search` looks in a connected provider and prints one line per result (date,
+title, snippet, id). A page that has more ends with a `More:` line holding the
+exact command for the next page.
+
+```bash
+draft connections search --provider <provider> --query 'quarterly plan' --since 2026-10-01 --limit 10
+draft connections search --provider <provider> --query 'quarterly plan' --cursor '<cursor>'
+draft connections search --provider <provider> --query 'quarterly plan' --json
+```
+
+- **Flags:** `--query` (required), `--since` and `--until` (ISO dates),
+  `--limit` (1 to 50, default 20), `--cursor`. Google Drive also takes
+  `--file-id` (only inside that file) and `--include-history` (older versions).
+- **Providers:** `list` shows which providers can search. Slack has no live
+  search. Messages Draft stored are searched with `draft sources search --provider slack`.
+- **`read`** takes each provider's own flags: `--channel` and `--limit` for
+  Slack; `--message-id`, `--thread-id` and `--attachment-id` for Gmail;
+  `--file-id`, `--version`, `--as-of` and `--include versions` for Google Drive.
+  `--max-bytes` and `--cursor` page through long text. A provider refuses a
+  call that lacks what it needs, and says what it needs.
+- **`join` and `leave`** take `--folder <ids>` (comma separated) for a provider
+  that syncs folders, in place of `--channel`.
+- **Provider names:** use `gmail` and `google-drive` for these commands.
+  `connect` takes only the names a provider is connected as: Gmail and Google
+  Drive connect together as `--provider google`.
+
 ### JSON Lines event vocabulary
 
 `--json` writes one `{"schema_version":1, ...}` object per line to stdout.
