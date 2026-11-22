@@ -1,5 +1,5 @@
 import { callPersonTool } from "../cloud-client.ts";
-import { runConnectChannels, runConnectionsDisconnect, runConnectionsPost, runConnectionsRead, takeProviderFlag, takeValueFlag } from "../integrations/tool-commands.ts";
+import { runConnectionsDisconnect, runConnectionsJoin, runConnectionsLeave, runConnectionsPost, runConnectionsRead, takeProviderFlag, takeValueFlag, usageError } from "../integrations/tool-commands.ts";
 import { createIntegrationOutput, INTEGRATION_ERROR_REGISTRY, type IntegrationErrorCode } from "../integrations/safe-output.ts";
 import { isInteractiveTerminal, parseAgentConnectArgs, runAgentConnect, toBackendProvider } from "../integrations/agent.ts";
 import { integrationsGroupHelp, integrationsSubcommandHelp } from "../integrations/help.ts";
@@ -142,6 +142,15 @@ interface ToolIntegration {
   actions?: Array<{ verb: string }>;
   channels?: Array<{ id: string; name: string }>;
   channelsError?: string;
+  available?: { channels: Array<{ id: string; name: string; memberCount: number; joined: boolean }>; nextCursor: string | null };
+  availableError?: string;
+}
+
+interface ListFlags {
+  available: boolean;
+  query?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 const STATUS_TEXT: Record<ToolIntegration["status"], string> = {
@@ -156,7 +165,25 @@ function readToolIntegrations(output: unknown): ToolIntegration[] | null {
   return Array.isArray(list) ? (list as ToolIntegration[]) : null;
 }
 
-function renderIntegrations(items: ToolIntegration[]): string {
+function renderAvailable(item: ToolIntegration, flags: ListFlags): string[] {
+  if (item.availableError) return [`  every public channel: ${item.availableError}`];
+  if (!item.available) return [];
+  const { channels, nextCursor } = item.available;
+  const lines = [`  every public channel, biggest first${flags.query ? ` (matching "${flags.query}")` : ""}:`];
+  if (channels.length === 0) lines.push("    none");
+  const width = Math.max(0, ...channels.map((channel) => channel.name.length));
+  for (const channel of channels) {
+    lines.push(`    #${channel.name.padEnd(width)}  ${channel.id}  ${String(channel.memberCount).padStart(5)} members  ${channel.joined ? "in" : "not in"}`);
+  }
+  if (nextCursor) {
+    const next = ["draft connections list", `--provider ${item.provider}`, "--available", flags.query ? `--query '${flags.query}'` : null, flags.limit ? `--limit ${flags.limit}` : null, `--cursor '${nextCursor}'`].filter(Boolean).join(" ");
+    lines.push(`    More: ${next}`);
+  }
+  lines.push(`    Join one: draft connections join --provider ${item.provider} --channel '#name'`);
+  return lines;
+}
+
+function renderIntegrations(items: ToolIntegration[], flags: ListFlags = { available: false }): string {
   return items.map((item) => {
     const lines = [`${item.label}: ${STATUS_TEXT[item.status]}${item.connectedByYou ? " (you)" : ""}`];
     lines.push(`  brings in: ${item.ingests}`);
@@ -164,6 +191,7 @@ function renderIntegrations(items: ToolIntegration[]): string {
     if (item.abilities.length > 0) lines.push(`  lets routines: ${item.abilities.join("; ")}`);
     if (item.channels) lines.push(`  channels the bot has joined: ${item.channels.length ? item.channels.map((channel) => `#${channel.name}`).join(", ") : "none yet"}`);
     if (item.channelsError) lines.push(`  channels: ${item.channelsError}`);
+    lines.push(...renderAvailable(item, flags));
     const verbs = (item.actions ?? []).map((action) => action.verb).filter((verb) => verb !== "connect");
     if (verbs.length > 0) lines.push(`  you can: ${verbs.map((verb) => `draft connections ${verb} --provider ${item.provider}`).join(", ")}`);
     if (item.status === "needs_reconnect" || item.status === "not_connected") lines.push(`  connect: ${item.connect.cli}`);
@@ -176,14 +204,31 @@ function toIntegrationErrorCode(code: string): IntegrationErrorCode {
 }
 
 async function runIntegrationsList(args: string[]): Promise<number> {
-  const taken = takeProviderFlag(args);
-  const parsed = parseListArgs(taken.rest);
+  const command = "draft connections list";
+  const json = args.includes("--json");
+  const provider = takeProviderFlag(args);
+  const query = takeValueFlag(provider.rest, "--query");
+  const limit = takeValueFlag(query.rest, "--limit");
+  const cursor = takeValueFlag(limit.rest, "--cursor");
+  const available = cursor.rest.includes("--available");
+  const parsed = parseListArgs(cursor.rest.filter((arg) => arg !== "--available"));
+  const problem = provider.error ?? query.error ?? limit.error ?? cursor.error;
+  if (parsed.error || problem) return usageError(command, json, problem ?? "unexpected argument");
+  if (cursor.rest.filter((arg) => arg === "--available").length > 1) return usageError(command, json, "--available was given twice");
+  if (!available && (query.value !== undefined || limit.value !== undefined || cursor.value !== undefined)) return usageError(command, json, "--query, --limit and --cursor go with --available");
+  if (available && !provider.provider) return usageError(command, json, "--available needs --provider slack");
+  const limitNumber = limit.value === undefined ? undefined : Number(limit.value);
+  if (limitNumber !== undefined && (!Number.isInteger(limitNumber) || limitNumber < 1 || limitNumber > 100)) return usageError(command, json, "--limit must be a whole number from 1 to 100");
+  const flags: ListFlags = { available, query: query.value, limit: limitNumber, cursor: cursor.value };
   const output = createIntegrationOutput({ json: parsed.json });
-  if (parsed.error || taken.error) {
-    return output.error("invalid_usage");
-  }
 
-  const result = await callPersonTool("connections.list", taken.provider ? { provider: toBackendProvider(taken.provider) } : {});
+  const result = await callPersonTool("connections.list", {
+    ...(provider.provider ? { provider: toBackendProvider(provider.provider) } : {}),
+    ...(available ? { available: true } : {}),
+    ...(flags.query !== undefined ? { query: flags.query } : {}),
+    ...(flags.limit !== undefined ? { limit: flags.limit } : {}),
+    ...(flags.cursor !== undefined ? { cursor: flags.cursor } : {}),
+  });
   if (!result.ok) {
     return output.error(toIntegrationErrorCode(result.refusal ?? result.code));
   }
@@ -196,7 +241,7 @@ async function runIntegrationsList(args: string[]): Promise<number> {
     process.stdout.write(`${JSON.stringify(result.output)}\n`);
     return 0;
   }
-  process.stdout.write(`${renderIntegrations(items)}\n`);
+  process.stdout.write(`${renderIntegrations(items, flags)}\n`);
   return 0;
 }
 
@@ -207,14 +252,8 @@ function hasExplicitCredentialSource(args: string[]): boolean {
 
 async function runIntegrationsConnect(rawArgs: string[]): Promise<number> {
   const taken = takeProviderFlag(rawArgs);
-  const channels = takeValueFlag(taken.rest, "--channels");
-  if (taken.error || channels.error || !taken.provider) {
+  if (taken.error || !taken.provider) {
     return createIntegrationOutput({ json: rawArgs.includes("--json") }).error("invalid_connect_usage");
-  }
-  if (channels.value !== undefined) {
-    const json = channels.rest.includes("--json");
-    if (channels.rest.some((arg) => arg !== "--json")) return createIntegrationOutput({ json }).error("invalid_usage");
-    return runConnectChannels(taken.provider, channels.value, json);
   }
   // The provider goes first so each provider's own parser below sees the grammar it was written for.
   const args = [taken.provider, ...taken.rest];
@@ -272,12 +311,15 @@ export async function runIntegrations(args: string[]): Promise<number> {
     return 0;
   }
   if (subcommand && (args.includes("--help") || args.includes("-h"))) {
-    process.stdout.write(integrationsSubcommandHelp(subcommand) ?? integrationsGroupHelp());
+    const { provider } = takeProviderFlag(rest.filter((arg) => arg !== "--help" && arg !== "-h"));
+    process.stdout.write(integrationsSubcommandHelp(subcommand, provider) ?? integrationsGroupHelp());
     return 0;
   }
   if (subcommand === "list") return runIntegrationsList(rest);
   if (subcommand === "disconnect") return runConnectionsDisconnect(rest);
   if (subcommand === "connect") return runIntegrationsConnect(rest);
+  if (subcommand === "join") return runConnectionsJoin(rest);
+  if (subcommand === "leave") return runConnectionsLeave(rest);
   if (subcommand === "read") return runConnectionsRead(rest);
   if (subcommand === "post") return runConnectionsPost(rest);
 

@@ -39,8 +39,10 @@ _draft_completion() {
   if [[ "\$cur" == -* ]]; then
     case "\${COMP_WORDS[1]}:\${COMP_WORDS[2]}" in
       auth:login) flags="--force --json" ;;
-      connections:connect) flags="--provider --channels --json --wait --no-open --workspace-key --credential-stdin --credential-fd" ;;
-      connections:list) flags="--provider --json" ;;
+      connections:connect) flags="--provider --json --wait --no-open --workspace-key --credential-stdin --credential-fd" ;;
+      connections:list) flags="--provider --available --query --limit --cursor --json" ;;
+      connections:join) flags="--provider --channel --json" ;;
+      connections:leave) flags="--provider --channel --json" ;;
       connections:disconnect) flags="--provider --yes --json --workspace-key" ;;
       connections:read) flags="--provider --channel --limit --json" ;;
       connections:post) flags="--provider --channel --text --json" ;;
@@ -97,7 +99,7 @@ _draft_completion() {
       return 0
       ;;
     connections)
-      COMPREPLY=( $(compgen -W "list connect disconnect read post" -- "\$cur") )
+      COMPREPLY=( $(compgen -W "list connect disconnect join leave read post" -- "\$cur") )
       return 0
       ;;
     --provider)
@@ -224,14 +226,18 @@ _draft() {
           ;;
         connections)
           if (( CURRENT == 3 )); then
-            local subcmds=('list:Show each connection and what you can do with it' 'connect:Connect a provider' 'disconnect:Disconnect a provider' 'read:Read recent messages from a provider' 'post:Post a message through a provider')
+            local subcmds=('list:Show each connection and what you can do with it' 'connect:Connect a provider' 'disconnect:Disconnect a provider' 'join:Have the bot join channels' 'leave:Have the bot leave channels' 'read:Read recent messages from a provider' 'post:Post a message through a provider')
             _describe 'subcommand' subcmds
           elif [[ \$words[3] == 'connect' ]]; then
-            _arguments '--provider[The provider to connect]:provider:(${providerNames})' '--channels[Slack channels the bot should join]:channels:' '--json[Print the link as one JSON line]' '--wait[Wait until connected]' '--no-open[Do not open a browser]'
+            _arguments '--provider[The provider to connect]:provider:(${providerNames})' '--json[Print the link as one JSON line]' '--wait[Wait until connected]' '--no-open[Do not open a browser]'
           elif [[ \$words[3] == 'disconnect' ]]; then
             _arguments '--provider[The provider to disconnect]:provider:(${disconnectProviderNames})' '--yes[Confirm and disconnect]' '--json[Print the result as JSON]' '--workspace-key[Granola workspace key]'
           elif [[ \$words[3] == 'list' ]]; then
-            _arguments '--provider[Only this provider]:provider:(${providerNames})' '--json[Print as JSON]'
+            _arguments '--provider[Only this provider]:provider:(${providerNames})' '--available[Also list every public channel]' '--query[Only channels whose name contains this]:query:' '--limit[Channels per page]:limit:' '--cursor[The next page]:cursor:' '--json[Print as JSON]'
+          elif [[ \$words[3] == 'join' ]]; then
+            _arguments '--provider[The provider]:provider:(${providerNames})' '--channel[Channels to join]:channels:' '--json[Print as JSON]'
+          elif [[ \$words[3] == 'leave' ]]; then
+            _arguments '--provider[The provider]:provider:(${providerNames})' '--channel[Channels to leave]:channels:' '--json[Print as JSON]'
           elif [[ \$words[3] == 'read' ]]; then
             _arguments '--provider[The provider to read from]:provider:(${providerNames})' '--channel[The channel to read]:channel:' '--limit[How many messages]:limit:' '--json[Print as JSON]'
           elif [[ \$words[3] == 'post' ]]; then

@@ -284,23 +284,57 @@ describe("connections help and completion", () => {
     expect(result.stdout).toContain("connections disconnect --provider <provider>");
     expect(result.stdout).toContain("connections read --provider <provider>");
     expect(result.stdout).toContain("connections post --provider <provider>");
+    expect(result.stdout).toContain("connections join --provider <provider>");
+    expect(result.stdout).toContain("connections leave --provider <provider>");
     expect(result.stdout).toContain("Connect github, slack, linear, fireflies, granola, or claude-code");
   });
 
   it("lists every integrations subcommand with a pointer to per-command help", async () => {
     const result = await runCli(["connections", "--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
-    for (const command of ["list", "connect --provider <provider>", "disconnect --provider <provider>", "read --provider <provider>", "post --provider <provider>"]) {
+    for (const command of ["list", "connect --provider <provider>", "disconnect --provider <provider>", "join --provider <provider>", "leave --provider <provider>", "read --provider <provider>", "post --provider <provider>"]) {
       expect(result.stdout).toContain(command);
     }
     expect(result.stdout).toContain("Run `draft connections <command> --help` for details.");
   });
 
-  it.each(["list", "connect", "disconnect", "read", "post"])("prints full usage for integrations %s --help", async (subcommand) => {
+  it.each(["list", "connect", "disconnect", "join", "leave", "read", "post"])("prints full usage for integrations %s --help", async (subcommand) => {
     const result = await runCli(["connections", subcommand, "--help"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`Usage: draft connections ${subcommand}`);
     expect(result.stdout).toContain("Examples:");
+  });
+
+  it("list --provider slack --help shows every way to see the channels", async () => {
+    const result = await runCli(["connections", "list", "--provider", "slack", "--help"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    for (const form of [
+      "draft connections list --provider slack\n",
+      "draft connections list --provider slack --available\n",
+      "draft connections list --provider slack --available --query eng",
+      "draft connections list --provider slack --available --limit 100",
+      "draft connections list --provider slack --available --cursor '<cursor>'",
+      "draft connections list --provider slack --json",
+      "draft connections list --provider slack --available --json",
+    ]) expect(result.stdout).toContain(form);
+    expect(result.stdout).toContain("The channels the bot is already in are listed too.");
+    expect(result.stdout).toContain('"More:" line');
+    expect(result.stdout).toContain("available.nextCursor");
+    for (const next of ["connections join --provider slack", "connections leave --provider slack", "connections read --provider slack", "connections post --provider slack"]) {
+      expect(result.stdout).toContain(next);
+    }
+  });
+
+  it("list --help without a provider points to the Slack page", async () => {
+    const result = await runCli(["connections", "list", "--help"], { home, apiUrl: backend.url });
+    expect(result.stdout).toContain("--available");
+    expect(result.stdout).toContain("draft connections list --provider slack --help");
+  });
+
+  it("join --help explains the picker and that an agent must pass --channel", async () => {
+    const result = await runCli(["connections", "join", "--help"], { home, apiUrl: backend.url });
+    expect(result.stdout).toContain("draft connections list --provider slack --available");
+    expect(result.stdout).toContain("A script or an agent has no terminal, so it must pass --channel.");
   });
 
   it("connect --help names every provider and explains the agent link flow", async () => {
@@ -323,10 +357,13 @@ describe("connections help and completion", () => {
     const bash = await runCli(["completion"], { home, apiUrl: backend.url });
     expect(bash.exitCode).toBe(0);
     expect(bash.stdout).toContain('commands="add auth context people routines activity sources sessions skills connections update uninstall completion"');
-    expect(bash.stdout).toContain('compgen -W "list connect disconnect read post"');
+    expect(bash.stdout).toContain('compgen -W "list connect disconnect join leave read post"');
     expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola claude-code"');
     expect(bash.stdout).toContain('compgen -W "list options create update delete run runs"');
-    expect(bash.stdout).toContain('connections:connect) flags="--provider --channels --json --wait --no-open');
+    expect(bash.stdout).toContain('connections:connect) flags="--provider --json --wait --no-open');
+    expect(bash.stdout).toContain('connections:list) flags="--provider --available --query --limit --cursor --json"');
+    expect(bash.stdout).toContain('connections:join) flags="--provider --channel --json"');
+    expect(bash.stdout).toContain('connections:leave) flags="--provider --channel --json"');
     expect(bash.stdout).toContain('connections:read) flags="--provider --channel --limit --json"');
     expect(bash.stdout).toContain('connections:post) flags="--provider --channel --text --json"');
     expect(bash.stdout).toContain('routines:*) flags="--on --github --github-access');
@@ -340,6 +377,9 @@ describe("connections help and completion", () => {
     expect(zsh.stdout).toContain("'list:Show each connection and what you can do with it'");
     expect(zsh.stdout).toContain("'connect:Connect a provider'");
     expect(zsh.stdout).toContain("'disconnect:Disconnect a provider'");
+    expect(zsh.stdout).toContain("'join:Have the bot join channels'");
+    expect(zsh.stdout).toContain("'leave:Have the bot leave channels'");
+    expect(zsh.stdout).toContain("'--available[Also list every public channel]'");
     expect(zsh.stdout).toContain("'read:Read recent messages from a provider'");
     expect(zsh.stdout).toContain("'post:Post a message through a provider'");
     expect(zsh.stdout).toContain("'--provider[The provider to connect]:provider:(github slack linear fireflies granola claude-code)'");

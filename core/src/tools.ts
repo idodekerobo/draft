@@ -29,6 +29,8 @@ export const DRAFT_TOOLS = [
   { name: "connections.list", access: "read" },
   { name: "connections.connect", access: "write" },
   { name: "connections.disconnect", access: "write" },
+  { name: "connections.join", access: "write" },
+  { name: "connections.leave", access: "write" },
   { name: "activity.list", access: "read" },
   { name: "connections.read", access: "read" },
   { name: "connections.post", access: "write" },
@@ -72,6 +74,8 @@ export interface DraftToolLimits {
   "connections.list": Record<string, never>;
   "connections.connect": Record<string, never>;
   "connections.disconnect": Record<string, never>;
+  "connections.join": Record<string, never>;
+  "connections.leave": Record<string, never>;
   "activity.list": Record<string, never>;
   "connections.read": Record<string, never>;
   /** Slack is the only provider that posts today, so `channels` is a Slack channel id or name. */

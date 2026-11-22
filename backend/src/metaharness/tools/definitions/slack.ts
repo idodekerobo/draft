@@ -20,6 +20,21 @@ export interface SlackDeps {
 export type SlackChannelRef = { id: string; name: string };
 export type SlackChannelsResult = { ok: true; channels: SlackChannelRef[] } | { ok: false; error: string };
 
+export type BrowsedSlackChannel = { id: string; name: string; memberCount: number; joined: boolean };
+export type SlackBrowseResult =
+  | { ok: true; channels: BrowsedSlackChannel[]; nextCursor: string | null }
+  | { ok: false; code: string; error: string };
+
+const encodeCursor = (offset: number) => Buffer.from(JSON.stringify({ offset })).toString("base64url");
+function decodeCursor(cursor: string): number | null {
+  try {
+    const offset = (JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { offset?: unknown }).offset;
+    return typeof offset === "number" && Number.isInteger(offset) && offset >= 0 ? offset : null;
+  } catch {
+    return null;
+  }
+}
+
 const normalized = (value: string) => value.replace(/^#/, "").toLowerCase();
 const NOT_CONNECTED = "Slack is not connected for this workspace. A person can connect it with connections.connect.";
 const joinedList = (channels: SlackChannelRef[]) => (channels.length ? channels.map((channel) => `#${channel.name}`).join(", ") : "none yet");
@@ -40,6 +55,28 @@ export function createSlackProvider(client: SupabaseClient, deps: SlackDeps = {}
     const token = await getBotToken(workspaceId, id);
     const result = await listSlackChannels(token, "public_channel,private_channel", fetchFn);
     return { ok: true, channels: result.filter((channel) => channel.isMember).map(({ id: channelId, name }) => ({ id: channelId, name })) };
+  }
+
+  /**
+   * Every public channel, biggest first, with whether the bot is in it. Slack has no search or offset call, so each
+   * request walks Slack's pages, then filters by name and slices.
+   */
+  async function browseChannels(workspaceId: string, options: { query?: string; limit: number; cursor?: string }): Promise<SlackBrowseResult> {
+    const offset = options.cursor === undefined ? 0 : decodeCursor(options.cursor);
+    if (offset === null) return { ok: false, code: "invalid_cursor", error: "That cursor is not one connections.list gave. Start again without a cursor." };
+    const id = await getCredentialId(workspaceId);
+    if (!id) return { ok: false, code: "slack_not_connected", error: NOT_CONNECTED };
+    const token = await getBotToken(workspaceId, id);
+    const wanted = options.query ? normalized(options.query) : null;
+    const all = (await listSlackChannels(token, "public_channel", fetchFn))
+      .filter((channel) => wanted === null || normalized(channel.name).includes(wanted))
+      .sort((a, b) => b.memberCount - a.memberCount || a.name.localeCompare(b.name));
+    const page = all.slice(offset, offset + options.limit);
+    return {
+      ok: true,
+      channels: page.map(({ id: channelId, name, memberCount, isMember }) => ({ id: channelId, name, memberCount, joined: isMember })),
+      nextCursor: offset + options.limit < all.length ? encodeCursor(offset + options.limit) : null,
+    };
   }
 
   async function resolveChannel(workspaceId: string, value: string) {
@@ -95,5 +132,5 @@ export function createSlackProvider(client: SupabaseClient, deps: SlackDeps = {}
     }
   }
 
-  return { listChannels, read, post: postMessage };
+  return { listChannels, browseChannels, read, post: postMessage };
 }

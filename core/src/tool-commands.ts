@@ -30,6 +30,8 @@ export const TOOL_COMMANDS: Record<DraftToolName, string | null> = {
   "connections.list": "connections list",
   "connections.connect": "connections connect",
   "connections.disconnect": "connections disconnect",
+  "connections.join": "connections join",
+  "connections.leave": "connections leave",
   "connections.read": "connections read",
   "connections.post": "connections post",
   "activity.list": "activity list",

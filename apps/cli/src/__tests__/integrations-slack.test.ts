@@ -238,38 +238,58 @@ describe("draft connections connect slack / channels", () => {
 
   const toolRequest = (name: string) => backend.state.requests.find((request) => new URL(request.url).pathname.endsWith(`/tools/${name}`));
 
-  it("sets the bot's channels through connect --channels, and passes the tool's answer on", async () => {
-    backend.state.toolOutputs["connections.connect"] = () => ({
-      status: "connected",
+  it("joins channels through connections.join and prints the tool's message", async () => {
+    backend.state.toolOutputs["connections.join"] = () => ({
+      status: "joined",
       provider: "slack",
-      message: "Slack is already connected. Channels updated: 1 joined, 0 left.",
-      channels: { ids: ["C1"], joined: ["C1"], left: [], failed: [] },
+      changed: [{ id: "C1", name: "eng" }],
+      unchanged: [{ id: "C2", name: "general" }],
+      failed: [],
+      message: "Joined #eng. Already in #general.",
     });
-    const result = await runCli(["connections", "connect", "--provider", "slack", "--channels", "C1,#general", "--json"], { home, apiUrl: backend.url });
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ schema_version: 1, status: "connected", provider: "slack", channels: { ids: ["C1"] } });
-    expect(JSON.parse(toolRequest("connections.connect")!.body)).toEqual({ provider: "slack", channels: ["C1", "#general"] });
-    const human = await runCli(["connections", "connect", "--provider", "slack", "--channels", "C1"], { home, apiUrl: backend.url });
-    expect(human.stdout).toContain("Slack is already connected. Channels updated: 1 joined, 0 left.");
+    const json = await runCli(["connections", "join", "--provider", "slack", "--channel", "#eng,C2", "--json"], { home, apiUrl: backend.url });
+    expect(json.exitCode).toBe(0);
+    expect(JSON.parse(json.stdout)).toMatchObject({ schema_version: 1, status: "joined", changed: [{ id: "C1", name: "eng" }] });
+    expect(JSON.parse(toolRequest("connections.join")!.body)).toEqual({ provider: "slack", channels: ["#eng", "C2"] });
+    const human = await runCli(["connections", "join", "--provider", "slack", "--channel", "#eng"], { home, apiUrl: backend.url });
+    expect(human.stdout).toContain("Joined #eng. Already in #general.");
   });
 
-  it("fails connect --channels when a channel could not be joined", async () => {
-    backend.state.toolOutputs["connections.connect"] = () => ({
-      status: "connected",
-      provider: "slack",
-      message: "Slack is already connected. Channels updated: 0 joined, 0 left. 1 could not be joined.",
-      channels: { ids: [], joined: [], left: [], failed: [{ channelId: "C2", operation: "join", code: "slack_channel_join_failed" }] },
+  it("leaves channels through connections.leave", async () => {
+    backend.state.toolOutputs["connections.leave"] = () => ({ status: "left", provider: "slack", changed: [{ id: "C1", name: "eng" }], unchanged: [], failed: [], message: "Left #eng." });
+    const result = await runCli(["connections", "leave", "--provider", "slack", "--channel", "#eng"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Left #eng.");
+    expect(JSON.parse(toolRequest("connections.leave")!.body)).toEqual({ provider: "slack", channels: ["#eng"] });
+  });
+
+  it("fails join when a channel could not be joined", async () => {
+    backend.state.toolOutputs["connections.join"] = () => ({
+      status: "joined", provider: "slack", changed: [], unchanged: [],
+      failed: [{ id: "C2", name: "private", code: "slack_channel_join_failed" }],
+      message: "Could not join #private.",
     });
-    const result = await runCli(["connections", "connect", "--provider", "slack", "--channels", "C2"], { home, apiUrl: backend.url });
+    const result = await runCli(["connections", "join", "--provider", "slack", "--channel", "C2"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
-    expect(result.stdout).toContain("could not be joined");
+    expect(result.stdout).toContain("Could not join #private.");
   });
 
   it("shows the tool's refusal for a channel that matches nothing", async () => {
-    backend.state.toolOutputs["connections.connect"] = () => ({ __refusal: { code: "channel_not_found", message: 'No public Slack channel matches "#nope". Public channels include: #general.' } });
-    const result = await runCli(["connections", "connect", "--provider", "slack", "--channels", "#nope"], { home, apiUrl: backend.url });
+    backend.state.toolOutputs["connections.join"] = () => ({ __refusal: { code: "channel_not_found", message: 'No public Slack channel matches "#nope". Public channels include: #general.' } });
+    const result = await runCli(["connections", "join", "--provider", "slack", "--channel", "#nope"], { home, apiUrl: backend.url });
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("#general");
+  });
+
+  it("does not open a picker without a terminal: join without --channel says how to see the channels", async () => {
+    const result = await runCli(["connections", "join", "--provider", "slack"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("--channel is required");
+    expect(result.stderr).toContain("draft connections list --provider slack --available");
+    const json = await runCli(["connections", "join", "--provider", "slack", "--json"], { home, apiUrl: backend.url });
+    expect(json.exitCode).toBe(2);
+    expect(JSON.parse(json.stdout)).toMatchObject({ status: "error", code: "invalid_usage" });
+    expect(backend.state.requests).toEqual([]);
   });
 
   it("lists a provider's connection with the channels the bot has joined", async () => {
@@ -293,9 +313,12 @@ describe("draft connections connect slack / channels", () => {
       ["connections", "connect", "--provider", "slack", "extra"],
       ["connections", "connect", "--provider", "slack", "--json", "--json"],
       ["connections", "connect", "--provider", "slack", "--credential-stdin", "--credential-fd", "3"],
-      ["connections", "connect", "--provider", "slack", "--channels"],
-      ["connections", "connect", "--provider", "slack", "--channels", "C1", "--wait"],
-      ["connections", "connect", "--provider", "linear", "--channels", "C1"],
+      ["connections", "connect", "--provider", "slack", "--channels", "C1"],
+      ["connections", "join", "slack", "#eng"],
+      ["connections", "join", "--provider", "slack", "--channel"],
+      ["connections", "join", "--provider", "slack", "--channel", " , "],
+      ["connections", "leave", "--provider", "slack"],
+      ["connections", "leave", "--provider", "slack", "--channel", "#eng", "--channel", "#ops"],
       ["connections", "connect", "slack"],
       ["connections", "slack", "channels", "list"],
     ];

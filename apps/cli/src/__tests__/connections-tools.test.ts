@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { rmSync } from "fs";
 import { createMockBackend } from "./helpers/mock-backend.ts";
 import { makeHome, runCli, seedCliAuth } from "./helpers/cli-runner.ts";
+import { runConnectionsJoin, runConnectionsLeave, type ChannelChangeDeps } from "../integrations/tool-commands.ts";
 
 let backend: ReturnType<typeof createMockBackend>;
 let home: string;
@@ -119,5 +120,159 @@ describe("draft connections connect, already connected", () => {
     const result = await run(["connect", "--provider", "fireflies", "--json"]);
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "pending", provider: "fireflies" });
+  });
+});
+
+describe("draft connections list --available", () => {
+  const slackItem = (extra: Record<string, unknown> = {}) => ({
+    provider: "slack", label: "Slack", status: "connected", connectedByYou: true, ingests: "messages", triggers: [], abilities: [],
+    connect: { cli: "draft connections connect --provider slack", mcp: "connections.connect" },
+    actions: [{ verb: "read" }, { verb: "post" }, { verb: "join" }, { verb: "leave" }],
+    channels: [{ id: "C-general", name: "general" }],
+    ...extra,
+  });
+  const page = {
+    channels: [
+      { id: "C-general", name: "general", memberCount: 100, joined: true },
+      { id: "C-random", name: "random", memberCount: 80, joined: false },
+    ],
+    nextCursor: "abc",
+  };
+
+  it("lists every public channel with ids, sizes and whether the bot is in it, and says how to get the next page", async () => {
+    backend.state.toolOutputs["connections.list"] = () => ({ connections: [slackItem({ available: page })] });
+    const result = await run(["list", "--provider", "slack", "--available", "--query", "e", "--limit", "2"]);
+    expect(result.exitCode).toBe(0);
+    expect(toolBodies("connections.list")).toEqual([{ provider: "slack", available: true, query: "e", limit: 2 }]);
+    expect(result.stdout).toContain("channels the bot has joined: #general");
+    expect(result.stdout).toContain('every public channel, biggest first (matching "e")');
+    expect(result.stdout).toMatch(/#general\s+C-general\s+100 members\s+in\b/);
+    expect(result.stdout).toMatch(/#random\s+C-random\s+80 members\s+not in\b/);
+    expect(result.stdout).toContain("More: draft connections list --provider slack --available --query 'e' --limit 2 --cursor 'abc'");
+    expect(result.stdout).toContain("Join one: draft connections join --provider slack --channel '#name'");
+  });
+
+  it("has no More line on the last page, and passes the cursor along", async () => {
+    backend.state.toolOutputs["connections.list"] = () => ({ connections: [slackItem({ available: { ...page, nextCursor: null } })] });
+    const result = await run(["list", "--provider", "slack", "--available", "--cursor", "abc"]);
+    expect(result.exitCode).toBe(0);
+    expect(toolBodies("connections.list")).toEqual([{ provider: "slack", available: true, cursor: "abc" }]);
+    expect(result.stdout).not.toContain("More:");
+  });
+
+  it("prints the tool's output as JSON, with the joined channels and the page", async () => {
+    const output = { connections: [slackItem({ available: page })] };
+    backend.state.toolOutputs["connections.list"] = () => output;
+    const result = await run(["list", "--provider", "slack", "--available", "--json"]);
+    expect(JSON.parse(result.stdout)).toEqual(output);
+  });
+
+  it("says why when the channels could not be listed", async () => {
+    backend.state.toolOutputs["connections.list"] = () => ({ connections: [slackItem({ channels: undefined, available: undefined, availableError: "Slack is not connected for this workspace." })] });
+    const result = await run(["list", "--provider", "slack", "--available"]);
+    expect(result.stdout).toContain("every public channel: Slack is not connected for this workspace.");
+  });
+
+  it("rejects --available without a provider, the paging flags without --available, and a bad limit, before any request", async () => {
+    const cases = [
+      ["list", "--available"],
+      ["list", "--provider", "slack", "--query", "eng"],
+      ["list", "--provider", "slack", "--limit", "5"],
+      ["list", "--provider", "slack", "--cursor", "abc"],
+      ["list", "--provider", "slack", "--available", "--limit", "0"],
+      ["list", "--provider", "slack", "--available", "--limit", "101"],
+      ["list", "--provider", "slack", "--available", "--limit", "many"],
+      ["list", "--provider", "slack", "--available", "--available"],
+      ["list", "--provider", "slack", "--available", "--query"],
+    ];
+    for (const args of cases) expect((await run(args)).exitCode).toBe(2);
+    expect(backend.state.requests).toEqual([]);
+  });
+});
+
+describe("draft connections join without --channel, in a terminal", () => {
+  const listOutput = (channels: Array<Record<string, unknown>>, nextCursor: string | null = null) => ({
+    connections: [{ provider: "slack", status: "connected", available: { channels, nextCursor } }],
+  });
+  const general = { id: "C-general", name: "general", memberCount: 100, joined: true };
+  const random = { id: "C-random", name: "random", memberCount: 80, joined: false };
+  const eng = { id: "C-eng", name: "eng", memberCount: 60, joined: false };
+
+  function setup(options: { interactive?: boolean; picked?: string[] | null; channels?: Array<Record<string, unknown>>; nextCursor?: string | null }) {
+    const calls: Array<{ tool: string; input: unknown }> = [];
+    const shown: Array<Array<{ id: string; name: string; isMember: boolean }>> = [];
+    const logs: string[] = [];
+    const errors: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((...args) => { logs.push(args.join(" ")); });
+    const error = spyOn(console, "error").mockImplementation((...args) => { errors.push(args.join(" ")); });
+    const deps: ChannelChangeDeps = {
+      callTool: (async (tool: string, input: unknown) => {
+        calls.push({ tool, input });
+        if (tool === "connections.list") return { ok: true, output: listOutput(options.channels ?? [general, random, eng], options.nextCursor ?? null) };
+        return { ok: true, output: { status: "joined", provider: "slack", changed: [{ id: "C-random", name: "random" }], unchanged: [], failed: [], message: "Joined #random." } };
+      }) as ChannelChangeDeps["callTool"],
+      interactive: () => options.interactive ?? true,
+      selector: { select: async (channels) => { shown.push(channels.map(({ id, name, isMember }) => ({ id, name, isMember }))); return options.picked === undefined ? ["C-random"] : options.picked; } },
+    };
+    return { deps, calls, shown, logs, errors, restore: () => { log.mockRestore(); error.mockRestore(); } };
+  }
+
+  it("shows only the channels the bot is not in, then joins the ones picked", async () => {
+    const t = setup({ picked: ["C-random", "C-eng"] });
+    try {
+      const code = await runConnectionsJoin(["--provider", "slack"], t.deps);
+      expect(code).toBe(0);
+      expect(t.calls[0]).toEqual({ tool: "connections.list", input: { provider: "slack", available: true, limit: 100 } });
+      expect(t.shown).toEqual([[{ id: "C-random", name: "random", isMember: false }, { id: "C-eng", name: "eng", isMember: false }]]);
+      expect(t.calls[1]).toEqual({ tool: "connections.join", input: { provider: "slack", channels: ["C-random", "C-eng"] } });
+      expect(t.logs).toContain("Joined #random.");
+    } finally { t.restore(); }
+  });
+
+  it("joins nothing when nothing is picked", async () => {
+    const t = setup({ picked: [] });
+    try {
+      expect(await runConnectionsJoin(["--provider", "slack"], t.deps)).toBe(0);
+      expect(t.calls.map((call) => call.tool)).toEqual(["connections.list"]);
+      expect(t.logs).toContain("No channels chosen.");
+    } finally { t.restore(); }
+  });
+
+  it("says so, and asks nothing, when the bot is in every channel listed", async () => {
+    const t = setup({ channels: [general] });
+    try {
+      expect(await runConnectionsJoin(["--provider", "slack"], t.deps)).toBe(0);
+      expect(t.shown).toEqual([]);
+      expect(t.logs.join("\n")).toContain("already in every channel listed");
+    } finally { t.restore(); }
+  });
+
+  it("tells the person to name a channel when more than one page exists", async () => {
+    const t = setup({ nextCursor: "more" });
+    try {
+      await runConnectionsJoin(["--provider", "slack"], t.deps);
+      expect(t.errors.join("\n")).toContain("Showing the 100 biggest channels");
+      expect(t.errors.join("\n")).toContain("--channel '#name'");
+    } finally { t.restore(); }
+  });
+
+  it("never opens the picker for --json or without a terminal", async () => {
+    const t = setup({ interactive: true });
+    const headless = setup({ interactive: false });
+    try {
+      expect(await runConnectionsJoin(["--provider", "slack", "--json"], t.deps)).toBe(2);
+      expect(await runConnectionsJoin(["--provider", "slack"], headless.deps)).toBe(2);
+      expect(t.calls).toEqual([]);
+      expect(headless.calls).toEqual([]);
+      expect(t.shown).toEqual([]);
+    } finally { t.restore(); headless.restore(); }
+  });
+
+  it("never opens a picker to leave", async () => {
+    const t = setup({ interactive: true });
+    try {
+      expect(await runConnectionsLeave(["--provider", "slack"], t.deps)).toBe(2);
+      expect(t.calls).toEqual([]);
+    } finally { t.restore(); }
   });
 });

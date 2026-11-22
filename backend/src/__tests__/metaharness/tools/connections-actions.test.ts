@@ -131,7 +131,7 @@ describe("connections.list", () => {
     const connections = (result as { output: { connections: Array<Record<string, unknown>> } }).output.connections;
     const slack = connections.find((item) => item.provider === "slack")!;
     expect(slack).toMatchObject({ status: "connected", channels: [{ id: "C1", name: "general" }] });
-    expect((slack.actions as Array<{ verb: string }>).map((action) => action.verb)).toEqual(["read", "post", "connect"]);
+    expect((slack.actions as Array<{ verb: string }>).map((action) => action.verb)).toEqual(["read", "post", "join", "leave"]);
     expect(connections.find((item) => item.provider === "linear")?.actions).toEqual([]);
   });
 

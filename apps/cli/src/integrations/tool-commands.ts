@@ -1,11 +1,12 @@
-// integrations/tool-commands.ts — draft connections read | post | disconnect, and connect --channels.
+// integrations/tool-commands.ts — draft connections read | post | join | leave | disconnect.
 // Each command calls one connections.* tool. The provider is a flag, and flag names match the tool's input fields.
 
 import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
 import { callPersonTool, runModeErrorMessage, type ToolCallResult } from "../cloud-client.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { dim, red } from "../utils/output.ts";
-import { toBackendProvider, type ConnectCliProvider } from "./agent.ts";
+import { isInteractiveTerminal, toBackendProvider, type ConnectCliProvider } from "./agent.ts";
+import { channelSelector, type ChannelSelector } from "./channel-select.ts";
 import { PROVIDER_LABELS } from "./types.ts";
 
 const PROVIDER_LIST = HOSTED_CONNECTION_PROVIDERS.join(", ");
@@ -77,6 +78,8 @@ function fail(command: string, json: boolean, code: string, message: string, exi
 function usage(command: string, json: boolean, message: string): number {
   return fail(command, json, "invalid_usage", `${message}. See \`${command} --help\`.`, EXIT_USAGE_ERROR);
 }
+
+export const usageError = usage;
 
 function toolFailure(command: string, json: boolean, result: Extract<ToolCallResult, { ok: false }>): number {
   if (result.toolStatus) return fail(command, json, result.refusal ?? result.code, result.message ?? "The request did not work.", EXIT_OPERATIONAL_ERROR);
@@ -199,18 +202,67 @@ export async function runConnectionsDisconnect(args: string[]): Promise<number> 
   return EXIT_SUCCESS;
 }
 
-/** Sets the channels the Slack bot joins, for a Slack connection that already exists. */
-export async function runConnectChannels(provider: ConnectCliProvider, channelsArg: string, json: boolean): Promise<number> {
-  const command = "draft connections connect";
-  if (provider !== "slack") return usage(command, json, "--channels applies to slack only");
-  const channels = channelsArg.split(",").map((entry) => entry.trim()).filter(Boolean);
-  if (!channels.length) return usage(command, json, "--channels needs at least one channel id or #name");
+export interface ChannelChangeDeps {
+  callTool: typeof callPersonTool;
+  interactive(): boolean;
+  selector: ChannelSelector;
+}
 
-  const result = await callPersonTool("connections.connect", { provider: toBackendProvider(provider), channels });
+const defaultChangeDeps: ChannelChangeDeps = { callTool: callPersonTool, interactive: isInteractiveTerminal, selector: channelSelector };
+
+const PICKER_PAGE = 100;
+
+/** Asks a person which of the biggest public channels the bot is not in yet to join. An empty answer means none. */
+async function pickChannelsToJoin(command: string, json: boolean, provider: ConnectCliProvider, deps: ChannelChangeDeps): Promise<string[] | number> {
+  const listed = await deps.callTool("connections.list", { provider: toBackendProvider(provider), available: true, limit: PICKER_PAGE });
+  if (!listed.ok) return toolFailure(command, json, listed);
+  const entry = record((record(listed.output)?.connections as unknown[] | undefined)?.[0]);
+  const page = record(entry?.available);
+  const channels = (Array.isArray(page?.channels) ? page.channels : []).map((raw) => record(raw) ?? {});
+  if (!page) return fail(command, json, "request_failed", String(entry?.availableError ?? "Could not list the channels."), EXIT_OPERATIONAL_ERROR);
+  const notIn = channels.filter((channel) => channel.joined !== true);
+  if (notIn.length === 0) {
+    console.log("The bot is already in every channel listed.");
+    return [];
+  }
+  if (page.nextCursor) console.error(dim(`Showing the ${PICKER_PAGE} biggest channels. For another, name it: ${command} --provider ${provider} --channel '#name'`));
+  const picked = await deps.selector.select(notIn.map((channel) => ({ id: String(channel.id), name: String(channel.name), memberCount: Number(channel.memberCount ?? 0), isMember: false })));
+  if (picked === null) return usage(command, json, `could not read a choice from the terminal. Name the channels with --channel`);
+  return picked;
+}
+
+async function runChannelChange(args: string[], verb: "join" | "leave", deps: ChannelChangeDeps): Promise<number> {
+  const command = `draft connections ${verb}`;
+  const json = args.includes("--json");
+  const parsed = parseFlags(args, { "--provider": "value", "--channel": "value", "--json": "boolean" });
+  if (parsed.error) return usage(command, json, parsed.error);
+  const provider = requireProvider(command, json, parsed);
+  if (typeof provider === "number") return provider;
+
+  const given = parsed.values["--channel"];
+  let channels = given === undefined ? [] : given.split(",").map((entry) => entry.trim()).filter(Boolean);
+  if (given !== undefined && channels.length === 0) return usage(command, json, "--channel needs at least one channel id or #name");
+  if (given === undefined) {
+    if (verb === "join" && provider === "slack" && !json && deps.interactive()) {
+      const picked = await pickChannelsToJoin(command, json, provider, deps);
+      if (typeof picked === "number") return picked;
+      if (picked.length === 0) {
+        console.log("No channels chosen.");
+        return EXIT_SUCCESS;
+      }
+      channels = picked;
+    } else {
+      return usage(command, json, `--channel is required, with channel ids or #names separated by commas. To see which channels exist: draft connections list --provider ${provider} --available`);
+    }
+  }
+
+  const result = await deps.callTool(`connections.${verb}`, { provider: toBackendProvider(provider), channels });
   if (!result.ok) return toolFailure(command, json, result);
   const output = record(result.output) ?? {};
   if (json) printJsonLine(output);
-  else console.log(typeof output.message === "string" ? output.message : "Slack channels updated.");
-  const failed = record(output.channels)?.failed;
-  return Array.isArray(failed) && failed.length > 0 ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
+  else console.log(typeof output.message === "string" ? output.message : verb === "join" ? "Joined." : "Left.");
+  return Array.isArray(output.failed) && output.failed.length > 0 ? EXIT_OPERATIONAL_ERROR : EXIT_SUCCESS;
 }
+
+export const runConnectionsJoin = (args: string[], deps: ChannelChangeDeps = defaultChangeDeps) => runChannelChange(args, "join", deps);
+export const runConnectionsLeave = (args: string[], deps: ChannelChangeDeps = defaultChangeDeps) => runChannelChange(args, "leave", deps);
