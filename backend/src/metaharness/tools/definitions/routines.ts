@@ -14,7 +14,7 @@ import type { ResolvedWhen } from "../../../routines/when";
 import { MIN_RUN_MADE_CRON_GAP_SECONDS, minCronGapSeconds, resolveWhen } from "../../../routines/when";
 import type { ScheduledTaskRow } from "../../../types/tables";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
-import { createSlackProvider } from "./slack";
+import { createSlackProvider } from "../connection-adapters/slack";
 
 const scheduleService = () => import("../../../routines/service");
 const UUID = z.string().uuid();

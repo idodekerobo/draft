@@ -5,8 +5,11 @@ import { attributionLine } from "../../../notify/attribution";
 import { workspaceSlackCredentialId, resolveWorkspaceSlackBotToken } from "../../../notify/slack-connection";
 import { postSlackMessage } from "../../../ingestion/slack/post";
 import { countRunToolCalls } from "../../../people/limits";
+import { listIntegrations } from "../../../integrations/service";
+import { resolveSlackChannelEntries, updateSlackChannelMembership } from "../../../integrations/slack-channels";
 import { refuse, type ToolHandlerResult } from "../tool-registry";
-import { callerWorkspaceId } from "./shared";
+import { callerWorkspaceId, requireUser } from "../definitions/shared";
+import type { ConnectionAdapter, ProviderAction } from "./types";
 
 export interface SlackDeps {
   fetch?: typeof fetch;
@@ -133,4 +136,88 @@ export function createSlackProvider(client: SupabaseClient, deps: SlackDeps = {}
   }
 
   return { listChannels, browseChannels, read, post: postMessage };
+}
+
+export interface SlackChannelDeps {
+  /** Tests pass their own. The defaults talk to Slack and the database. */
+  resolve: typeof resolveSlackChannelEntries;
+  update: typeof updateSlackChannelMembership;
+}
+
+const SLACK_ACTIONS: ReadonlyArray<ProviderAction> = [
+  { verb: "read", description: "Read recent messages from a channel the bot has joined.", fields: { channel: "channel id or #name (required)", limit: "1 to 50 messages (optional, default 20)" } },
+  { verb: "post", description: "Post a message to a channel the bot has joined.", fields: { channel: "channel id or #name (required)", text: "message text, up to 4000 characters (required)" } },
+  { verb: "join", description: "Have the bot join public channels. It changes only the channels you name. Call connections.list with available: true to see which exist.", fields: { channels: "channel ids or #names to join (required)" }, personOnly: true },
+  { verb: "leave", description: "Have the bot leave public channels. It changes only the channels you name.", fields: { channels: "channel ids or #names to leave (required)" }, personOnly: true },
+];
+
+/** Slack as a connection adapter: reading, posting, and choosing the channels the bot is in. */
+export function createSlackAdapter(client: SupabaseClient, slackDeps: SlackDeps = {}, channelDeps: Partial<SlackChannelDeps> = {}): ConnectionAdapter {
+  const slack = createSlackProvider(client, slackDeps);
+  const resolveChannels = channelDeps.resolve ?? resolveSlackChannelEntries;
+  const updateChannels = channelDeps.update ?? updateSlackChannelMembership;
+
+  /** Joins or leaves only the channels named, and says which changed, which were already so, and which failed. */
+  async function changeChannels(caller: ToolCaller, input: { channels?: string[] }, verb: "join" | "leave"): Promise<ToolHandlerResult> {
+    const user = requireUser(caller, `connections.${verb}`);
+    if (!input.channels?.length) return refuse("channels_required", `Slack ${verb} needs channels: the channel ids or #names to ${verb}.`);
+    const state = (await listIntegrations(client, user.workspaceId, user.userId)).find((item) => item.provider === "slack");
+    if (state?.status !== "connected") return refuse("not_connected", "Slack is not connected yet. Call connections.connect to get a link, then choose its channels.");
+    const resolved = await resolveChannels(client, user.workspaceId, input.channels);
+    if (!resolved.ok) return refuse(resolved.code, resolved.message);
+
+    const wanted = new Set(resolved.channelIds);
+    const result = await updateChannels(client, user.workspaceId, (current) => (verb === "join" ? [...new Set([...current, ...wanted])] : current.filter((id) => !wanted.has(id))));
+    if (!result.ok) {
+      return refuse(result.code, result.status === 409 ? "The Slack connection changed at the same time. Try again." : "Could not update the Slack channels. Try again shortly.");
+    }
+
+    const named = new Map(resolved.channels.map((channel) => [channel.id, channel.name]));
+    const ref = (id: string) => ({ id, name: named.get(id) ?? id });
+    const label = (ids: string[]) => ids.map((id) => `#${named.get(id) ?? id}`).join(", ");
+    const changedIds = verb === "join" ? result.joined : result.left;
+    const failedIds = result.failed.map((failure) => failure.channelId);
+    const unchangedIds = resolved.channelIds.filter((id) => !changedIds.includes(id) && !failedIds.includes(id));
+    const message = [
+      changedIds.length ? `${verb === "join" ? "Joined" : "Left"} ${label(changedIds)}.` : null,
+      unchangedIds.length ? `${verb === "join" ? "Already in" : "Was not in"} ${label(unchangedIds)}.` : null,
+      failedIds.length ? `Could not ${verb} ${label(failedIds)}.` : null,
+    ].filter(Boolean).join(" ");
+    return {
+      status: "ok",
+      output: {
+        status: verb === "join" ? "joined" : "left",
+        provider: "slack",
+        changed: changedIds.map(ref),
+        unchanged: unchangedIds.map(ref),
+        failed: result.failed.map((failure) => ({ ...ref(failure.channelId), code: failure.code })),
+        message,
+      },
+      summary: message,
+    };
+  }
+
+  return {
+    provider: "slack",
+    notConnectedMessage: NOT_CONNECTED,
+    actions: SLACK_ACTIONS,
+    read: ({ caller }, input) => (input.channel ? slack.read(caller, { channel: input.channel, limit: input.limit }) : Promise.resolve(refuse("channel_required", "Slack read needs channel: a channel id or #name the bot has joined."))),
+    post: ({ caller }, input) => (input.channel ? slack.post(caller, { channel: input.channel, text: input.text }) : Promise.resolve(refuse("channel_required", "Slack post needs channel: a channel id or #name the bot has joined."))),
+    join: ({ caller }, input) => changeChannels(caller, input, "join"),
+    leave: ({ caller }, input) => changeChannels(caller, input, "leave"),
+    describe: ({ caller }) => slack.listChannels(caller.workspaceId).then(
+      (result) => (result.ok ? { channels: result.channels } : { channelsError: result.error }),
+      () => ({ channelsError: "Could not list Slack channels. Try again shortly." }),
+    ),
+    browse: async ({ caller }, input) => {
+      const page = await slack.browseChannels(caller.workspaceId, input).catch((): { ok: false; code: string; error: string } => ({ ok: false, code: "slack_unavailable", error: "Could not list Slack channels. Try again shortly." }));
+      return page.ok ? { ok: true, fields: { available: { channels: page.channels, nextCursor: page.nextCursor } } } : page;
+    },
+    audit: (verb, input) => {
+      if (verb === "read") return { provider: "slack", channel: input.channel, limit: input.limit ?? null };
+      if (verb === "post") return { provider: "slack", channel: input.channel, textBytes: Buffer.byteLength(String(input.text ?? ""), "utf8") };
+      if (verb === "join" || verb === "leave") return { provider: "slack", channelCount: Array.isArray(input.channels) ? input.channels.length : 0 };
+      return { provider: "slack" };
+    },
+  };
 }

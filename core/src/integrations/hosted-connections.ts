@@ -8,6 +8,18 @@ export const HOSTED_CONNECTION_PROVIDERS = [
 ] as const;
 
 export type HostedConnectionProvider = typeof HOSTED_CONNECTION_PROVIDERS[number];
+
+/**
+ * What a caller names after connecting: the connect names plus the services that connect together under one name.
+ * Gmail and Google Drive are connected as "google" and used by their own names.
+ */
+export const SERVICE_CLI_PROVIDERS = [...HOSTED_CONNECTION_PROVIDERS, "gmail", "google-drive"] as const;
+export type ServiceCliProvider = typeof SERVICE_CLI_PROVIDERS[number];
+
+const BACKEND_PROVIDER_NAMES: Partial<Record<ServiceCliProvider, string>> = { "claude-code": "claude_session", "google-drive": "google_drive" };
+
+/** The CLI spells providers with hyphens. The backend and the MCP tools use underscores. */
+export const toBackendProviderName = (provider: ServiceCliProvider): string => BACKEND_PROVIDER_NAMES[provider] ?? provider;
 export type HostedConnectionStatus =
   | "disconnected"
   | "pending"
