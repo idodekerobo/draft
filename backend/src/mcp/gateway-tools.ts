@@ -5,14 +5,11 @@ import { personCaller } from "draft-core/tools";
 import { invokeTool, type InvokeToolDeps } from "../metaharness/tools/invoke-tool";
 import { toMcpResult } from "../metaharness/tools/mcp-result";
 import { recordError } from "../errors/record-error";
-import { filterByConnections } from "../metaharness/tools/tool-registry";
 
 /** What this surface needs from the gateway. Tests pass their own. */
 export interface McpGateway {
   deps: InvokeToolDeps;
   resolveWorkspaceId: (userId: string) => Promise<string | null>;
-  /** The caller's own live connection providers. Left out, no connection-gated tool is offered. */
-  connectionProviders?: (workspaceId: string, userId: string) => Promise<ReadonlySet<string>>;
 }
 
 const READ_ONLY_CONNECTION = "insufficient_scope: this connection only has read access. Re-authorize the Draft connection and approve write access.";
@@ -21,8 +18,8 @@ const READ_ONLY_CONNECTION = "insufficient_scope: this connection only has read 
  * These tools are defined once, in the gateway's registry. This surface only proves who the caller is,
  * finds their workspace and passes the call on; access, audit and what the caller may see are decided there.
  */
-export function registerGatewayTools(server: McpServer, userId: string, gateway: McpGateway, scopes: string[] = [], providers: ReadonlySet<string> = new Set()): void {
-  for (const tool of filterByConnections(gateway.deps.registry.listForUser(), providers).filter((candidate) => candidate.mcp)) {
+export function registerGatewayTools(server: McpServer, userId: string, gateway: McpGateway, scopes: string[] = []): void {
+  for (const tool of gateway.deps.registry.listForUser().filter((candidate) => candidate.mcp)) {
     server.registerTool(
       tool.name,
       {

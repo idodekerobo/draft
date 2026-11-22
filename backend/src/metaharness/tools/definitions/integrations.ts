@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { ToolCaller } from "draft-core/tools";
+import { personalConnectionProvidersOrNone } from "../../../ingestion/gmail/access";
 import { describeError } from "../../../errors/describe-error";
 import { disconnectConnection } from "../../../integrations/disconnect";
 import { INTEGRATION_PROVIDERS, createConnectRequest, listIntegrations } from "../../../integrations/service";
@@ -83,10 +84,11 @@ export function createIntegrationTools(client: SupabaseClient, deps: Integration
         const named = !input.provider || item.provider === input.provider || mine.some((adapter) => adapter.provider === input.provider);
         return named && (caller.origin.kind === "person" || granted.has(item.provider) || mine.some((adapter) => granted.has(adapter.provider)));
       });
+      const personal = await personalConnectionProvidersOrNone(client, caller.workspaceId, actingUserId(caller), "connections_list");
       let badCursor: ToolHandlerResult | null = null;
       const connections = await Promise.all(visible.map(async (item) => {
         const mine = rowAdapters(item.provider);
-        const row: Record<string, unknown> = { ...item, actions: mine.flatMap((adapter) => actionsFor(caller, adapter)) };
+        const row: Record<string, unknown> = { ...item, actions: mine.filter((adapter) => adapter.provider !== "gmail" || personal.has("gmail")).flatMap((adapter) => actionsFor(caller, adapter)) };
         const browseTarget = browsing ? mine.find((adapter) => adapter.provider === input.provider && adapter.browse) : undefined;
         if (item.status !== "connected") {
           if (browseTarget) row.availableError = browseTarget.notConnectedMessage;

@@ -3,7 +3,6 @@ import { createDraftToolRegistry } from "../metaharness/tools/definitions";
 import { userInvokeDeps } from "../metaharness/tools/user-gateway";
 import { registerGatewayTools, type McpGateway } from "./gateway-tools";
 import { serviceClient } from "../db/client";
-import { personalConnectionProvidersOrNone } from "../ingestion/gmail/access";
 
 // Built with each server, which is built per request, so nothing is shared between callers.
 function gatewayFor(override?: McpGateway): McpGateway {
@@ -11,7 +10,6 @@ function gatewayFor(override?: McpGateway): McpGateway {
     override ?? {
       deps: userInvokeDeps(serviceClient, createDraftToolRegistry(serviceClient)),
       resolveWorkspaceId: resolveCallerWorkspaceId,
-      connectionProviders: (workspaceId, userId) => personalConnectionProvidersOrNone(serviceClient, workspaceId, userId, "mcp"),
     }
   );
 }
@@ -34,22 +32,9 @@ async function resolveCallerWorkspaceId(userId: string): Promise<string | null> 
   return workspace?.id ?? null;
 }
 
-/** Fails closed: any lookup failure offers no connection-gated tool. */
-async function callerProviders(gateway: McpGateway, userId: string): Promise<ReadonlySet<string>> {
-  if (!gateway.connectionProviders) return new Set();
-  try {
-    const workspaceId = await gateway.resolveWorkspaceId(userId);
-    return workspaceId ? await gateway.connectionProviders(workspaceId, userId) : new Set();
-  } catch (error) {
-    console.error(JSON.stringify({ source: "mcp", event: "personal_connections_lookup_failed", error: error instanceof Error ? error.message : String(error) }));
-    return new Set();
-  }
-}
-
 /** Builds the tool surface for one already-verified caller; write tools also need the `write` scope (see mcp/route.ts). */
 export async function buildMcpServer(userId: string, scopes: string[] = [], gatewayOverride?: McpGateway): Promise<McpServer> {
   const gateway = gatewayFor(gatewayOverride);
-  const providers = await callerProviders(gateway, userId);
   const server = new McpServer(
     {
       name: "draft",
@@ -65,7 +50,7 @@ export async function buildMcpServer(userId: string, scopes: string[] = [], gate
     },
   );
 
-  registerGatewayTools(server, userId, gateway, scopes, providers);
+  registerGatewayTools(server, userId, gateway, scopes);
 
   return server;
 }
