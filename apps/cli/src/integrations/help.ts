@@ -2,6 +2,7 @@
 // `list --provider slack --help` is the page for every way to browse Slack's channels.
 
 import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
+import { providerHelp } from "./provider-help.ts";
 import { DISCONNECT_PROVIDERS } from "./types.ts";
 
 const PROVIDERS = HOSTED_CONNECTION_PROVIDERS.join(", ");
@@ -14,9 +15,10 @@ Commands:
   list                                   Show each connection: status, what it brings in, what you can do with it
   connect --provider <provider>          Connect a provider (prints a link with --json or without a terminal)
   disconnect --provider <provider>       Disconnect a provider (--yes to confirm)
-  join --provider <provider> ...         Have the bot join channels (slack)
-  leave --provider <provider> ...        Have the bot leave channels (slack)
-  read --provider <provider> ...         Read recent messages from a connected provider (slack)
+  join --provider <provider> ...         Have the bot join channels, or choose the folders Draft syncs
+  leave --provider <provider> ...        Have the bot leave channels, or stop syncing folders
+  read --provider <provider> ...         Read from a connected provider: Slack channel messages, a Gmail message, a Drive file
+  search --provider <provider> ...       Search a connected provider (see list for which can)
   post --provider <provider> ...         Post a message through a connected provider (slack)
 
 Every command takes the provider as a flag, never as a bare word.
@@ -64,8 +66,40 @@ Then, with an id or #name from the list:
 `;
 }
 
+const SEARCH_HELP = `Usage: draft connections search --provider <provider> --query <text> [--since <date>] [--until <date>] [--limit <n>] [--cursor <cursor>] [--json]
+
+Searches a connected provider live and prints one line per result: date, title, a snippet and its id.
+Providers that support it are listed under "you can" by \`draft connections list\`. Read a result with
+\`draft connections read\` and its id. A page that has more ends with a "More:" line holding the exact
+command for the next page.
+
+Slack has no live search. Messages Draft stored are searched with \`draft sources search --provider slack\`.
+
+Flags:
+  --provider <provider>  The provider to search (required)
+  --query <text>         What to look for (required). Each provider says which syntax it takes
+  --since <date>         Only items on or after this ISO date
+  --until <date>         Only items before this ISO date
+  --limit <n>            How many results, 1 to 50 (default 20)
+  --cursor <cursor>      The cursor of the previous page
+  --file-id <id>         Google Drive: only inside this file
+  --include-history      Google Drive: also search older versions
+  --json                 Print the tool's output as JSON
+
+Example:
+  draft connections search --provider <provider> --query 'quarterly plan' --since 2026-10-01 --limit 10
+`;
+
 export function integrationsSubcommandHelp(subcommand: string, provider?: string): string | null {
+  const base = baseSubcommandHelp(subcommand, provider);
+  const extra = providerHelp(provider, subcommand);
+  return base !== null && extra ? `${base}\n${extra}` : base;
+}
+
+function baseSubcommandHelp(subcommand: string, provider?: string): string | null {
   switch (subcommand) {
+    case "search":
+      return SEARCH_HELP;
     case "list":
       if (provider === "slack") return slackListHelp();
       return `Usage: draft connections list [--provider <provider>] [--available [--query <text>] [--limit <n>] [--cursor <cursor>]] [--json]
@@ -156,6 +190,7 @@ and asks which to join. A script or an agent has no terminal, so it must pass --
 Flags:
   --provider <provider>  The provider (required)
   --channel <list>       Channels to join, ids or #names, comma separated
+  --folder <list>        Google Drive: folder ids to sync, comma separated (not with --channel)
   --json                 Print the result as JSON
 
 Examples:
@@ -175,7 +210,8 @@ draft connections list --provider slack
 
 Flags:
   --provider <provider>  The provider (required)
-  --channel <list>       Channels to leave, ids or #names, comma separated (required)
+  --channel <list>       Channels to leave, ids or #names, comma separated
+  --folder <list>        Google Drive: folder ids to stop syncing, comma separated (not with --channel)
   --json                 Print the result as JSON
 
 Examples:
@@ -183,17 +219,29 @@ Examples:
   draft connections leave --provider slack --channel '#eng,#ops'
 `;
     case "read":
-      return `Usage: draft connections read --provider <provider> --channel <channel> [--limit <n>] [--json]
+      return `Usage: draft connections read --provider <provider> [--channel <channel> [--limit <n>]] [--message-id <id> | --thread-id <id>] [--file-id <id>] [--json]
 
-Reads recent messages from a connected provider. Providers that support it: slack.
+Reads from a connected provider. Each provider takes its own flags, and refuses a call that lacks them.
+\`draft connections list\` shows what each provider takes.
 
 Slack: --channel is a channel id or #name the bot has joined (\`draft connections list --provider slack\`
 shows them). Read before you post, and do not repeat a message already sent.
+Gmail: --message-id or --thread-id, from \`draft connections search\`. Add --attachment-id to download one attachment.
+Google Drive: --file-id, from \`draft connections search\`. Add --version or --as-of to pick a version.
 
 Flags:
   --provider <provider>  The provider to read from (required)
-  --channel <channel>    The channel to read (required)
-  --limit <n>            How many recent messages, 1 to 50 (default 20)
+  --channel <channel>    Slack: the channel to read (required for Slack)
+  --limit <n>            Slack: how many recent messages, 1 to 50 (default 20)
+  --message-id <id>      Gmail: one message
+  --thread-id <id>       Gmail: a whole thread
+  --attachment-id <id>   Gmail, with --message-id: one attachment
+  --file-id <id>         Google Drive: a file
+  --version <id>         Google Drive: a version of the file
+  --as-of <time>         Google Drive: the version current at this ISO time
+  --include versions     Google Drive: also list the file's stored versions
+  --max-bytes <n>        Gmail and Google Drive: how many bytes to return at a time
+  --cursor <cursor>      Gmail and Google Drive: the cursor of the previous page. A page that has more ends with a "More:" line
   --json                 Print the tool's output as JSON
 
 Examples:

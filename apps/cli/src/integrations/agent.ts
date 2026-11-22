@@ -3,15 +3,13 @@
 import { callPersonTool, type ToolCallResult } from "../cloud-client.ts";
 import { SCHEMA_VERSION, EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, errorPayload } from "../utils/json-output.ts";
 import { red } from "../utils/output.ts";
-import { HOSTED_CONNECTION_PROVIDERS } from "draft-core/integrations/hosted-connections";
+import { HOSTED_CONNECTION_PROVIDERS, toBackendProviderName } from "draft-core/integrations/hosted-connections";
 import { PROVIDER_LABELS } from "./types.ts";
 
 export const CONNECT_CLI_PROVIDERS = HOSTED_CONNECTION_PROVIDERS;
 export type ConnectCliProvider = (typeof CONNECT_CLI_PROVIDERS)[number];
 
-export function toBackendProvider(provider: ConnectCliProvider): string {
-  return provider === "claude-code" ? "claude_session" : provider;
-}
+export const toBackendProvider = toBackendProviderName;
 
 const POLL_INTERVAL_MS = 3_000;
 

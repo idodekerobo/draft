@@ -1,5 +1,5 @@
 import { callPersonTool } from "../cloud-client.ts";
-import { runConnectionsDisconnect, runConnectionsJoin, runConnectionsLeave, runConnectionsPost, runConnectionsRead, takeProviderFlag, takeValueFlag, usageError } from "../integrations/tool-commands.ts";
+import { runConnectionsDisconnect, runConnectionsJoin, runConnectionsLeave, runConnectionsPost, runConnectionsRead, runConnectionsSearch, takeProviderFlag, takeValueFlag, usageError } from "../integrations/tool-commands.ts";
 import { createIntegrationOutput, INTEGRATION_ERROR_REGISTRY, type IntegrationErrorCode } from "../integrations/safe-output.ts";
 import { isInteractiveTerminal, parseAgentConnectArgs, runAgentConnect, toBackendProvider } from "../integrations/agent.ts";
 import { integrationsGroupHelp, integrationsSubcommandHelp } from "../integrations/help.ts";
@@ -251,8 +251,9 @@ function hasExplicitCredentialSource(args: string[]): boolean {
 }
 
 async function runIntegrationsConnect(rawArgs: string[]): Promise<number> {
-  const taken = takeProviderFlag(rawArgs);
+  const taken = takeProviderFlag(rawArgs, "connect");
   if (taken.error || !taken.provider) {
+    if (taken.error?.includes("connect together")) process.stderr.write(`${taken.error}\n`);
     return createIntegrationOutput({ json: rawArgs.includes("--json") }).error("invalid_connect_usage");
   }
   // The provider goes first so each provider's own parser below sees the grammar it was written for.
@@ -321,6 +322,7 @@ export async function runIntegrations(args: string[]): Promise<number> {
   if (subcommand === "join") return runConnectionsJoin(rest);
   if (subcommand === "leave") return runConnectionsLeave(rest);
   if (subcommand === "read") return runConnectionsRead(rest);
+  if (subcommand === "search") return runConnectionsSearch(rest);
   if (subcommand === "post") return runConnectionsPost(rest);
 
   const json = args.includes("--json");
