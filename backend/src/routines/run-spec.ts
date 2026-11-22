@@ -37,7 +37,9 @@ export function routinePermissions(
     { tool: "connections.post", provider: "slack", limits: { channels: routine.postChannels, maxPerRun: 10 } },
   );
   if (routine.github) permissions.push({ tool: "github.credential", limits: routine.github });
-  if (routine.canReadGmail && ownerProviders.has("gmail")) permissions.push({ tool: "gmail.search" }, { tool: "gmail.read" }, { tool: "gmail.attachment" });
+  if (routine.canReadGmail && ownerProviders.has("gmail")) permissions.push(
+    { tool: "connections.list", provider: "gmail" }, { tool: "connections.search", provider: "gmail" }, { tool: "connections.read", provider: "gmail" },
+  );
   return permissions;
 }
 

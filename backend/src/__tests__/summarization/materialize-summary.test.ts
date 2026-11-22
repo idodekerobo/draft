@@ -27,7 +27,7 @@ function baseSession(overrides: Partial<CapturedSessionRow> = {}): CapturedSessi
   };
 }
 
-type LogRow = { workspace_id: string; user_id: string; command: string; occurred_at: string };
+type LogRow = { workspace_id: string; user_id: string; command: string; occurred_at: string; provider?: string };
 
 function fakeClient(options: { logRows?: LogRow[]; logError?: unknown } = {}) {
   const rpcCalls: Array<Record<string, unknown>> = [];
@@ -49,14 +49,10 @@ function fakeClient(options: { logRows?: LogRow[]; logError?: unknown } = {}) {
         const preds: Array<(row: LogRow) => boolean> = [];
         const builder = {
           select: () => builder,
-          eq: (column: keyof LogRow, value: string) => (preds.push((r) => r[column] === value), builder),
+          eq: (column: string, value: string) => (preds.push((r) => (column === "args_json->>provider" ? r.provider === value : r[column as keyof LogRow] === value)), builder),
+          in: (column: keyof LogRow, values: string[]) => (preds.push((r) => values.includes(r[column] as string)), builder),
           gte: (column: keyof LogRow, value: string) => (preds.push((r) => r[column] >= value), builder),
           lte: (column: keyof LogRow, value: string) => (preds.push((r) => r[column] <= value), builder),
-          or: (expr: string) => {
-            const prefixes = expr.split(",").map((part) => part.replace("command.like.", "").replace("%", ""));
-            preds.push((r) => prefixes.some((prefix) => r.command.startsWith(prefix)));
-            return builder;
-          },
           limit: async (n: number) =>
             options.logError
               ? { data: null, error: options.logError }
@@ -139,17 +135,24 @@ describe("materializeSessionSummary", () => {
     ok: true as const,
     payload: { who: "alice", project: "draft", outcome: "shipped", keyDecisions: [] },
   };
-  const gmailRow = (occurred_at: string, command = "mcp.gmail.search"): LogRow => ({
+  const gmailRow = (occurred_at: string, command = "mcp.connections.search", provider = "gmail"): LogRow => ({
     workspace_id: "workspace-1",
     user_id: "user-1",
     command,
     occurred_at,
+    provider,
   });
 
-  test("is private to the owner when a Gmail tool ran inside the session window", async () => {
-    const { client, rpcCalls } = fakeClient({ logRows: [gmailRow("2026-08-01T00:30:00.000Z", "gmail.read")] });
+  test.each(["connections.read", "mcp.connections.search", "connections.search"])("is private to the owner when %s ran on Gmail inside the session window", async (command) => {
+    const { client, rpcCalls } = fakeClient({ logRows: [gmailRow("2026-08-01T00:30:00.000Z", command)] });
     await materializeSessionSummary(baseSession(), okResult, client);
     expect(rpcCalls[0]).toMatchObject({ p_visibility: "private", p_owner_user_id: "user-1" });
+  });
+
+  test("stays shared when the same tools ran on Slack, not Gmail", async () => {
+    const { client, rpcCalls } = fakeClient({ logRows: [gmailRow("2026-08-01T00:30:00.000Z", "connections.read", "slack")] });
+    await materializeSessionSummary(baseSession(), okResult, client);
+    expect(rpcCalls[0]).toMatchObject({ p_visibility: "shared", p_owner_user_id: null });
   });
 
   test("stays shared when the Gmail call was outside the session window", async () => {

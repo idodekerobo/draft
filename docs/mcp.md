@@ -119,15 +119,15 @@ Your agent never sees your keys: you enter them on the Draft page the link opens
 
 ### Gmail
 
-These tools read the Gmail of the person who connected Google. They read live, with that person's own Google login. Nothing is stored in Draft. They appear only after you connect Google (`connections.connect` with `google`, or `draft connections connect --provider google`). After you connect, restart your MCP client, or run `/mcp` in Claude Code, to see them.
+Gmail is a provider of `connections.search` and `connections.read`: pass `provider: "gmail"`. It reads the Gmail of the person who connected Google, live, with that person's own Google login. Nothing is stored in Draft. Connect Google first (`connections.connect` with `google`, or `draft connections connect --provider google`). `connections.list` then shows Gmail's verbs and fields under the Google connection.
 
-| Tool | Input | Purpose |
+| Call | Input | Purpose |
 | --- | --- | --- |
-| `gmail.search` | `{ query, since?, until?, limit?, cursor? }` | Search with Gmail search syntax (`from:`, `subject:`, `has:attachment`, ...). `since` and `until` are ISO dates. `limit` is 1 to 50 (default 20). Returns `messages` (id, thread id, sender, subject, date, snippet), newest first, and `next_cursor`. |
-| `gmail.read` | `{ message_id? \| thread_id?, max_bytes?, cursor? }` | Read one message or a whole thread, with plain-text bodies and a list of attachments. Pass exactly one id. Bodies are cut to `max_bytes` (1 KB to 256 KB, default 32 KB). When `truncated` is true, pass `next_cursor` as `cursor` with the same id for the rest. |
-| `gmail.attachment` | `{ message_id, attachment_id, max_bytes?, cursor? }` | Download an attachment that `gmail.read` listed, as base64. Each part is up to `max_bytes` (1 KB to 1 MB, default 256 KB). When `truncated` is true, pass `next_cursor` as `cursor` for the next part. Attachments over 10 MB are refused. |
+| `connections.search` | `{ provider: "gmail", query, since?, until?, limit?, cursor? }` | Search with Gmail search syntax (`from:`, `subject:`, `has:attachment`, ...). `cal meeting` needs both words, `"cal meeting"` the phrase. `since` and `until` are ISO dates. `limit` is 1 to 50 (default 20). Returns `results` (id, threadId, title as the subject, from, date, snippet), newest first, and `nextCursor`. |
+| `connections.read` | `{ provider: "gmail", messageId? \| threadId?, maxBytes?, cursor? }` | Read one message or a whole thread, with plain-text bodies and a list of attachments. Pass exactly one id. Bodies are cut to `maxBytes` (default 32 KB). When `truncated` is true, pass `nextCursor` as `cursor` with the same id for the rest. |
+| `connections.read` | `{ provider: "gmail", messageId, attachmentId, maxBytes?, cursor? }` | Download an attachment that the message listed, as base64. Each part is up to `maxBytes` (default 256 KB). When `truncated` is true, pass `nextCursor` as `cursor` for the next part. Attachments over 10 MB are refused. |
 
-A routine can use these tools only when its owner turns on **Read my Gmail** (`canReadGmail: true` in `routines.create` or `routines.update`). The routine then reads the owner's Gmail, never anyone else's. Turning it on is refused with `gmail_not_connected` until the owner connects Google.
+A routine can use these only when its owner turns on **Read my Gmail** (`canReadGmail: true` in `routines.create` or `routines.update`). The routine then holds `connections.list`, `connections.search` and `connections.read` for `gmail`, and reads the owner's Gmail, never anyone else's. Turning it on is refused with `gmail_not_connected` until the owner connects Google. A session that searched or read Gmail has a private summary.
 
 | Code | Meaning |
 | --- | --- |

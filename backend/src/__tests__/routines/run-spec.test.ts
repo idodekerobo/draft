@@ -70,14 +70,14 @@ describe("routine permissions", () => {
   });
 
   it("gives the Gmail tools only when canReadGmail is on and the owner has Gmail connected", () => {
-    const GMAIL: AnyDraftToolPermission[] = [{ tool: "gmail.search" }, { tool: "gmail.read" }, { tool: "gmail.attachment" }];
+    const GMAIL: AnyDraftToolPermission[] = [{ tool: "connections.list", provider: "gmail" }, { tool: "connections.search", provider: "gmail" }, { tool: "connections.read", provider: "gmail" }];
     expect(routinePermissions({ canReadGmail: true }, new Set(["gmail"]))).toEqual([...ROUTINE_PERMISSIONS, ...ROUTINE_TOOLS, ...GMAIL]);
     expect(routinePermissions({ canReadGmail: true }, new Set())).toEqual([...ROUTINE_PERMISSIONS, ...ROUTINE_TOOLS]);
     expect(routinePermissions({ canReadGmail: true })).toEqual([...ROUTINE_PERMISSIONS, ...ROUTINE_TOOLS]);
     expect(routinePermissions({ canReadGmail: false }, new Set(["gmail"]))).toEqual([...ROUTINE_PERMISSIONS, ...ROUTINE_TOOLS]);
     expect(routinePermissions({}, new Set(["gmail"]))).toEqual([...ROUTINE_PERMISSIONS, ...ROUTINE_TOOLS]);
     const spec = buildRoutineRunSpec({ ...input, routine: { ...input.routine, canReadGmail: true }, ownerConnectionProviders: new Set(["gmail"]) });
-    expect(spec.permissions.map((permission) => permission.tool as string)).toContain("gmail.search");
+    expect(spec.permissions.map((permission) => permission.tool as string)).toContain("connections.search");
   });
 
   it("lets every routine run create up to 5 routines, and a routine's runs manage routines through the per-call guards", () => {

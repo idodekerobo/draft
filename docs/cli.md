@@ -484,8 +484,9 @@ Draft asks only for read-only Gmail access. With `--json`, the CLI first
 prints `{"status":"action_required","provider":"google","url":"…"}`, then
 `{"status":"connected","provider":"google"}` when you finish. It stops
 waiting after 10 minutes. Gmail is read live when your agent asks; nothing is
-copied into Draft. After you connect, restart your MCP client (or run `/mcp`
-in Claude Code) so the Gmail tools appear.
+copied into Draft. After you connect, search it with
+`draft connections search --provider gmail --query 'cal meeting'` and read a
+result with `draft connections read --provider gmail --message-id <id>`.
 
 `github`, `linear`, `claude-code`, `slack`, and `granola` accept
 `--credential-stdin` (a single JSON object on stdin) or `--credential-fd <n>`

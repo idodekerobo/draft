@@ -40,7 +40,10 @@ function errorMessage(error: unknown): string {
   }
 }
 
-// A session that called a Gmail tool may quote mail in its summary, so it stays
+// The audit row of connections.search and connections.read keeps the provider, so Gmail calls are told apart from Slack's.
+const GMAIL_COMMANDS = ["connections.search", "connections.read", "mcp.connections.search", "mcp.connections.read"];
+
+// A session that searched or read Gmail may quote mail in its summary, so it stays
 // private to its owner. A failed lookup fails closed.
 async function sessionReadGmail(session: CapturedSessionRow, client: SupabaseClient): Promise<boolean> {
   if (session.user_id === null) return false;
@@ -51,7 +54,8 @@ async function sessionReadGmail(session: CapturedSessionRow, client: SupabaseCli
     .eq("user_id", session.user_id)
     .gte("occurred_at", session.started_at)
     .lte("occurred_at", session.ended_at ?? new Date().toISOString())
-    .or("command.like.mcp.gmail.%,command.like.gmail.%")
+    .in("command", GMAIL_COMMANDS)
+    .eq("args_json->>provider", "gmail")
     .limit(1);
   if (error) {
     console.error("materializeSessionSummary: Gmail usage lookup failed", error);

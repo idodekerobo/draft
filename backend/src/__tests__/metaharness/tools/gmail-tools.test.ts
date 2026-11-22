@@ -9,7 +9,7 @@ process.env.INFERENCE_CREDENTIAL_KEK_V2 ??= Buffer.alloc(32, 7).toString("base64
 const { parseAgentRunId, parseContextVersionId, parseScheduledTaskId, parseIsoTimestamp, parseUserId, parseWorkspaceId } = await import("draft-core/run-spec");
 const { personCaller, runCaller } = await import("draft-core/tools");
 const { encryptCredentialPayload, CURRENT_CREDENTIAL_KEY_VERSION } = await import("../../../credentials/crypto");
-const { createGmailTools } = await import("../../../metaharness/tools/definitions/gmail");
+const { createIntegrationTools } = await import("../../../metaharness/tools/definitions/integrations");
 const { personalConnectionProviders, personalConnectionProvidersOrNone } = await import("../../../ingestion/gmail/access");
 const { invokeTool } = await import("../../../metaharness/tools/invoke-tool");
 const { ToolRegistry } = await import("../../../metaharness/tools/tool-registry");
@@ -23,7 +23,7 @@ const OWNER = "44444444-4444-4444-8444-444444444444";
 const TEAMMATE = "55555555-5555-4555-8555-555555555555";
 const TASK = "66666666-6666-4666-8666-666666666666";
 const settings = { clientId: "c", clientSecret: "s", redirectUri: "https://api.test/cb" };
-const GMAIL = ["gmail.search", "gmail.read", "gmail.attachment"].map((tool) => ({ tool })) as AnyDraftToolPermission[];
+const GMAIL = ["connections.search", "connections.read"].map((tool) => ({ tool, provider: "gmail" })) as AnyDraftToolPermission[];
 
 const run = (permissions: AnyDraftToolPermission[], onBehalfOf: string | null = OWNER): AgentRunSpec => ({
   id: parseAgentRunId(RUN), kind: "routine", network: "open",
@@ -79,7 +79,7 @@ function gmailFetch(options: { token?: { status: number; body: unknown }; urls?:
 
 function setup(fetchFn = gmailFetch()) {
   const db = seed();
-  const registry = new ToolRegistry(createGmailTools(fakeClient(db), { fetch: fetchFn, settings: () => settings }));
+  const registry = new ToolRegistry(createIntegrationTools(fakeClient(db), { gmail: { fetch: fetchFn, settings: () => settings } }));
   const audits: Array<{ arguments: unknown }> = [];
   const invoke = (caller: ToolCaller, tool: string, input: unknown) =>
     invokeTool({ registry, audit: async (entry) => { audits.push(entry as never); }, authorizeUser: async () => null }, caller, tool, input);
@@ -90,53 +90,60 @@ describe("Gmail tools", () => {
   it("searches the person's own mailbox, adds date terms and redacts the query in the audit", async () => {
     const urls: string[] = [];
     const { db, invoke, audits } = setup(gmailFetch({ urls }));
-    const result = await invoke(person(OWNER), "gmail.search", { query: "from:ada", since: "2026-11-01", until: "2026-11-15", limit: 2 });
+    const result = await invoke(person(OWNER), "connections.search", { provider: "gmail", query: "from:ada", since: "2026-11-01", until: "2026-11-15", limit: 2 });
     expect(result).toMatchObject({ status: "ok", output: {
-      messages: [{ id: "m-1", thread_id: "t-1", from: "Ada <ada@example.com>", subject: "Subject m-1", snippet: "snippet m-1" }, { id: "m-2" }],
-      next_cursor: "page-2",
+      provider: "gmail",
+      results: [{ id: "m-1", threadId: "t-1", from: "Ada <ada@example.com>", title: "Subject m-1", snippet: "snippet m-1" }, { id: "m-2" }],
+      nextCursor: "page-2",
     } });
     expect(new URL(urls.find((url) => url.endsWith("maxResults=2"))!).searchParams.get("q")).toBe("from:ada after:2026/11/01 before:2026/11/15");
     expect(JSON.stringify(audits)).not.toContain("from:ada");
+    expect(audits[0]?.arguments).toMatchObject({ provider: "gmail", query: "[redacted]" });
     expect(db.tables.source_items).toEqual([]);
   });
 
   it("refuses a member without their own connection even when a teammate is connected", async () => {
     const { invoke } = setup();
-    expect(await invoke(person(TEAMMATE), "gmail.search", { query: "x" })).toMatchObject({ status: "refused", code: "google_not_connected" });
+    expect(await invoke(person(TEAMMATE), "connections.search", { provider: "gmail", query: "x" })).toMatchObject({ status: "refused", code: "google_not_connected" });
   });
 
   it("needs a gmail permission on a run, uses the run owner's connection, and refuses a run with no person", async () => {
     const { invoke } = setup();
-    expect(await invoke(runCaller(run([])), "gmail.search", { query: "x" })).toMatchObject({ status: "denied", code: "not_permitted" });
-    expect(await invoke(runCaller(run(GMAIL)), "gmail.search", { query: "x" })).toMatchObject({ status: "ok" });
-    expect(await invoke(runCaller(run(GMAIL, null)), "gmail.search", { query: "x" })).toMatchObject({ status: "refused", code: "gmail_requires_person" });
+    const search = { provider: "gmail", query: "x" };
+    expect(await invoke(runCaller(run([])), "connections.search", search)).toMatchObject({ status: "denied", code: "not_permitted" });
+    expect(await invoke(runCaller(run([{ tool: "connections.search", provider: "slack" }])), "connections.search", search)).toMatchObject({ status: "denied", code: "not_permitted" });
+    expect(await invoke(runCaller(run(GMAIL)), "connections.search", search)).toMatchObject({ status: "ok" });
+    expect(await invoke(runCaller(run(GMAIL, null)), "connections.search", search)).toMatchObject({ status: "refused", code: "gmail_requires_person" });
   });
 
   it("asks to reconnect and degrades the connection on invalid_grant", async () => {
     const { db, invoke } = setup(gmailFetch({ token: { status: 400, body: { error: "invalid_grant" } } }));
-    expect(await invoke(person(OWNER), "gmail.read", { message_id: "m-1" })).toMatchObject({ status: "refused", code: "google_reconnect_required" });
+    expect(await invoke(person(OWNER), "connections.read", { provider: "gmail", messageId: "m-1" })).toMatchObject({ status: "refused", code: "google_reconnect_required" });
     expect(db.tables.connections![0]!.status).toBe("degraded");
   });
 
   it("pages a thread body with a cursor and refuses both ids", async () => {
     const { invoke } = setup();
-    const first = await invoke(person(OWNER), "gmail.read", { thread_id: "t-1", max_bytes: 2000 }) as { status: string; output: { messages: Array<{ id: string; body_text: string }>; truncated: boolean; next_cursor: string } };
+    const first = await invoke(person(OWNER), "connections.read", { provider: "gmail", threadId: "t-1", maxBytes: 2000 }) as { status: string; output: { messages: Array<{ id: string; body_text: string }>; truncated: boolean; nextCursor: string } };
     expect(first.output.truncated).toBe(true);
     expect(first.output.messages.map((item) => [item.id, item.body_text.length])).toEqual([["m-1", 1500], ["m-2", 500]]);
-    const second = await invoke(person(OWNER), "gmail.read", { thread_id: "t-1", max_bytes: 2000, cursor: first.output.next_cursor });
-    expect(second).toMatchObject({ status: "ok", output: { truncated: false, next_cursor: null } });
+    const second = await invoke(person(OWNER), "connections.read", { provider: "gmail", threadId: "t-1", maxBytes: 2000, cursor: first.output.nextCursor });
+    expect(second).toMatchObject({ status: "ok", output: { truncated: false, nextCursor: null } });
     expect((second as { output: { messages: Array<{ id: string; body_text: string }> } }).output.messages.map((item) => [item.id, item.body_text.length])).toEqual([["m-2", 1000]]);
-    expect(await invoke(person(OWNER), "gmail.read", { message_id: "m-1", cursor: first.output.next_cursor })).toMatchObject({ status: "refused", code: "invalid_cursor" });
-    expect(await invoke(person(OWNER), "gmail.read", { message_id: "m-1", thread_id: "t-1" })).toMatchObject({ status: "refused", code: "invalid_input" });
-    expect(await invoke(person(OWNER), "gmail.read", { message_id: "missing" })).toMatchObject({ status: "refused", code: "gmail_not_found" });
+    expect(await invoke(person(OWNER), "connections.read", { provider: "gmail", messageId: "m-1", cursor: first.output.nextCursor })).toMatchObject({ status: "refused", code: "invalid_cursor" });
+    expect(await invoke(person(OWNER), "connections.read", { provider: "gmail", messageId: "m-1", threadId: "t-1" })).toMatchObject({ status: "refused", code: "invalid_input" });
+    expect(await invoke(person(OWNER), "connections.read", { provider: "gmail", messageId: "missing" })).toMatchObject({ status: "refused", code: "gmail_not_found" });
+    expect(await invoke(person(OWNER), "connections.read", { provider: "gmail" })).toMatchObject({ status: "refused", code: "invalid_input" });
   });
 
   it("downloads an attachment in parts", async () => {
     const { invoke } = setup();
-    const first = await invoke(person(OWNER), "gmail.attachment", { message_id: "m-1", attachment_id: "att-1", max_bytes: 2048 }) as { output: { next_cursor: string } };
-    expect(first).toMatchObject({ status: "ok", output: { filename: "deck.pdf", mime_type: "application/pdf", size: 3000, offset: 0, truncated: true } });
-    const second = await invoke(person(OWNER), "gmail.attachment", { message_id: "m-1", attachment_id: "att-1", max_bytes: 2048, cursor: first.output.next_cursor });
-    expect(second).toMatchObject({ status: "ok", output: { offset: 2048, truncated: false, next_cursor: null } });
+    const args = { provider: "gmail", messageId: "m-1", attachmentId: "att-1", maxBytes: 2048 };
+    const first = await invoke(person(OWNER), "connections.read", args) as { output: { nextCursor: string } };
+    expect(first).toMatchObject({ status: "ok", output: { filename: "deck.pdf", mimeType: "application/pdf", size: 3000, offset: 0, truncated: true } });
+    const second = await invoke(person(OWNER), "connections.read", { ...args, cursor: first.output.nextCursor });
+    expect(second).toMatchObject({ status: "ok", output: { offset: 2048, truncated: false, nextCursor: null } });
+    expect(await invoke(person(OWNER), "connections.read", { provider: "gmail", attachmentId: "att-1" })).toMatchObject({ status: "refused", code: "invalid_input" });
   });
 });
 

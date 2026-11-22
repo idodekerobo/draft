@@ -226,11 +226,4 @@ describe("user tool endpoint: the call itself", () => {
     expect(names).not.toContain("context.write");
     expect(tools.every((tool) => tool.inputSchema.type === "object")).toBe(true);
   });
-
-  it("lists the Gmail tools only for a person with their own Gmail connection", async () => {
-    const listed = async (providers: string[]) =>
-      ((await listUserTools(deps, new Set(providers)).json()) as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
-    expect((await listed([])).some((name) => name.startsWith("gmail."))).toBe(false);
-    expect(await listed(["gmail"])).toEqual(expect.arrayContaining(["gmail.search", "gmail.read", "gmail.attachment"]));
-  });
 });

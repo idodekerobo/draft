@@ -189,17 +189,4 @@ describe("run gateway for a session that acts for its owner", () => {
       expect(await names(await gateway.listTools(request("/x", { method: "GET" }), RUN_ID))).toEqual(["context.read"]);
     }
   });
-
-  it("offers the Gmail tools only when the owner has their own Gmail connection", async () => {
-    const TEAMMATE = "44444444-4444-4444-8444-444444444444";
-    const byUser = async (_workspaceId: string, userId: string) => new Set(userId === TEAMMATE ? ["gmail"] : []);
-    const hidden = await setup([{ tool: "context.read" }], "running", { kind: "interactive", onBehalfOf: OWNER }, byUser);
-    expect((await names(await hidden.gateway.listTools(hidden.request("/x", { method: "GET" }), RUN_ID))).filter((name) => name.startsWith("gmail."))).toEqual([]);
-
-    const shown = await setup([{ tool: "context.read" }], "running", { kind: "interactive", onBehalfOf: OWNER }, async () => new Set(["gmail"]));
-    expect(await names(await shown.gateway.listTools(shown.request("/x", { method: "GET" }), RUN_ID))).toEqual(expect.arrayContaining(["gmail.search", "gmail.read", "gmail.attachment"]));
-
-    const failed = await setup([{ tool: "context.read" }], "running", { kind: "interactive", onBehalfOf: OWNER }, async () => { throw new Error("db down"); });
-    expect((await names(await failed.gateway.listTools(failed.request("/x", { method: "GET" }), RUN_ID))).some((name) => name.startsWith("gmail."))).toBe(false);
-  });
 });
