@@ -31,5 +31,5 @@ begin
 end;
 $$;
 
-revoke all on function delete_drive_file(uuid, text) from public;
+revoke all on function delete_drive_file(uuid, text) from public, anon, authenticated;
 grant execute on function delete_drive_file(uuid, text) to service_role;

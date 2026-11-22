@@ -82,5 +82,5 @@ as $$
   order by p.rank desc, p.id asc;
 $$;
 
-revoke all on function search_drive_items(uuid, text, boolean, text, timestamptz, timestamptz, real, uuid, int) from public;
+revoke all on function search_drive_items(uuid, text, boolean, text, timestamptz, timestamptz, real, uuid, int) from public, anon, authenticated;
 grant execute on function search_drive_items(uuid, text, boolean, text, timestamptz, timestamptz, real, uuid, int) to service_role;

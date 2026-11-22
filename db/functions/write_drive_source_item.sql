@@ -142,7 +142,7 @@ $$;
 revoke all on function write_drive_source_item(
   uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid,
   text, timestamptz, timestamptz, uuid
-) from public;
+) from public, anon, authenticated;
 grant execute on function write_drive_source_item(
   uuid, uuid, text, text, text, timestamptz, text, text, jsonb, jsonb, text, text, uuid,
   text, timestamptz, timestamptz, uuid
