@@ -202,6 +202,41 @@ One-time rows show their scheduled time or when they fired. Routines an agent ma
 
 `runs` lists status, what started each run, its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time. When there are older runs or more transcript, the output ends with the command for the next page.
 
+## People
+
+`draft people` shows who Draft knows in your workspace and how to reach them. A person is not always a Draft user: it can be someone named in a meeting who has no account. Each command calls one MCP tool as you, and `--json` prints the tool's answer.
+
+| Command | What it does |
+| --- | --- |
+| `draft people find [name] [--me] [--email <address>] [--status <s>]` | Find people. It never prints emails or ids of other systems |
+| `draft people create <name> [--email <a>] [--slack <id>] [--quote <why>] [--force]` | Add a teammate. An admin's addition is active, anyone else's waits for approval |
+| `draft people update <id or name> --provider <p> ...` | Record, correct or remove a way to recognise a person (below) |
+| `draft people pending` | Who is waiting for approval |
+| `draft people approve <id or name>` / `reject <id or name> [--reason <why>]` | Admins only |
+| `draft people notify <id or name> <message> [--link <url>]` | Send a message to a person |
+
+### `draft people update`
+
+A person has several ways to be recognised: an email, a Slack id, a Linear or GitHub id, a phone number. `update` changes them. Name the person by id or by name; a name has to match exactly one person, whatever their status. `--provider` is one of `email`, `slack`, `linear`, `github`, `whatsapp`. Each command makes one change, never a mix:
+
+```bash
+# Add one
+draft people update cory --provider slack --external-id U0123 --handle cory --quote "Cory posted as U0123"
+
+# Correct one, in a single step
+draft people update cory --provider email --replace cory@typo.com --external-id cory@right.com
+
+# Remove one
+draft people update cory --provider slack --remove U0123
+```
+
+- `--external-id` is the id: an email address, a Slack member id, and so on. Emails are matched without regard to case.
+- `--handle` is a display name only. It is never used to match. `--quote` and `--source-item <id>` (from `draft sources search`) say where you learned the id.
+- **What you add is a guess** until a connection sees the same id, such as Slack's member sync. A guess cannot be used to message the person.
+- **Only a guess can be replaced or removed.** An id that comes from a workspace member or a connection is kept in step with that source, so the command refuses it with `identity_trusted`. Change it at the source.
+- An id that belongs to someone else is refused with `identity_taken` when you add or replace. When you remove or replace an id the person doesn't have, the answer is `identity_not_found`, whoever owns it.
+- A replace adds the corrected id first. If it belongs to someone else, the old id stays.
+
 ## Activity
 
 `draft activity list` shows everything the workspace's agents have run, newest first, 50 at a time: routine runs, context updates, session summaries and interactive sessions. It's the same list as the Activity page, and matches the MCP tool `activity.list`.
