@@ -235,17 +235,17 @@ _draft() {
           elif [[ \$words[3] == 'disconnect' ]]; then
             _arguments '--provider[The provider to disconnect]:provider:(${disconnectProviderNames})' '--yes[Confirm and disconnect]' '--json[Print the result as JSON]' '--workspace-key[Granola workspace key]'
           elif [[ \$words[3] == 'list' ]]; then
-            _arguments '--provider[Only this provider]:provider:(${providerNames})' '--available[Also list every public channel]' '--query[Only channels whose name contains this]:query:' '--limit[Channels per page]:limit:' '--cursor[The next page]:cursor:' '--json[Print as JSON]'
+            _arguments '--provider[Only this provider]:provider:(${serviceNames})' '--available[Also list every public channel]' '--query[Only channels whose name contains this]:query:' '--limit[Channels per page]:limit:' '--cursor[The next page]:cursor:' '--json[Print as JSON]'
           elif [[ \$words[3] == 'join' ]]; then
-            _arguments '--provider[The provider]:provider:(${providerNames})' '--channel[Channels to join]:channels:' '--json[Print as JSON]'
+            _arguments '--provider[The provider]:provider:(${serviceNames})' '--channel[Channels to join]:channels:' '--folder[Drive: folders to sync]:folders:' '--json[Print as JSON]'
           elif [[ \$words[3] == 'leave' ]]; then
-            _arguments '--provider[The provider]:provider:(${providerNames})' '--channel[Channels to leave]:channels:' '--json[Print as JSON]'
+            _arguments '--provider[The provider]:provider:(${serviceNames})' '--channel[Channels to leave]:channels:' '--folder[Drive: folders to stop syncing]:folders:' '--json[Print as JSON]'
           elif [[ \$words[3] == 'read' ]]; then
-            _arguments '--provider[The provider to read from]:provider:(${providerNames})' '--channel[The channel to read]:channel:' '--limit[How many messages]:limit:' '--json[Print as JSON]'
+            _arguments '--provider[The provider to read from]:provider:(${serviceNames})' '--channel[The channel to read]:channel:' '--limit[How many messages]:limit:' '--message-id[Gmail: message to read]:id:' '--thread-id[Gmail: thread to read]:id:' '--attachment-id[Gmail: attachment to read]:id:' '--file-id[Drive: file to read]:id:' '--version[Drive: version to read]:version:' '--as-of[Drive: version at this time]:date:' '--include[Drive: include versions]:include:' '--max-bytes[Maximum bytes to read]:bytes:' '--cursor[The next page]:cursor:' '--json[Print as JSON]'
           elif [[ \$words[3] == 'search' ]]; then
             _arguments '--provider[The provider to search]:provider:(${serviceNames})' '--query[What to look for]:query:' '--since[Only items on or after this date]:date:' '--until[Only items before this date]:date:' '--limit[How many results]:limit:' '--cursor[The next page]:cursor:' '--file-id[Drive: only inside this file]:id:' '--include-history[Drive: also search older versions]' '--json[Print as JSON]'
           elif [[ \$words[3] == 'post' ]]; then
-            _arguments '--provider[The provider to post through]:provider:(${providerNames})' '--channel[The channel to post in]:channel:' '--text[The message]:text:' '--json[Print as JSON]'
+            _arguments '--provider[The provider to post through]:provider:(${serviceNames})' '--channel[The channel to post in]:channel:' '--text[The message]:text:' '--json[Print as JSON]'
           fi
           ;;
         update)

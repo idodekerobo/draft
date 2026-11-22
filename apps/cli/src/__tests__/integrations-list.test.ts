@@ -383,7 +383,11 @@ describe("connections help and completion", () => {
     expect(zsh.stdout).toContain("'--available[Also list every public channel]'");
     expect(zsh.stdout).toContain("'read:Read from a provider'");
     expect(zsh.stdout).toContain("'post:Post a message through a provider'");
-    expect(zsh.stdout).toContain("'--provider[The provider to connect]:provider:(github slack linear fireflies granola claude-code)'");
+    expect(zsh.stdout).toContain("'--provider[The provider to connect]:provider:(github slack linear fireflies granola claude-code google)'");
+    expect(zsh.stdout).toContain("'--provider[The provider to read from]:provider:(github slack linear fireflies granola claude-code google gmail google-drive)'");
+    for (const flag of ["message-id", "thread-id", "attachment-id", "file-id", "version", "as-of", "include", "max-bytes", "cursor", "folder"]) {
+      expect(zsh.stdout).toContain(`'--${flag}[`);
+    }
     expect(zsh.stdout).toContain("'--yes[Confirm and disconnect]'");
     expect(zsh.stdout).toContain("'--wait[Wait until connected]'");
     expect(zsh.stdout).toContain("'runs:List the runs of a routine'");
