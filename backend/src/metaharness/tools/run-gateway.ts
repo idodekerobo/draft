@@ -9,10 +9,8 @@ import { invokeTool, type InvokeToolDeps } from "./invoke-tool";
 import { toMcpResult } from "./mcp-result";
 import { remoteToolsForRun } from "./remote-mcp";
 import { AgentRunTokenError, verifyAgentRunToken } from "../runs/run-token";
-import { describeTools, filterByConnections, type RegisteredTool, type ToolRegistry } from "./tool-registry";
-import { toolConnectionProvidersOrNone } from "../../ingestion/gmail/access";
+import { describeTools, type RegisteredTool, type ToolRegistry } from "./tool-registry";
 import { userInvokeDeps } from "./user-gateway";
-import { recordError } from "../../errors/record-error";
 
 export interface RunGatewayDeps {
   client: SupabaseClient;
@@ -21,8 +19,6 @@ export interface RunGatewayDeps {
   registry: ToolRegistry;
   /** The tools a run reaches through its connections. They are looked up for each request. */
   remoteTools?: (run: AgentRunSpec) => Promise<RegisteredTool[]>;
-  /** The person's own live connection providers. Defaults to a lookup that fails closed. */
-  connectionProviders?: (workspaceId: string, userId: string) => Promise<ReadonlySet<string>>;
   now?: () => number;
 }
 
@@ -37,8 +33,6 @@ const unauthorized = (): Authenticated => ({ ok: false, response: new Response(n
 export function createRunGateway(deps: RunGatewayDeps) {
   const audit = auditToDatabase(deps.client);
   const remoteTools = deps.remoteTools ?? ((run: AgentRunSpec) => remoteToolsForRun(deps.client, run));
-  const connectionProviders = deps.connectionProviders
-    ?? ((workspaceId: string, userId: string) => toolConnectionProvidersOrNone(deps.client, workspaceId, userId, "run_gateway"));
 
   /** Draft's tools plus the ones this run reaches through its connections. */
   async function depsFor(run: AgentRunSpec): Promise<InvokeToolDeps> {
@@ -53,17 +47,10 @@ export function createRunGateway(deps: RunGatewayDeps) {
   async function personToolsFor(run: AgentRunSpec, runDeps: InvokeToolDeps): Promise<{ deps: InvokeToolDeps; caller: ToolCaller; tools: RegisteredTool[] } | null> {
     if (run.kind !== "interactive" || !run.onBehalfOf) return null;
     const runTools = new Set(runDeps.registry.listFor(run).map((tool) => tool.name));
-    let providers: ReadonlySet<string>;
-    try {
-      providers = await connectionProviders(run.workspaceId, run.onBehalfOf);
-    } catch (error) {
-      await recordError({ client: deps.client, workspaceId: run.workspaceId, agentRunId: run.id, operation: "read", code: "tool_connections_lookup_failed", message: "Looking up the caller's connections failed, so connection-gated tools are hidden", detail: { surface: "run_gateway" }, error });
-      providers = new Set();
-    }
     return {
       deps: { ...userInvokeDeps(deps.client, deps.registry), now: deps.now },
       caller: personCaller({ userId: run.onBehalfOf, workspaceId: run.workspaceId, via: "mcp" }),
-      tools: filterByConnections(deps.registry.listForUser(), providers).filter((tool) => tool.mcp && !runTools.has(tool.name)),
+      tools: deps.registry.listForUser().filter((tool) => tool.mcp && !runTools.has(tool.name)),
     };
   }
 

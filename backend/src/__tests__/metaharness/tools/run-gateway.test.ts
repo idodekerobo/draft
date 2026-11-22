@@ -12,7 +12,7 @@ const WS = "11111111-1111-4111-8111-111111111111";
 const RUN_ID = "22222222-2222-4222-8222-222222222222";
 const FAR_FUTURE = Date.now() + 60_000;
 
-async function setup(permissions: AnyDraftToolPermission[], status = "running", run: Partial<Pick<AgentRunSpec, "kind" | "onBehalfOf">> = {}, connectionProviders?: (workspaceId: string, userId: string) => Promise<ReadonlySet<string>>) {
+async function setup(permissions: AnyDraftToolPermission[], status = "running", run: Partial<Pick<AgentRunSpec, "kind" | "onBehalfOf">> = {}) {
   const db = createFakeContextDb({ "a.md": "A" });
   const spec: AgentRunSpec = {
     id: parseAgentRunId(RUN_ID),
@@ -30,7 +30,7 @@ async function setup(permissions: AnyDraftToolPermission[], status = "running", 
     output: { type: "text" },
   };
   await createAgentRun(db.client, { spec, idempotencyKey: "k", status: status as never });
-  const gateway = createRunGateway({ client: db.client, secret: () => SECRET, registry: createDraftToolRegistry(db.client), connectionProviders });
+  const gateway = createRunGateway({ client: db.client, secret: () => SECRET, registry: createDraftToolRegistry(db.client) });
   const token = (overrides: Partial<{ runId: string; workspaceId: string; expiresAt: number; scope: AgentRunTokenScope }> = {}) =>
     createAgentRunToken(
       {

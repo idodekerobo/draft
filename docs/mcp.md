@@ -119,17 +119,18 @@ Your agent never sees your keys: you enter them on the Draft page the link opens
 
 ### Google Drive
 
-`drive.read` and `drive.search` appear when anyone in the workspace has a live
-Google Drive connection. Every workspace member can read shared stored files.
-Choose synced folders on Connections → Google Drive → Edit, or with the CLI.
-Connecting alone does not ingest files. Refresh your MCP client's tool list after
-connecting. Routines use `sources.search` and `sources.read` for the latest Drive
-files; the dedicated Drive tools are not enabled for routines in v1.
+Pass `provider: "google_drive"` to `connections.search` or `connections.read`.
+Every workspace member can read shared stored files. Choose synced folders on
+Connections → Google Drive → Edit or use `connections.join` with `folders` (Google
+folder ids). `connections.leave` takes the synced folder ids from `connections.list`.
+Use `connections.list` with `provider: "google_drive", available: true` to browse
+folders and shared drives; `query` filters names and `nextCursor` continues the page.
+A run needs a per-provider grant to search or read. Folder changes are for people.
 
 | Tool | Input | Behavior |
 | --- | --- | --- |
-| `drive.read` | `{ file_id, version?, as_of?, include?, max_bytes?, cursor? }` | Read a captured version. `version` is a version ID or `latest` (default). `as_of` is an ISO time; it cannot be combined with `version`. `include: ["versions"]` adds paged captured versions and short change summaries. Returns `version_id`, `captured_at`, `version_count`, `first_captured_at`, `last_captured_at`, `source` and `content`. `max_bytes` is 1 KB–256 KB, default 32 KB. Pass `next_cursor` with the same request to continue. |
-| `drive.search` | `{ query, file_id?, include_history?, modified_after?, modified_before?, limit?, cursor? }` | Search shared Drive files. `include_history` defaults to false; set it to find text in superseded versions. Each hit names its version and capture time. `limit` is 1–50, default 10. Continue with `next_cursor`. |
+| `connections.read` | `{ provider: "google_drive", fileId, version?, asOf?, include?, maxBytes?, cursor? }` | Read a captured version. `version` is a version ID or `latest` (default). `asOf` is an ISO time; it cannot be combined with `version`. `include: ["versions"]` adds paged captured versions and short change summaries. Returns `versionId`, `capturedAt`, `versionCount`, `firstCapturedAt`, `lastCapturedAt`, `source` and `content`. `maxBytes` is 1 KB–256 KB, default 32 KB. Pass `nextCursor` with the same request to continue. |
+| `connections.search` | `{ provider: "google_drive", query, fileId?, includeHistory?, since?, until?, limit?, cursor? }` | Search shared Drive files. `includeHistory` defaults to false; set it to find text in superseded versions. Each hit names its version and capture time. `limit` is 1–50, default 10. Continue with `nextCursor`. |
 
 Latest reads fetch live when the owning connection's last successful sync is
 older than five minutes, using the asker's own Drive login. New content is stored
@@ -146,7 +147,7 @@ between syncs may merge into one captured version.
 | `drive_folder_already_synced` | Another connection already syncs that folder. The folder browser names its owner. |
 | `drive_no_version_at_time` | The requested time precedes the first capture. |
 | `drive_version_not_found` | The requested captured version does not exist. |
-| `invalid_input` | Invalid arguments, including passing both `version` and `as_of`. |
+| `invalid_input` | Invalid arguments, including passing both `version` and `asOf`. |
 
 ### Gmail
 

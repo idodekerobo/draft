@@ -488,22 +488,20 @@ context, including files only you can see.
 With `--json`, the interactive Google flow prints
 `{"status":"action_required","provider":"google","url":"…"}`, then
 `{"status":"connected","provider":"google"}` when you finish, and stops
-waiting after 10 minutes. Restart your MCP client (or run `/mcp` in Claude Code)
-after connecting to refresh its tools.
+waiting after 10 minutes. Use `draft connections list` to see the actions available after connecting.
 
 ```bash
-draft connections drive folders list --json
-draft connections drive folders add <folder-or-shared-drive-id> --json
-draft connections drive folders remove <synced-folder-id> --json
-draft connections drive status --json
+draft connections list --provider google-drive --json
+draft connections join --provider google-drive --folder <folder-or-shared-drive-id> --json
+draft connections leave --provider google-drive --folder <synced-folder-id> --json
+draft connections list --provider google-drive --json
 ```
 
 `add` takes the Google folder or shared drive ID; Draft resolves its name using
 your own Google login. `remove` takes the stored synced folder ID from `list`.
 Only the person who added a folder can remove it. A folder already synced by
 another connection is refused. `status` reports your folders, connection state,
-last successful sync and whether reconnection is needed. The JSON envelope uses
-`status: "drive_folders"` and `connectionStatus` for the connection's state.
+last successful sync and whether reconnection is needed. `connections list` returns synced folders and the connection state.
 The Connections page also has a folder browser under Google Drive → Edit.
 See [Google Drive](google-drive.md) for sync limits, history and deletion behavior.
 

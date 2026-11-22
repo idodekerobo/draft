@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createDriveAdapter, type DriveToolDeps } from "./google-drive";
 import { createGmailAdapter, type GmailDeps } from "./gmail";
 import { createSlackAdapter, type SlackChannelDeps, type SlackDeps } from "./slack";
 import type { ConnectionAdapter } from "./types";
@@ -9,6 +10,7 @@ export interface ConnectionAdapterDeps {
   slack?: SlackDeps;
   slackChannels?: Partial<SlackChannelDeps>;
   gmail?: GmailDeps;
+  drive?: DriveToolDeps;
   /** Tests add providers here. */
   extra?: ReadonlyArray<ConnectionAdapter>;
 }
@@ -18,6 +20,7 @@ export function createConnectionAdapters(client: SupabaseClient, deps: Connectio
   return [
     createSlackAdapter(client, deps.slack, deps.slackChannels),
     createGmailAdapter(client, deps.gmail),
+    createDriveAdapter(client, deps.drive),
     ...(deps.extra ?? []),
   ];
 }

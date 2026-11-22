@@ -1180,15 +1180,3 @@ export function updateSkill(name: string, body: AddOrUpdateSkillBody): Promise<F
 export function removeSkill(name: string): Promise<FetchResult<{ ok: true }>> {
   return callTool("skills.delete", { name }, decodeOk);
 }
-
-export function fetchDriveFolders(): Promise<FetchResult<Record<string, unknown>>> {
-  return requestValue("/google/drive-folders", undefined, recordValue);
-}
-
-export function addDriveFolder(googleFolderId: string): Promise<FetchResult<Record<string, unknown>>> {
-  return requestValue("/google/drive-folders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ googleFolderId }) }, recordValue);
-}
-
-export function removeDriveFolder(id: string): Promise<FetchResult<Record<string, unknown>>> {
-  return requestValue(`/google/drive-folders/${encodeURIComponent(id)}`, { method: "DELETE" }, recordValue);
-}

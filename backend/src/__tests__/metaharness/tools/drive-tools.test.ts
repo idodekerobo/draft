@@ -9,9 +9,8 @@ process.env.INFERENCE_CREDENTIAL_KEK_V2 ??= Buffer.alloc(32, 7).toString("base64
 const { parseUserId, parseWorkspaceId } = await import("draft-core/run-spec");
 const { personCaller } = await import("draft-core/tools");
 const { encryptCredentialPayload, CURRENT_CREDENTIAL_KEY_VERSION } = await import("../../../credentials/crypto");
-const { createDriveTools, resetDriveLiveFetchLimit, changeSummary } = await import("../../../metaharness/tools/definitions/drive");
-const { toolConnectionProviders, toolConnectionProvidersOrNone } = await import("../../../ingestion/gmail/access");
-const { filterByConnections } = await import("../../../metaharness/tools/tool-registry");
+const { resetDriveLiveFetchLimit, changeSummary } = await import("../../../metaharness/tools/connection-adapters/google-drive");
+const { createIntegrationTools } = await import("../../../metaharness/tools/definitions/integrations");
 const { invokeTool } = await import("../../../metaharness/tools/invoke-tool");
 const { ToolRegistry } = await import("../../../metaharness/tools/tool-registry");
 const { fakeClient, fakeDb, failingOn } = await import("../../routines/fake-client");
@@ -84,10 +83,10 @@ function driveFetch(text: string, urls: string[] = []) {
 }
 
 function setup(db = seed(), fetchFn = driveFetch("live text")) {
-  const registry = new ToolRegistry(createDriveTools(fakeClient(db), { fetch: fetchFn, settings: () => settings, now: () => NOW }));
+  const registry = new ToolRegistry(createIntegrationTools(fakeClient(db), { drive: { fetch: fetchFn, settings: () => settings, now: () => NOW } }));
   const deps = { registry, audit: async () => {}, authorizeUser: async () => null };
   const call = async (tool: string, args: unknown, userId = ASKER) => {
-    const result = await invokeTool(deps, personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" }), tool, args);
+    const result = await invokeTool(deps, personCaller({ userId: parseUserId(userId), workspaceId: parseWorkspaceId(WS), via: "cli" }), tool, { provider: "google_drive", ...(args as Row) });
     return result as { status: string; output?: Record<string, any>; error?: { code: string } } & Record<string, any>;
   };
   return { db, call };
@@ -97,47 +96,47 @@ const codeOf = (result: Record<string, any>) => result.code ?? result.error?.cod
 
 beforeEach(() => resetDriveLiveFetchLimit());
 
-describe("drive.read", () => {
-  it("refuses version with as_of, and as_of before the first capture", async () => {
+describe("connections.read", () => {
+  it("refuses version with asOf, and asOf before the first capture", async () => {
     const { call } = setup();
-    const both = await call("drive.read", { file_id: "file-1", version: "v1", as_of: "2026-11-05T00:00:00Z" });
+    const both = await call("connections.read", { fileId: "file-1", version: "v1", asOf: "2026-11-05T00:00:00Z" });
     expect(both.status).not.toBe("ok");
     expect(codeOf(both)).toBe("invalid_input");
-    const early = await call("drive.read", { file_id: "file-1", as_of: "2026-10-01T00:00:00Z" });
+    const early = await call("connections.read", { fileId: "file-1", asOf: "2026-10-01T00:00:00Z" });
     expect(codeOf(early)).toBe("drive_no_version_at_time");
   });
 
   it("reads a fresh latest copy without fetching, and lists versions with change summaries", async () => {
     const urls: string[] = [];
     const { call } = setup(seed(), driveFetch("live", urls));
-    const result = await call("drive.read", { file_id: "file-1", include: ["versions"] });
+    const result = await call("connections.read", { fileId: "file-1", include: ["versions"] });
     expect(result.status).toBe("ok");
     expect(urls).toEqual([]);
-    expect(result.output).toMatchObject({ version_count: 2, version_id: "v2", source: "stored", content: "# Plan\nship in June", is_latest: true });
-    expect(result.output!.versions.map((entry: Row) => [entry.version_id, entry.change_summary])).toEqual([["v2", "ship in June"], ["v1", null]]);
+    expect(result.output).toMatchObject({ versionCount: 2, versionId: "v2", source: "stored", content: "# Plan\nship in June", isLatest: true });
+    expect(result.output!.versions.map((entry: Row) => [entry.versionId, entry.changeSummary])).toEqual([["v2", "ship in June"], ["v1", null]]);
   });
 
   it("treats a reverted version (A then B then A) as the latest, ordered by when it became current", async () => {
     const reverted = { ...version("v1", "2026-11-01T00:00:00.000Z", "# Plan\nA", "active"), normalized_at: "2026-11-15T00:00:00.000Z" };
     const middle = { ...version("v2", "2026-11-10T00:00:00.000Z", "# Plan\nB"), normalized_at: "2026-11-10T00:00:00.000Z" };
     const { call } = setup(seed({ versions: [reverted, middle] }));
-    const latest = await call("drive.read", { file_id: "file-1" });
-    expect(latest.output).toMatchObject({ version_id: "v1", is_latest: true, version_count: 2, content: "# Plan\nA", captured_at: "2026-11-15T00:00:00.000Z", last_captured_at: "2026-11-15T00:00:00.000Z" });
-    expect((await call("drive.read", { file_id: "file-1", as_of: "2026-11-12T00:00:00Z" })).output).toMatchObject({ version_id: "v2", is_latest: false });
-    expect((await call("drive.read", { file_id: "file-1", as_of: "2026-11-16T00:00:00+00:00" })).output).toMatchObject({ version_id: "v1", is_latest: true });
+    const latest = await call("connections.read", { fileId: "file-1" });
+    expect(latest.output).toMatchObject({ versionId: "v1", isLatest: true, versionCount: 2, content: "# Plan\nA", capturedAt: "2026-11-15T00:00:00.000Z", lastCapturedAt: "2026-11-15T00:00:00.000Z" });
+    expect((await call("connections.read", { fileId: "file-1", asOf: "2026-11-12T00:00:00Z" })).output).toMatchObject({ versionId: "v2", isLatest: false });
+    expect((await call("connections.read", { fileId: "file-1", asOf: "2026-11-16T00:00:00+00:00" })).output).toMatchObject({ versionId: "v1", isLatest: true });
   });
 
-  it("reads by as_of and by version", async () => {
+  it("reads by asOf and by version", async () => {
     const { call } = setup();
-    expect((await call("drive.read", { file_id: "file-1", as_of: "2026-11-05T00:00:00Z" })).output).toMatchObject({ version_id: "v1", is_latest: false });
-    expect((await call("drive.read", { file_id: "file-1", version: "v1" })).output!.content).toBe("# Plan\nship in May");
+    expect((await call("connections.read", { fileId: "file-1", asOf: "2026-11-05T00:00:00Z" })).output).toMatchObject({ versionId: "v1", isLatest: false });
+    expect((await call("connections.read", { fileId: "file-1", version: "v1" })).output!.content).toBe("# Plan\nship in May");
   });
 
   it("fetches a stale copy and stores it under the owning connection", async () => {
     const db = seed({ lastSuccessAt: "2026-11-20T11:00:00.000Z" });
     const { call } = setup(db);
-    const result = await call("drive.read", { file_id: "file-1" });
-    expect(result.output).toMatchObject({ source: "live", version_count: 3 });
+    const result = await call("connections.read", { fileId: "file-1" });
+    expect(result.output).toMatchObject({ source: "live", versionCount: 3 });
     expect(result.output!.content).toContain("live text");
     const write = db.rpcCalls.find((entry) => entry.name === "write_drive_source_item")!;
     expect(write.args).toMatchObject({ p_connection_id: "conn-owner", p_owner_user_id: OWNER, p_visibility: "shared" });
@@ -147,8 +146,8 @@ describe("drive.read", () => {
   it("gives the stored copy marked stale to an asker without a Drive login", async () => {
     const urls: string[] = [];
     const { call } = setup(seed({ lastSuccessAt: "2026-11-20T11:00:00.000Z", askerHasDrive: false }), driveFetch("live", urls));
-    const result = await call("drive.read", { file_id: "file-1" });
-    expect(result.output).toMatchObject({ source: "stored", stale: true, version_id: "v2" });
+    const result = await call("connections.read", { fileId: "file-1" });
+    expect(result.output).toMatchObject({ source: "stored", stale: true, versionId: "v2" });
     expect(urls).toEqual([]);
   });
 
@@ -161,7 +160,7 @@ describe("drive.read", () => {
       return new Response("boom", { status: 400 });
     }) as unknown as typeof fetch;
     const { call } = setup(db, failing);
-    const result = await call("drive.read", { file_id: "file-1" });
+    const result = await call("connections.read", { fileId: "file-1" });
     expect(result.output).toMatchObject({ source: "stored", stale: true });
     expect(db.tables.errors).toEqual([expect.objectContaining({ workspace_id: WS, connection_id: "conn-owner", detail_json: expect.objectContaining({ code: "drive_live_fetch_failed", file_id: "file-1" }) })]);
   });
@@ -170,9 +169,9 @@ describe("drive.read", () => {
     const urls: string[] = [];
     const db = seed({ lastSuccessAt: "2026-11-20T11:00:00.000Z" });
     const { call } = setup(db, driveFetch("# Plan\nship in June", urls));
-    for (let index = 0; index < 10; index++) await call("drive.read", { file_id: "file-1" });
+    for (let index = 0; index < 10; index++) await call("connections.read", { fileId: "file-1" });
     const fetched = urls.filter((url) => url.includes("oauth2")).length;
-    const capped = await call("drive.read", { file_id: "file-1" });
+    const capped = await call("connections.read", { fileId: "file-1" });
     expect(urls.filter((url) => url.includes("oauth2")).length).toBe(fetched);
     expect(capped.output).toMatchObject({ stale: true });
   });
@@ -181,58 +180,106 @@ describe("drive.read", () => {
     const versions = Array.from({ length: 55 }, (_, index) =>
       version(`v${index}`, new Date(Date.UTC(2026, 10, 1, 0, index)).toISOString(), index === 54 ? "x".repeat(3000) : `line ${index}`, index === 54 ? "active" : "superseded"));
     const { call } = setup(seed({ versions }));
-    const first = await call("drive.read", { file_id: "file-1", max_bytes: 1024, include: ["versions"] });
-    expect(first.output).toMatchObject({ truncated: true, version_id: "v54" });
+    const first = await call("connections.read", { fileId: "file-1", maxBytes: 1024, include: ["versions"] });
+    expect(first.output).toMatchObject({ truncated: true, versionId: "v54" });
     expect(first.output!.versions).toHaveLength(50);
-    const second = await call("drive.read", { file_id: "file-1", max_bytes: 4096, include: ["versions"], cursor: first.output!.next_cursor });
+    const second = await call("connections.read", { fileId: "file-1", maxBytes: 4096, include: ["versions"], cursor: first.output!.nextCursor });
     expect(second.output!.content).toHaveLength(1976);
     expect(second.output!.versions).toHaveLength(5);
-    expect(second.output!.next_cursor).toBeNull();
-    expect(codeOf(await call("drive.read", { file_id: "other", cursor: first.output!.next_cursor }))).toBe("invalid_cursor");
+    expect(second.output!.nextCursor).toBeNull();
+    expect(codeOf(await call("connections.read", { fileId: "other", cursor: first.output!.nextCursor }))).toBe("invalid_cursor");
   });
 });
 
-describe("drive.search", () => {
-  it("finds old phrases only with include_history and names each version", async () => {
+describe("connections.search", () => {
+  it("finds old phrases only with includeHistory and names each version", async () => {
     const { call } = setup();
-    expect((await call("drive.search", { query: "May" })).output!.results).toEqual([]);
-    const history = await call("drive.search", { query: "May", include_history: true });
-    expect(history.output!.results).toEqual([expect.objectContaining({ file_id: "file-1", version_id: "v1", is_latest: false })]);
+    expect((await call("connections.search", { query: "May" })).output!.results).toEqual([]);
+    const history = await call("connections.search", { query: "May", includeHistory: true });
+    expect(history.output!.results).toEqual([expect.objectContaining({ fileId: "file-1", versionId: "v1", isLatest: false })]);
   });
 
   it("pages with a cursor tied to the same search", async () => {
     const { call } = setup();
-    const first = await call("drive.search", { query: "ship", include_history: true, limit: 1 });
+    const first = await call("connections.search", { query: "ship", includeHistory: true, limit: 1 });
     expect(first.output!.results).toHaveLength(1);
-    const second = await call("drive.search", { query: "ship", include_history: true, limit: 1, cursor: first.output!.next_cursor });
+    const second = await call("connections.search", { query: "ship", includeHistory: true, limit: 1, cursor: first.output!.nextCursor });
     expect(second.output!.results).toHaveLength(1);
-    expect(second.output!.next_cursor).toBeNull();
-    expect(codeOf(await call("drive.search", { query: "other", cursor: first.output!.next_cursor }))).toBe("invalid_cursor");
+    expect(second.output!.nextCursor).toBeNull();
+    expect(codeOf(await call("connections.search", { query: "other", cursor: first.output!.nextCursor }))).toBe("invalid_cursor");
   });
 });
 
-describe("Drive tool visibility", () => {
-  const tools = createDriveTools(fakeClient(fakeDb({})));
+it("summarizes the first changed line", () => {
+  expect(changeSummary("a\nb", "a\nc")).toBe("c");
+  expect(changeSummary("a\nb", "a")).toBe("b");
+  expect(changeSummary("a", `a\n${"z".repeat(200)}`)).toHaveLength(120);
+});
 
-  it("lists the tools when anyone in the workspace has a live Drive connection", async () => {
-    const providers = await toolConnectionProviders(fakeClient(seed({ askerHasDrive: false })), WS, ASKER);
-    expect(providers.has("google_drive")).toBe(false);
-    expect(filterByConnections(tools, providers).map((tool) => tool.name)).toEqual(["drive.read", "drive.search"]);
-  });
-
-  it("hides them with no Drive connection or a failed lookup", async () => {
-    const none = await toolConnectionProviders(fakeClient(fakeDb({ connections: [] })), WS, ASKER);
-    expect(filterByConnections(tools, none)).toEqual([]);
+describe("Drive connection folders", () => {
+  function foldersSetup() {
     const db = seed();
-    db.tables.errors = [];
-    const failed = await toolConnectionProvidersOrNone(failingOn(fakeClient(db), "connections"), WS, ASKER, "test");
-    expect(filterByConnections(tools, failed)).toEqual([]);
-    expect(db.tables.errors).toEqual([expect.objectContaining({ workspace_id: WS, detail_json: expect.objectContaining({ code: "tool_connections_lookup_failed", surface: "test" }) })]);
+    db.tables.synced_google_drive_folders = [];
+    db.tables.scheduled_tasks = [{ id: "task", workspace_id: WS, task_type: "ingest_source", task_key: "conn-asker" }];
+    const client = fakeClient(db);
+    const api = {
+      getFile: async (id: string) => ({ id, name: "Plans", mimeType: "application/vnd.google-apps.folder" }),
+      listFolderChildren: async () => ({ files: [{ id: "folder-1", name: "Plans", mimeType: "application/vnd.google-apps.folder" }] }),
+      listSharedDrives: async () => [{ id: "drive-1", name: "Team" }],
+    };
+    const registry = new ToolRegistry(createIntegrationTools(client, { drive: {
+      now: () => NOW,
+      driveAccess: (async () => ({ ok: true, api })) as any,
+    } }));
+    const audits: any[] = [];
+    const caller = personCaller({ userId: parseUserId(ASKER), workspaceId: parseWorkspaceId(WS), via: "cli" });
+    const call = (name: string, input: Row) => invokeTool({ registry, audit: async (row) => { audits.push(row); }, authorizeUser: async () => null }, caller, name, { provider: "google_drive", ...input });
+    return { db, call, audits };
+  }
+  it("browses root folders and shared drives with query-bound pagination", async () => {
+    const { call } = foldersSetup();
+    const first = await call("connections.list", { available: true, limit: 1 }) as any;
+    expect(first.output.connections[0].folders).toEqual([expect.objectContaining({ id: "folder-1", name: "Plans" })]);
+    const cursor = first.output.connections[0].nextCursor;
+    expect(cursor).toBeString();
+    const second = await call("connections.list", { available: true, limit: 1, cursor }) as any;
+    expect(second.output.connections[0]).toMatchObject({ folders: [{ id: "drive-1", name: "Team" }], nextCursor: null });
+    expect(await call("connections.list", { available: true, query: "other", cursor })).toMatchObject({ status: "refused", code: "invalid_cursor" });
   });
+  it("uses the shared folder services to join, describe and leave", async () => {
+    const { db, call, audits } = foldersSetup();
+    expect(await call("connections.join", { folders: ["folder-1"] })).toMatchObject({ status: "ok" });
+    const stored = db.tables.synced_google_drive_folders![0]!;
+    expect(stored).toMatchObject({ google_folder_id: "folder-1", connection_id: "conn-asker", name: "Plans" });
+    const list = await call("connections.list", {}) as any;
+    expect(list.output.connections[0].folders).toEqual([expect.objectContaining({ id: stored.id, googleFolderId: "folder-1" })]);
+    expect(await call("connections.leave", { folders: [String(stored.id)] })).toMatchObject({ status: "ok" });
+    expect(db.tables.synced_google_drive_folders).toEqual([]);
+    expect(audits[0].arguments).toMatchObject({ provider: "google_drive", folders: ["folder-1"] });
+  });
+  it("refuses Slack fields on Drive reads and folder changes", async () => {
+    const { call } = foldersSetup();
+    expect(await call("connections.read", { channel: "C1" })).toMatchObject({ status: "refused", code: "invalid_input" });
+    expect(await call("connections.join", { channels: ["C1"] })).toMatchObject({ status: "refused", code: "invalid_input" });
+  });
+});
 
-  it("summarizes the first changed line", () => {
-    expect(changeSummary("a\nb", "a\nc")).toBe("c");
-    expect(changeSummary("a\nb", "a")).toBe("b");
-    expect(changeSummary("a", `a\n${"z".repeat(200)}`)).toHaveLength(120);
-  });
+it("disconnects both of the caller's Google products and removes synced folders", async () => {
+  const { disconnectConnection } = await import("../../../integrations/disconnect");
+  const seen: string[] = [];
+  const db = fakeDb({
+    connections: [
+      { id: "gmail", workspace_id: WS, credential_id: null },
+      { id: "drive", workspace_id: WS, credential_id: null },
+    ],
+    synced_google_drive_folders: [{ id: "f", workspace_id: WS, connection_id: "drive" }],
+  }, { rpcs: { disconnect_connection: (args) => {
+    expect(args.p_connected_by_user_id).toBe(ASKER);
+    expect(args.p_account_kind).toBe("personal");
+    seen.push(String(args.p_provider));
+    return { data: { outcome: "disconnected", connection_id: args.p_provider === "gmail" ? "gmail" : "drive" }, error: null };
+  } } });
+  expect(await disconnectConnection(fakeClient(db), { workspaceId: WS, userId: ASKER, provider: "google", accountKind: null })).toEqual({ ok: true, outcome: "disconnected" });
+  expect(seen).toEqual(["gmail", "google_drive"]);
+  expect(db.tables.synced_google_drive_folders).toEqual([]);
 });

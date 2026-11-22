@@ -165,3 +165,11 @@ describe("personalConnectionProviders", () => {
     expect((await personalConnectionProvidersOrNone(broken, WS, OWNER, "test")).size).toBe(0);
   });
 });
+
+it("connections.list advertises Gmail only to its connected person", async () => {
+  const { invoke } = setup();
+  const own = await invoke(person(OWNER), "connections.list", { provider: "gmail" }) as any;
+  expect(own.output.connections[0].actions.map((action: any) => action.verb)).toEqual(["search", "read"]);
+  const teammate = await invoke(person(TEAMMATE), "connections.list", { provider: "gmail" }) as any;
+  expect(teammate.output.connections[0].actions).toEqual([]);
+});

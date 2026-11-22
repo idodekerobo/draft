@@ -1,16 +1,19 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { z } from "zod";
 import { googleOAuthSettings, type GoogleOAuthSettings } from "../../../config";
 import { recordError } from "../../../errors/record-error";
 import { driveAccessFor } from "../../../ingestion/google-drive/access";
 import { DriveApiError } from "../../../ingestion/google-drive/api";
 import { renderDriveFile } from "../../../ingestion/google-drive/render-file";
 import { driveVersionKey, writeDriveFile } from "../../../ingestion/google-drive/sync";
-import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
-import { callerWorkspaceId } from "./shared";
+import { refuse, type ToolHandlerResult } from "../tool-registry";
+import type { ToolCaller } from "draft-core/tools";
+import type { BrowseInput, ConnectionAdapter, ReadInput, ScopeInput, SearchInput } from "./types";
+import { type DriveFoldersDependencies, listDriveFolders, listDriveFolderOptions, addDriveFolder, removeDriveFolder } from "../../../ingestion/google-drive/folders-service";
+import { callerWorkspaceId } from "../definitions/shared";
 
 export interface DriveToolDeps {
   fetch?: typeof fetch;
+  driveAccess?: typeof driveAccessFor;
   settings?: () => GoogleOAuthSettings | null;
   now?: () => Date;
 }
@@ -39,7 +42,7 @@ function takeLiveFetch(userId: string, nowMs: number): boolean {
 }
 
 const redactCursor = (cursor: string | undefined) => (cursor ? "[redacted]" : undefined);
-const invalidCursor = () => refuse("invalid_cursor", "That cursor isn't one this tool returned for this request. Pass next_cursor from the previous page.");
+const invalidCursor = () => refuse("invalid_cursor", "That cursor isn't one this tool returned for this request. Pass nextCursor from the previous page.");
 
 function encodeCursor(value: object): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
@@ -109,7 +112,7 @@ type ReadCursor = { v: 1; kind: "drive_read"; file_id: string; version_id: strin
 type SearchCursor = { v: 1; kind: "drive_search"; key: string; rank: number; id: string };
 
 /** Drive files stored from synced folders. Only shared items; superseded versions are readable here only. */
-export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {}) {
+export function createDriveAdapter(client: SupabaseClient, deps: DriveToolDeps = {}): ConnectionAdapter {
   const settings = deps.settings ?? googleOAuthSettings;
   const now = deps.now ?? (() => new Date());
 
@@ -163,35 +166,22 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
     }
   }
 
-  const read = defineTool({
-    name: "drive.read", mcp: true, requiresWorkspaceConnection: "google_drive",
-    description:
-      "Read a Google Drive file stored from a synced folder, by file_id. Default is the latest version; pass version (a version_id) or as_of (ISO time) for an older one, not both. " +
-      "The latest version is refreshed from Drive when the stored copy is over 5 minutes old. include: [\"versions\"] lists every stored version with what changed. " +
-      "Content is cut to max_bytes; when truncated, pass next_cursor back as cursor with the same file_id.",
-    input: z.object({
-      file_id: z.string().min(1).max(200),
-      version: z.string().min(1).max(100).optional().describe("A version_id, or \"latest\" (the default)."),
-      as_of: z.string().optional().describe("ISO time. Returns the version stored at that time."),
-      include: z.array(z.enum(["versions"])).optional(),
-      max_bytes: z.number().int().min(1024).max(262144).optional(),
-      cursor: z.string().max(1000).optional(),
-    }),
-    auditArguments: (input) => ({ ...input, cursor: redactCursor(input.cursor) }),
-    handler: async ({ input, caller }): Promise<ToolHandlerResult> => {
+  async function read(caller: ToolCaller, input: ReadInput): Promise<ToolHandlerResult> {
       const workspaceId = callerWorkspaceId(caller);
+      if (!input.fileId || input.channel || input.messageId || input.threadId || input.attachmentId) return refuse("invalid_input", "Google Drive read needs fileId, with optional version, asOf, include, maxBytes and cursor.");
+      if (input.maxBytes !== undefined && (input.maxBytes < 1024 || input.maxBytes > 262144)) return refuse("invalid_input", "Drive maxBytes must be between 1024 and 262144.");
       const wantsVersion = input.version !== undefined && input.version !== "latest";
-      if (wantsVersion && input.as_of !== undefined) return refuse("invalid_input", "Pass version or as_of, not both.");
-      const asOf = input.as_of === undefined ? null : isoTime(input.as_of);
-      if (input.as_of !== undefined && !asOf) return refuse("invalid_input", "as_of must be an ISO time.");
+      if (wantsVersion && input.asOf !== undefined) return refuse("invalid_input", "Pass version or asOf, not both.");
+      const asOf = input.asOf === undefined ? null : isoTime(input.asOf);
+      if (input.asOf !== undefined && !asOf) return refuse("invalid_input", "asOf must be an ISO time.");
       const cursor = input.cursor === undefined ? null : decodeCursor<ReadCursor>(input.cursor, (parsed) =>
-        parsed.kind === "drive_read" && parsed.file_id === input.file_id && typeof parsed.version_id === "string" && isOffset(parsed.offset) && isOffset(parsed.versions_offset)
+        parsed.kind === "drive_read" && parsed.file_id === input.fileId && typeof parsed.version_id === "string" && isOffset(parsed.offset) && isOffset(parsed.versions_offset)
           ? (parsed as ReadCursor) : null);
       if (input.cursor !== undefined && !cursor) return invalidCursor();
 
       const connections = await driveConnections(workspaceId);
-      let versions = await versionsOf(workspaceId, input.file_id, connections);
-      if (versions.length === 0) return refuse("drive_file_not_found", "No stored Drive file has this file_id. Find files with drive.search.");
+      let versions = await versionsOf(workspaceId, input.fileId, connections);
+      if (versions.length === 0) return refuse("drive_file_not_found", "No stored Drive file has this file_id. Find files with connections.search with provider google_drive.");
 
       let source: "stored" | "live" = "stored";
       let stale = false;
@@ -201,9 +191,9 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
         const owner = connections.find((connection) => connection.id === latest.connection_id)!;
         const checkedAt = owner.last_success_at ? new Date(owner.last_success_at).getTime() : 0;
         if (now().getTime() - checkedAt > FRESH_MS) {
-          const outcome = caller.onBehalfOf ? await refreshLive(workspaceId, caller.onBehalfOf, input.file_id, latest, owner) : "unavailable";
+          const outcome = caller.onBehalfOf ? await refreshLive(workspaceId, caller.onBehalfOf, input.fileId, latest, owner) : "unavailable";
           if (outcome === "changed") {
-            versions = await versionsOf(workspaceId, input.file_id, connections);
+            versions = await versionsOf(workspaceId, input.fileId, connections);
             source = "live";
           } else if (outcome === "unavailable") {
             stale = true;
@@ -225,7 +215,7 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       const body = Buffer.from(chosen.content_markdown ?? "", "utf8");
       const offset = cursor?.offset ?? 0;
       if (offset > body.length) return invalidCursor();
-      const end = charBoundary(body, offset + (input.max_bytes ?? 32768));
+      const end = charBoundary(body, offset + (input.maxBytes ?? 32768));
       const truncated = end < body.length;
 
       const versionsOffset = cursor?.versions_offset ?? 0;
@@ -235,16 +225,16 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       if (withVersions) {
         const newestFirst = versions.map((row, index) => ({ row, previous: versions[index - 1] ?? null })).reverse();
         versionList = newestFirst.slice(versionsOffset, versionsOffset + VERSIONS_PER_PAGE).map(({ row, previous }) => ({
-          version_id: row.id,
-          captured_at: capturedAt(row),
-          last_modified_by: row.metadata_json?.last_modified_by ?? null,
-          change_summary: changeSummary(previous ? previous.content_markdown ?? "" : null, row.content_markdown ?? ""),
+          versionId: row.id,
+          capturedAt: capturedAt(row),
+          lastModifiedBy: row.metadata_json?.last_modified_by ?? null,
+          changeSummary: changeSummary(previous ? previous.content_markdown ?? "" : null, row.content_markdown ?? ""),
         }));
         moreVersions = versionsOffset + VERSIONS_PER_PAGE < newestFirst.length;
       }
       const next_cursor = truncated || moreVersions
         ? encodeCursor({
-          v: 1, kind: "drive_read", file_id: input.file_id, version_id: chosen.id,
+          v: 1, kind: "drive_read", file_id: input.fileId, version_id: chosen.id,
           offset: truncated ? end : body.length, versions_offset: moreVersions ? versionsOffset + VERSIONS_PER_PAGE : versions.length,
         } satisfies ReadCursor)
         : null;
@@ -253,49 +243,34 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       return {
         status: "ok",
         output: {
-          file_id: input.file_id,
+          provider: "google_drive",
+          fileId: input.fileId,
           title: metadata.title ?? null,
-          web_view_link: metadata.web_view_link ?? null,
-          version_count: versions.length,
-          first_captured_at: capturedAt(versions[0]!),
-          last_captured_at: capturedAt(versions[versions.length - 1]!),
-          version_id: chosen.id,
-          captured_at: capturedAt(chosen),
-          is_latest: chosen.lifecycle_status === "active",
+          webViewLink: metadata.web_view_link ?? null,
+          versionCount: versions.length,
+          firstCapturedAt: capturedAt(versions[0]!),
+          lastCapturedAt: capturedAt(versions[versions.length - 1]!),
+          versionId: chosen.id,
+          capturedAt: capturedAt(chosen),
+          isLatest: chosen.lifecycle_status === "active",
           source,
           ...(stale ? { stale: true } : {}),
           content: body.subarray(offset, end).toString("utf8"),
           truncated,
-          next_cursor,
+          nextCursor: next_cursor,
           ...(versionList ? { versions: versionList } : {}),
         },
       };
-    },
-  });
+  }
 
-  const search = defineTool({
-    name: "drive.search", mcp: true, requiresWorkspaceConnection: "google_drive",
-    description:
-      "Search Google Drive files stored from synced folders, by keywords. Searches the latest version of each file; include_history: true also searches older versions. " +
-      "Each hit names its version_id, captured_at and whether it is the latest. Read a hit with drive.read (file_id, and version for an older one).",
-    input: z.object({
-      query: z.string().min(1).max(512).optional().describe("Keywords. Optional when file_id is set."),
-      file_id: z.string().min(1).max(200).optional(),
-      include_history: z.boolean().optional(),
-      modified_after: z.string().optional().describe("ISO time."),
-      modified_before: z.string().optional().describe("ISO time."),
-      limit: z.number().int().min(1).max(50).optional(),
-      cursor: z.string().max(1000).optional(),
-    }),
-    auditArguments: (input) => ({ ...input, cursor: redactCursor(input.cursor) }),
-    handler: async ({ input, caller }): Promise<ToolHandlerResult> => {
-      if (!input.query && !input.file_id) return refuse("invalid_input", "Pass query, file_id or both.");
-      const after = input.modified_after === undefined ? null : isoTime(input.modified_after);
-      const before = input.modified_before === undefined ? null : isoTime(input.modified_before);
-      if ((input.modified_after !== undefined && !after) || (input.modified_before !== undefined && !before)) {
-        return refuse("invalid_input", "modified_after and modified_before must be ISO times.");
+  async function search(caller: ToolCaller, input: SearchInput): Promise<ToolHandlerResult> {
+      if (!input.query && !input.fileId) return refuse("invalid_input", "Pass query, file_id or both.");
+      const after = input.since === undefined ? null : isoTime(input.since);
+      const before = input.until === undefined ? null : isoTime(input.until);
+      if ((input.since !== undefined && !after) || (input.until !== undefined && !before)) {
+        return refuse("invalid_input", "since and until must be ISO times.");
       }
-      const key = JSON.stringify([input.query ?? null, input.file_id ?? null, input.include_history ?? false, after, before]);
+      const key = JSON.stringify([input.query ?? null, input.fileId ?? null, input.includeHistory ?? false, after, before]);
       const cursor = input.cursor === undefined ? null : decodeCursor<SearchCursor>(input.cursor, (parsed) =>
         parsed.kind === "drive_search" && parsed.key === key && typeof parsed.rank === "number" && typeof parsed.id === "string" ? (parsed as SearchCursor) : null);
       if (input.cursor !== undefined && !cursor) return invalidCursor();
@@ -304,8 +279,8 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       const { data, error } = await client.rpc("search_drive_items", {
         p_workspace_id: callerWorkspaceId(caller),
         p_query: input.query ?? null,
-        p_include_history: input.include_history ?? false,
-        p_file_id: input.file_id ?? null,
+        p_include_history: input.includeHistory ?? false,
+        p_file_id: input.fileId ?? null,
         p_modified_after: after,
         p_modified_before: before,
         p_after_rank: cursor?.rank ?? null,
@@ -321,20 +296,80 @@ export function createDriveTools(client: SupabaseClient, deps: DriveToolDeps = {
       return {
         status: "ok",
         output: {
+          provider: "google_drive",
           results: page.map((row) => ({
-            file_id: row.external_id,
-            version_id: row.id,
+            id: row.external_id,
+            fileId: row.external_id,
+            date: row.occurred_at,
+            versionId: row.id,
             title: row.title,
             snippet: row.snippet,
-            modified_at: row.occurred_at,
-            captured_at: row.created_at,
-            is_latest: row.lifecycle_status === "active",
+            modifiedAt: row.occurred_at,
+            capturedAt: row.created_at,
+            isLatest: row.lifecycle_status === "active",
           })),
-          next_cursor: rows.length > limit && last ? encodeCursor({ v: 1, kind: "drive_search", key, rank: last.rank, id: last.id } satisfies SearchCursor) : null,
+          nextCursor: rows.length > limit && last ? encodeCursor({ v: 1, kind: "drive_search", key, rank: last.rank, id: last.id } satisfies SearchCursor) : null,
         },
       };
-    },
-  });
+  }
 
-  return [read, search];
+  const folderDeps: DriveFoldersDependencies = { db: client, driveAccess: deps.driveAccess ?? ((db, workspaceId, userId) => driveAccessFor(db, workspaceId, userId, { settings, fetchImpl: deps.fetch ?? fetch, now })), now };
+  async function folderResult(response: Response): Promise<ToolHandlerResult> {
+    const body = await response.json() as Record<string, unknown>;
+    return response.ok ? { status: "ok", output: { provider: "google_drive", ...body } }
+      : refuse(String(body.error ?? "drive_folders_failed"), String(body.message ?? body.error ?? "The Drive folder operation failed."));
+  }
+  async function changeFolders(caller: ToolCaller, input: ScopeInput, joining: boolean): Promise<ToolHandlerResult> {
+    if (!caller.onBehalfOf || caller.origin.kind !== "person") return refuse("person_required", "Only a signed-in person can change synced Drive folders.");
+    if (!input.folders?.length || input.channels) return refuse("invalid_input", "Google Drive needs folders: Google folder ids to join, or synced folder ids to leave.");
+    const changed: unknown[] = [];
+    for (const id of input.folders) {
+      const response = joining
+        ? await addDriveFolder(caller.workspaceId, caller.onBehalfOf, { googleFolderId: id }, folderDeps)
+        : await removeDriveFolder(caller.workspaceId, caller.onBehalfOf, id, folderDeps);
+      const result = await folderResult(response);
+      if (result.status !== "ok") return result;
+      changed.push(result.output);
+    }
+    return { status: "ok", output: { provider: "google_drive", changed } };
+  }
+  async function browse(caller: ToolCaller, input: BrowseInput) {
+    if (!caller.onBehalfOf) return { ok: false as const, code: "person_required", error: "Drive browsing needs a person's own login." };
+    const key = JSON.stringify([caller.workspaceId, caller.onBehalfOf, input.query ?? null]);
+    const cursor = input.cursor ? decodeCursor<{ offset: number }>(input.cursor, p => p.kind === "drive_folders" && p.key === key && isOffset(p.offset) ? { offset: p.offset } : null) : { offset: 0 };
+    if (!cursor) return { ok: false as const, code: "invalid_cursor", error: "Pass nextCursor from the previous folder page." };
+    const options: Record<string, unknown>[] = [];
+    for (const parent of ["root", "shared"]) {
+      const response = await listDriveFolderOptions(caller.workspaceId, caller.onBehalfOf, parent, folderDeps);
+      const body = await response.json() as Record<string, unknown>;
+      if (!response.ok) return { ok: false as const, code: String(body.error), error: String(body.message ?? body.error) };
+      options.push(...body.options as Record<string, unknown>[]);
+    }
+    const filtered = options.filter(o => !input.query || String(o.name).toLowerCase().includes(input.query.toLowerCase()));
+    const end = cursor.offset + input.limit;
+    return { ok: true as const, fields: { folders: filtered.slice(cursor.offset, end).map(o => ({ id: o.google_folder_id, name: o.name, folderKind: o.folder_kind, synced: o.synced, syncedByYou: o.synced_by_you, syncedBy: o.synced_by })), nextCursor: end < filtered.length ? encodeCursor({ v: 1, kind: "drive_folders", key, offset: end }) : null } };
+  }
+  return {
+    provider: "google_drive",
+    notConnectedMessage: "Connect Google with draft connections connect --provider google.",
+    actions: [
+      { verb: "search", description: "Search stored Drive files", fields: { query: "Keywords", fileId: "Only this file", includeHistory: "Also search older versions" } },
+      { verb: "read", description: "Read a stored Drive file and its versions", fields: { fileId: "Google file id", version: "Stored version id", asOf: "ISO time", include: "[versions]", maxBytes: "Bytes per page", cursor: "Next page" } },
+      { verb: "join", description: "Sync Google Drive folders", personOnly: true, fields: { folders: "Google folder or shared drive ids" } },
+      { verb: "leave", description: "Stop syncing Google Drive folders", personOnly: true, fields: { folders: "Synced folder ids from connections.list" } },
+    ],
+    read: ({ caller }, input) => read(caller, input),
+    search: ({ caller }, input) => search(caller, input),
+    join: ({ caller }, input) => changeFolders(caller, input, true),
+    leave: ({ caller }, input) => changeFolders(caller, input, false),
+    browse: ({ caller }, input) => browse(caller, input),
+    describe: async ({ caller }) => {
+      if (!caller.onBehalfOf) return {};
+      const response = await listDriveFolders(caller.workspaceId, caller.onBehalfOf, folderDeps);
+      const body = await response.json() as Record<string, unknown>;
+      if (!response.ok) return { foldersError: body.error };
+      return { folders: (body.folders as Record<string, unknown>[]).map(f => ({ id: f.id, name: f.name, folderKind: f.folder_kind, googleFolderId: f.google_folder_id })), lastSuccessAt: body.last_success_at, reauthRequired: body.reauth_required };
+    },
+    audit: (_verb, input) => ({ provider: "google_drive", ...input, cursor: redactCursor(input.cursor as string | undefined) }),
+  };
 }

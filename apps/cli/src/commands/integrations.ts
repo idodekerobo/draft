@@ -1,4 +1,3 @@
-import { runDriveFolders } from "../integrations/providers/drive.ts";
 import { callPersonTool } from "../cloud-client.ts";
 import { runConnectionsDisconnect, runConnectionsJoin, runConnectionsLeave, runConnectionsPost, runConnectionsRead, runConnectionsSearch, takeProviderFlag, takeValueFlag, usageError } from "../integrations/tool-commands.ts";
 import { createIntegrationOutput, INTEGRATION_ERROR_REGISTRY, type IntegrationErrorCode } from "../integrations/safe-output.ts";
@@ -333,7 +332,6 @@ export async function runIntegrations(args: string[]): Promise<number> {
   if (subcommand === "read") return runConnectionsRead(rest);
   if (subcommand === "search") return runConnectionsSearch(rest);
   if (subcommand === "post") return runConnectionsPost(rest);
-  if (subcommand === "drive") return runDriveFolders(rest);
 
   const json = args.includes("--json");
   return createIntegrationOutput({ json }).error("invalid_usage");

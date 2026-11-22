@@ -18,8 +18,16 @@ export async function disconnectConnection(
   client: SupabaseClient,
   input: { workspaceId: string; userId: string; provider: ConnectionProvider | "google"; accountKind: "personal" | "workspace" | null },
 ): Promise<DisconnectResult> {
-  // Google is connected as "google" but stored as the person's "gmail" connection.
-  const provider: ConnectionProvider = input.provider === "google" ? "gmail" : input.provider;
+  if (input.provider === "google") {
+    let outcome: DisconnectOutcome = "not_found";
+    for (const provider of ["gmail", "google_drive"] as const) {
+      const result = await disconnectConnection(client, { ...input, provider, accountKind: "personal" });
+      if (!result.ok || result.outcome === "not_owner") return result;
+      if (result.outcome === "disconnected") outcome = "disconnected";
+    }
+    return { ok: true, outcome };
+  }
+  const provider = input.provider;
   const { data, error } = await client.rpc("disconnect_connection", {
     p_workspace_id: input.workspaceId,
     p_provider: provider,

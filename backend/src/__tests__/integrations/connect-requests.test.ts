@@ -44,7 +44,7 @@ describe("Google in listIntegrations", () => {
       status: "connected",
       connectedByYou: false,
       destination: "company_context",
-      connect: { cli: "draft connections connect google" },
+      connect: { cli: "draft connections connect --provider google" },
     });
     const forThem = await listIntegrations(fakeClient(db), WS, OTHER);
     expect(forThem.find((item) => item.provider === "google")!.status).toBe("connected");
@@ -71,7 +71,7 @@ describe("Google connect links", () => {
     const driveOnly = fakeDb({ connections: [connection("google_drive"), connection("gmail", "revoked")] });
     expect(await createConnectRequest(fakeClient(driveOnly), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toMatchObject({ status: "action_required" });
     const both = fakeDb({ connections: [connection("gmail"), connection("google_drive", "degraded")] });
-    expect(await createConnectRequest(fakeClient(both), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toEqual({ status: "connected", provider: "google" });
+    expect(await createConnectRequest(fakeClient(both), { workspaceId: WS, userId: ME, provider: "google", via: "mcp" }, deps)).toMatchObject({ status: "connected", provider: "google" });
   });
 });
 

@@ -3,7 +3,6 @@ import { googleOAuthSettings, type GoogleOAuthSettings } from "../../config";
 import { CredentialError, resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 import { recordError } from "../../errors/record-error";
 import { GoogleOAuthError, refreshGoogleAccessToken } from "../google/oauth";
-import { workspaceProvider } from "../../metaharness/tools/tool-registry";
 import { createGmailApi, type GmailApi } from "./api";
 
 export type GmailAccessFailureCode = "google_not_connected" | "google_reconnect_required" | "google_oauth_not_configured";
@@ -105,34 +104,6 @@ export async function personalConnectionProviders(client: SupabaseClient, worksp
   return new Set(((data ?? []) as Array<{ provider: string }>).map((row) => row.provider));
 }
 
-/**
- * The providers that decide which connection-gated tools a person sees: their own live connections, plus
- * `workspace:<provider>` for each provider anyone in the workspace has live.
- */
-export async function toolConnectionProviders(client: SupabaseClient, workspaceId: string, userId: string): Promise<Set<string>> {
-  const { data, error } = await client
-    .from("connections")
-    .select("provider, connected_by_user_id")
-    .eq("workspace_id", workspaceId)
-    .in("status", ["active", "degraded"]);
-  if (error) throw error;
-  const providers = new Set<string>();
-  for (const row of (data ?? []) as Array<{ provider: string; connected_by_user_id: string | null }>) {
-    if (row.connected_by_user_id === userId) providers.add(row.provider);
-    providers.add(workspaceProvider(row.provider));
-  }
-  return providers;
-}
-
-/** The same, but a failed lookup gives no providers, so tools that need one stay hidden. */
-export async function toolConnectionProvidersOrNone(client: SupabaseClient, workspaceId: string, userId: string, surface: string): Promise<Set<string>> {
-  try {
-    return await toolConnectionProviders(client, workspaceId, userId);
-  } catch (error) {
-    await recordError({ client, workspaceId, operation: "read", code: "tool_connections_lookup_failed", message: "Looking up the caller's connections failed, so connection-gated tools are hidden", detail: { surface }, error });
-    return new Set();
-  }
-}
 
 /** The same, but a failed lookup gives no providers, so tools that need one stay hidden. */
 export async function personalConnectionProvidersOrNone(client: SupabaseClient, workspaceId: string, userId: string, surface: string): Promise<Set<string>> {

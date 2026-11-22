@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { ToolCaller } from "draft-core/tools";
+import { personalConnectionProvidersOrNone } from "../../../ingestion/gmail/access";
 import { describeError } from "../../../errors/describe-error";
 import { disconnectConnection } from "../../../integrations/disconnect";
 import { INTEGRATION_PROVIDERS, createConnectRequest, listIntegrations } from "../../../integrations/service";
@@ -23,6 +24,7 @@ export interface IntegrationToolDeps {
   slack?: ConnectionAdapterDeps["slack"];
   slackChannels?: SlackChannelDeps;
   gmail?: ConnectionAdapterDeps["gmail"];
+  drive?: ConnectionAdapterDeps["drive"];
   /** Tests add providers here. */
   adapters?: ReadonlyArray<ConnectionAdapter>;
 }
@@ -39,7 +41,7 @@ function grantedProviders(caller: ToolCaller, tool: string): Set<string> {
 }
 
 export function createIntegrationTools(client: SupabaseClient, deps: IntegrationToolDeps = {}) {
-  const adapters = createConnectionAdapters(client, { slack: deps.slack, slackChannels: deps.slackChannels, gmail: deps.gmail, extra: deps.adapters });
+  const adapters = createConnectionAdapters(client, { slack: deps.slack, slackChannels: deps.slackChannels, gmail: deps.gmail, drive: deps.drive, extra: deps.adapters });
   const adapterOf = (provider: string) => adapters.find((adapter) => adapter.provider === provider);
   const rowAdapters = (row: string) => adapters.filter((adapter) => (adapter.row ?? adapter.provider) === row);
   const providersWith = (has: (adapter: ConnectionAdapter) => boolean) => adapters.filter(has).map((adapter) => adapter.provider).join(", ");
@@ -83,10 +85,11 @@ export function createIntegrationTools(client: SupabaseClient, deps: Integration
         const named = !input.provider || item.provider === input.provider || mine.some((adapter) => adapter.provider === input.provider);
         return named && (caller.origin.kind === "person" || granted.has(item.provider) || mine.some((adapter) => granted.has(adapter.provider)));
       });
+      const personal = await personalConnectionProvidersOrNone(client, caller.workspaceId, actingUserId(caller), "connections_list");
       let badCursor: ToolHandlerResult | null = null;
       const connections = await Promise.all(visible.map(async (item) => {
         const mine = rowAdapters(item.provider);
-        const row: Record<string, unknown> = { ...item, actions: mine.flatMap((adapter) => actionsFor(caller, adapter)) };
+        const row: Record<string, unknown> = { ...item, actions: mine.filter((adapter) => adapter.provider !== "gmail" || personal.has("gmail")).flatMap((adapter) => actionsFor(caller, adapter)) };
         const browseTarget = browsing ? mine.find((adapter) => adapter.provider === input.provider && adapter.browse) : undefined;
         if (item.status !== "connected") {
           if (browseTarget) row.availableError = browseTarget.notConnectedMessage;

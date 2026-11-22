@@ -21,10 +21,10 @@ You can also manage folders with the CLI:
 
 ```bash
 draft connections connect google
-draft connections drive folders add <google-folder-or-shared-drive-id>
-draft connections drive folders list --json
-draft connections drive status
-draft connections drive folders remove <synced-folder-id>
+draft connections join --provider google-drive --folder <google-folder-or-shared-drive-id>
+draft connections list --provider google-drive --json
+draft connections list --provider google-drive
+draft connections leave --provider google-drive --folder <synced-folder-id>
 ```
 
 The Google ID comes from its Drive URL. Remove uses the synced folder row ID
@@ -44,11 +44,11 @@ create a new captured version even when the file body is unchanged.
 
 ## Read and search
 
-Agents use `drive.read` with `file_id`. Add `include: ["versions"]` to inspect
-captured versions and their short change summaries. Use a `version` ID, or `as_of`
+Agents use `connections.read` with `provider: "google_drive"` and `fileId`. Add `include: ["versions"]` to inspect
+captured versions and their short change summaries. Use a `version` ID, or `asOf`
 with an ISO timestamp, to read history; those two inputs cannot be combined.
 Only captured versions exist. Changes between syncs can become one version.
-`drive.search` searches the latest versions by default; `include_history: true`
+`connections.search` with `provider: "google_drive"` searches the latest versions by default; `includeHistory: true`
 can find text removed from a later version.
 
 A latest read refreshes live when the owning connection's last successful sync is
