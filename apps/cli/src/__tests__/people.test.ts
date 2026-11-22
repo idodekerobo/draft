@@ -187,11 +187,11 @@ describe("draft people", () => {
   });
 });
 
-describe("draft people add-identity", () => {
+describe("draft people update", () => {
   test("adds an identity to a person by id, with the evidence it was given", async () => {
     let seen: Record<string, unknown> = {};
-    backend.state.toolOutputs["people.add_identity"] = (input) => { seen = input; return { outcome: "created" }; };
-    const result = await run(["add-identity", ID, "--provider", "slack", "--external-id", "U0123", "--handle", "uzo", "--quote", "Uzo posted as U0123", "--source-item", "33333333-3333-4333-8333-333333333333"]);
+    backend.state.toolOutputs["people.update"] = (input) => { seen = input; return { outcome: "created" }; };
+    const result = await run(["update", ID, "--provider", "slack", "--external-id", "U0123", "--handle", "uzo", "--quote", "Uzo posted as U0123", "--source-item", "33333333-3333-4333-8333-333333333333"]);
     expect(result.exitCode).toBe(0);
     expect(seen).toEqual({
       personId: ID,
@@ -208,8 +208,8 @@ describe("draft people add-identity", () => {
     const lookups: Array<Record<string, unknown>> = [];
     let seen: Record<string, unknown> = {};
     backend.state.toolOutputs["people.find"] = (input) => { lookups.push(input); return { people: [cory] }; };
-    backend.state.toolOutputs["people.add_identity"] = (input) => { seen = input; return { outcome: "created" }; };
-    const result = await run(["add-identity", "cory", "--provider", "email", "--external-id", "cory@example.com"]);
+    backend.state.toolOutputs["people.update"] = (input) => { seen = input; return { outcome: "created" }; };
+    const result = await run(["update", "cory", "--provider", "email", "--external-id", "cory@example.com"]);
     expect(result.exitCode).toBe(0);
     expect(lookups).toEqual([{ name: "cory" }]);
     expect(seen).toMatchObject({ personId: cory.id, provider: "email", externalId: "cory@example.com", evidence: { quote: "Added from the Draft CLI" } });
@@ -217,45 +217,45 @@ describe("draft people add-identity", () => {
   });
 
   test("says nothing changed when the person already has it", async () => {
-    backend.state.toolOutputs["people.add_identity"] = () => ({ outcome: "unchanged" });
-    const result = await run(["add-identity", ID, "--provider", "github", "--external-id", "12345"]);
+    backend.state.toolOutputs["people.update"] = () => ({ outcome: "unchanged" });
+    const result = await run(["update", ID, "--provider", "github", "--external-id", "12345"]);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("already has the github identity 12345. Nothing changed.");
   });
 
   test("--json prints the outcome", async () => {
-    backend.state.toolOutputs["people.add_identity"] = () => ({ outcome: "created" });
-    const result = await run(["add-identity", ID, "--provider", "slack", "--external-id", "U9", "--json"]);
+    backend.state.toolOutputs["people.update"] = () => ({ outcome: "created" });
+    const result = await run(["update", ID, "--provider", "slack", "--external-id", "U9", "--json"]);
     expect(JSON.parse(result.stdout)).toEqual({ schema_version: 1, outcome: "created", personId: ID, provider: "slack", externalId: "U9" });
   });
 
   test("shows the tool's refusal when the id belongs to someone else", async () => {
-    backend.state.toolOutputs["people.add_identity"] = () => ({ __refusal: { code: "identity_taken", message: "That id already belongs to another person." } });
-    const result = await run(["add-identity", ID, "--provider", "slack", "--external-id", "U1"]);
+    backend.state.toolOutputs["people.update"] = () => ({ __refusal: { code: "identity_taken", message: "That id already belongs to another person." } });
+    const result = await run(["update", ID, "--provider", "slack", "--external-id", "U1"]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("That id already belongs to another person.");
   });
 
   test("a name that matches nobody or several people is not guessed", async () => {
     backend.state.toolOutputs["people.find"] = () => ({ people: [] });
-    const none = await run(["add-identity", "nobody", "--provider", "slack", "--external-id", "U1", "--json"]);
+    const none = await run(["update", "nobody", "--provider", "slack", "--external-id", "U1", "--json"]);
     expect(none.exitCode).toBe(1);
     expect(JSON.parse(none.stdout)).toMatchObject({ code: "person_not_found" });
     backend.state.toolOutputs["people.find"] = () => ({ people: [uzo, cory] });
-    const many = await run(["add-identity", "o", "--provider", "slack", "--external-id", "U1", "--json"]);
+    const many = await run(["update", "o", "--provider", "slack", "--external-id", "U1", "--json"]);
     expect(many.exitCode).toBe(1);
     expect(JSON.parse(many.stdout)).toMatchObject({ code: "ambiguous_person" });
   });
 
   test("rejects a missing person, provider or id, an unknown provider, and a bad source item before any request", async () => {
     const cases = [
-      ["add-identity"],
-      ["add-identity", ID],
-      ["add-identity", ID, "--provider", "slack"],
-      ["add-identity", ID, "--external-id", "U1"],
-      ["add-identity", ID, "--provider", "fax", "--external-id", "U1"],
-      ["add-identity", ID, "--provider", "slack", "--external-id", "U1", "--source-item", "not-an-id"],
-      ["add-identity", ID, "extra", "--provider", "slack", "--external-id", "U1"],
+      ["update"],
+      ["update", ID],
+      ["update", ID, "--provider", "slack"],
+      ["update", ID, "--external-id", "U1"],
+      ["update", ID, "--provider", "fax", "--external-id", "U1"],
+      ["update", ID, "--provider", "slack", "--external-id", "U1", "--source-item", "not-an-id"],
+      ["update", ID, "extra", "--provider", "slack", "--external-id", "U1"],
     ];
     for (const args of cases) expect((await run(args)).exitCode).toBe(2);
     expect(backend.state.requests).toEqual([]);

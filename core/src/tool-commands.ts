@@ -36,7 +36,7 @@ export const TOOL_COMMANDS: Record<DraftToolName, string | null> = {
   "github.credential": null,
   "people.find": "people find",
   "people.create": "people create",
-  "people.add_identity": "people add-identity",
+  "people.update": "people update",
   "people.notify": "people notify",
   "people.approve": "people approve",
   "people.reject": "people reject",

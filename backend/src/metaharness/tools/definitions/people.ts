@@ -35,12 +35,12 @@ const identitySchema = z.object({
 });
 
 /** The most times a run may use a tool, from the permission that was fixed when the run started. */
-function runLimit(run: AgentRunSpec, tool: "people.create" | "people.add_identity" | "people.notify", fallback: number): number {
+function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update" | "people.notify", fallback: number): number {
   const limits = findToolPermission(run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
   return limits?.maxPerRun ?? fallback;
 }
 
-async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.add_identity" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
+async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
   if (caller.origin.kind !== "run") return null;
   const { run } = caller.origin;
   const max = runLimit(run, tool, fallback);
@@ -122,7 +122,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
   });
 
   const addIdentityTool = defineTool({
-    name: "people.add_identity",
+    name: "people.update",
     mcp: true,
     description:
       "Record another way to recognise a known person, such as their Slack id. What you add is a guess until a connection or an admin confirms it, so it cannot be used to message them. " +
@@ -136,7 +136,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     }),
     handler: async ({ input, caller }) => {
       const workspaceId = callerWorkspaceId(caller);
-      const limited = await overRunLimit(client, caller, "people.add_identity", DEFAULT_MAX_IDENTITIES_PER_RUN);
+      const limited = await overRunLimit(client, caller, "people.update", DEFAULT_MAX_IDENTITIES_PER_RUN);
       if (limited) return limited;
 
       const result = await addPersonIdentity(client, workspaceId, input);

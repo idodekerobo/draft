@@ -1,4 +1,4 @@
-// commands/people.ts — draft people find | create | add-identity | pending | approve | reject | notify
+// commands/people.ts — draft people find | create | update | pending | approve | reject | notify
 //
 // Who the workspace's people are, and how to reach them. Each command is one Draft tool, called as the
 // signed-in person. An agent that adds a person leaves them pending; an admin decides here.
@@ -161,9 +161,9 @@ async function resolvePerson(command: string, json: boolean, who: string): Promi
   return fail(command, json, errorPayload("ambiguous_person", `More than one person matches "${who}". Use an id: ${matches.map((p) => `${p.displayName} ${p.id}`).join("; ")}`));
 }
 
-export async function runPeopleAddIdentity(args: string[]): Promise<number> {
-  const command = "draft people add-identity";
-  const shape = "usage: draft people add-identity <id or name> --provider <email|slack|linear|github|whatsapp> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]";
+export async function runPeopleUpdate(args: string[]): Promise<number> {
+  const command = "draft people update";
+  const shape = "usage: draft people update <id or name> --provider <email|slack|linear|github|whatsapp> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]";
   const flags = parseFlags(args);
   if (flags.error) return usage(command, flags.json, flags.error);
   const [who, ...extra] = flags.positionals;
@@ -176,7 +176,7 @@ export async function runPeopleAddIdentity(args: string[]): Promise<number> {
 
   const target = await resolvePerson(command, flags.json, who);
   if (typeof target === "number") return target;
-  const result = await call(command, flags.json, "people.add_identity", {
+  const result = await call(command, flags.json, "people.update", {
     personId: target.id,
     provider,
     externalId,
@@ -263,7 +263,7 @@ function printPeopleHelp(): void {
   console.log("Usage:");
   console.log(`  draft people find [name] [--me] [--email <address>] [--status <s>] [--json]   ${dim("Find people")}`);
   console.log(`  draft people create <name> [--email <a>] [--slack <id>] [--quote <why>] [--force]   ${dim("Add a teammate (pending unless you are an admin)")}`);
-  console.log(`  draft people add-identity <id or name> --provider <p> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]   ${dim("Record another way to recognise a person")}`);
+  console.log(`  draft people update <id or name> --provider <p> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]   ${dim("Record another way to recognise a person")}`);
   console.log(`  draft people pending [--json]   ${dim("Who is waiting for approval")}`);
   console.log(`  draft people approve <id or name>   ${dim("Admins only")}`);
   console.log(`  draft people reject <id or name> [--reason <why>]   ${dim("Admins only")}`);
@@ -278,11 +278,11 @@ export async function runPeople(args: string[]): Promise<number> {
   }
   if (sub === "find") return runPeopleFind(rest);
   if (sub === "create") return runPeopleCreate(rest);
-  if (sub === "add-identity") return runPeopleAddIdentity(rest);
+  if (sub === "update") return runPeopleUpdate(rest);
   if (sub === "pending") return runPeoplePending(rest);
   if (sub === "approve") return runPeopleApprove(rest);
   if (sub === "reject") return runPeopleReject(rest);
   if (sub === "notify") return runPeopleNotify(rest);
-  console.error(red(`draft people: unknown subcommand "${sub}". Use find, create, add-identity, pending, approve, reject or notify.`));
+  console.error(red(`draft people: unknown subcommand "${sub}". Use find, create, update, pending, approve, reject or notify.`));
   return EXIT_USAGE_ERROR;
 }

@@ -35,7 +35,7 @@ export const DRAFT_TOOLS = [
   { name: "github.credential", access: "read" },
   { name: "people.find", access: "read" },
   { name: "people.create", access: "write" },
-  { name: "people.add_identity", access: "write" },
+  { name: "people.update", access: "write" },
   { name: "people.notify", access: "write" },
   { name: "people.approve", access: "write" },
   { name: "people.reject", access: "write" },
@@ -79,7 +79,7 @@ export interface DraftToolLimits {
   "github.credential": { repos?: ReadonlyArray<string>; access?: "read" | "write" };
   "people.find": Record<string, never>;
   "people.create": { maxPerRun?: number };
-  "people.add_identity": { maxPerRun?: number };
+  "people.update": { maxPerRun?: number };
   /** `recipients` is who the run may message: its own user, any member, or these people. */
   "people.notify": { recipients?: "self" | "members" | ReadonlyArray<PersonId>; maxPerRun?: number };
   "people.approve": Record<string, never>;
@@ -110,7 +110,7 @@ export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   ...CONTEXT_READ_WRITE_PERMISSIONS,
   { tool: "people.find" },
   { tool: "people.create", limits: { maxPerRun: 5 } },
-  { tool: "people.add_identity", limits: { maxPerRun: 10 } },
+  { tool: "people.update", limits: { maxPerRun: 10 } },
 ];
 
 /** Where a call came in. `app` is an older app with an unknown surface; only CLI/MCP count as external agent queries. */

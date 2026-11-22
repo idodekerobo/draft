@@ -174,7 +174,7 @@ describe("people.create", () => {
   });
 });
 
-describe("people.add_identity", () => {
+describe("people.update", () => {
   it("adds an inferred identity, never lowers a trusted one, and refuses an identity that belongs to someone else", async () => {
     const { call, db } = setup();
     await call(asRun(), "people.create", { displayName: "Cory Banks", evidence });
@@ -182,20 +182,20 @@ describe("people.add_identity", () => {
     const cory = db.tables.people!.find((p) => p.display_name === "Cory Banks")!;
     const dana = db.tables.people!.find((p) => p.display_name === "Dana Lee")!;
 
-    expect(await call(asRun(), "people.add_identity", { personId: cory.id, provider: "slack", externalId: "U9", evidence: {} })).toMatchObject({ output: { outcome: "created" } });
+    expect(await call(asRun(), "people.update", { personId: cory.id, provider: "slack", externalId: "U9", evidence: {} })).toMatchObject({ output: { outcome: "created" } });
     expect(db.tables.person_identities).toContainEqual(expect.objectContaining({ person_id: cory.id, external_id: "U9", status: "inferred" }));
 
     db.tables.person_identities!.push({ id: "t1", workspace_id: WS, person_id: dana.id, provider: "email", external_id: "dana@x.com", status: "confirmed", handle: null });
-    expect(await call(asRun(), "people.add_identity", { personId: dana.id, provider: "email", externalId: "DANA@x.com", evidence: {} })).toMatchObject({ output: { outcome: "unchanged" } });
+    expect(await call(asRun(), "people.update", { personId: dana.id, provider: "email", externalId: "DANA@x.com", evidence: {} })).toMatchObject({ output: { outcome: "unchanged" } });
     expect(db.tables.person_identities!.find((i) => i.id === "t1")!.status).toBe("confirmed");
 
-    expect(await call(asRun(), "people.add_identity", { personId: cory.id, provider: "email", externalId: "dana@x.com", evidence: {} })).toMatchObject({ status: "refused", code: "identity_taken" });
+    expect(await call(asRun(), "people.update", { personId: cory.id, provider: "email", externalId: "dana@x.com", evidence: {} })).toMatchObject({ status: "refused", code: "identity_taken" });
   });
 
   it("refuses a person from another workspace", async () => {
     const { call, db } = setup();
     db.tables.people!.push({ id: "88888888-8888-4888-8888-888888888888", workspace_id: OTHER_WS, display_name: "Elsewhere" });
-    expect(await call(asRun(), "people.add_identity", { personId: "88888888-8888-4888-8888-888888888888", provider: "slack", externalId: "U1", evidence: {} })).toMatchObject({ status: "refused", code: "person_not_found" });
+    expect(await call(asRun(), "people.update", { personId: "88888888-8888-4888-8888-888888888888", provider: "slack", externalId: "U1", evidence: {} })).toMatchObject({ status: "refused", code: "person_not_found" });
   });
 });
 
@@ -246,7 +246,7 @@ describe("people.approve and people.reject", () => {
 describe("synthesis permissions", () => {
   it("can find, create and add identities, and cannot notify, approve or reject", () => {
     const tools = SYNTHESIS_PERMISSIONS.map((permission) => permission.tool);
-    expect(tools).toEqual(expect.arrayContaining(["context.read", "context.write", "people.find", "people.create", "people.add_identity"]));
+    expect(tools).toEqual(expect.arrayContaining(["context.read", "context.write", "people.find", "people.create", "people.update"]));
     expect(tools).not.toContain("people.notify");
     expect(tools).not.toContain("people.approve");
     expect(tools).not.toContain("people.reject");

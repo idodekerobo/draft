@@ -122,7 +122,7 @@ Your agent never sees your keys: you enter them on the Draft page the link opens
 | `skills.add` | Create a new shared skill. Fails with `duplicate_name` if the name exists. |
 | `skills.update` | Replace an existing skill's content and fields. Fails with `skill_not_found` if the name does not exist. |
 | `skills.delete` | Remove a skill from the workspace. A client asks before it runs, because the tool is marked destructive. Fails with `skill_not_found` if the name does not exist. |
-| `people.find`, `people.create`, `people.add_identity`, `people.notify`, `people.approve`, `people.reject` | Find the workspace's people, add people and their identities, and message a teammate. |
+| `people.find`, `people.create`, `people.update`, `people.notify`, `people.approve`, `people.reject` | Find the workspace's people, add people, record another way to recognise one (a Slack id, an email), and message a teammate. |
 
 ## Connect Claude Code
 
