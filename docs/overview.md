@@ -18,7 +18,7 @@ Draft has a server, a workspace on that server, and clients that talk to it.
 
 - **Web app** (`apps/web`): sign-up, invites, and device pairing, plus browsing context, activity, connections, and routines in the browser.
 - **Desktop app** (`apps/desktop`): the same workspace views in a native app. It also connects the workspace's data sources (Slack, GitHub, Linear, Fireflies, Granola, Claude Code) and can read a local folder to seed a workspace.
-- **CLI** (`apps/cli`): scriptable access for reading context and skills, managing routines and viewing runs, connecting sources (`draft connections connect`), exporting context, and setting up agent connections, including session capture that uploads local coding-agent sessions when enabled.
+- **CLI** (`apps/cli`): scriptable access for reading context and skills, managing routines and viewing runs, connecting sources (`draft connections connect --provider <provider>`), and reading and posting in connected Slack channels, exporting context, and setting up agent connections, including session capture that uploads local coding-agent sessions when enabled.
 
 Agents can attach through two supported paths: the remote MCP server for in-session context reads and managing routines, or the CLI for setup, scripts, context/skill reads, and routine management. Project-local hooks remain available for coding-session capture. These connection surfaces are intentionally evolving, but the authenticated workspace and API are the stable source of truth.
 
