@@ -26,7 +26,7 @@ interface Flags {
   error?: string;
 }
 
-const VALUE_FLAGS = new Set(["email", "slack", "quote", "status", "reason", "link", "channel", "name", "provider", "external-id", "handle", "source-item"]);
+const VALUE_FLAGS = new Set(["email", "slack", "quote", "status", "reason", "link", "channel", "name", "provider", "external-id", "handle", "source-item", "replace", "remove"]);
 const IDENTITY_PROVIDERS = ["email", "slack", "linear", "github", "whatsapp"] as const;
 const BOOLEAN_FLAGS = new Set(["json", "me", "force"]);
 
@@ -163,14 +163,24 @@ async function resolvePerson(command: string, json: boolean, who: string): Promi
 
 export async function runPeopleUpdate(args: string[]): Promise<number> {
   const command = "draft people update";
-  const shape = "usage: draft people update <id or name> --provider <email|slack|linear|github|whatsapp> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]";
+  const shape = [
+    "usage: draft people update <id or name> --provider <email|slack|linear|github|whatsapp> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]",
+    "       draft people update <id or name> --provider <p> --replace <wrong id> --external-id <right id>",
+    "       draft people update <id or name> --provider <p> --remove <id>",
+  ].join("\n");
   const flags = parseFlags(args);
   if (flags.error) return usage(command, flags.json, flags.error);
   const [who, ...extra] = flags.positionals;
   const { provider, handle, quote } = flags.values;
   const externalId = flags.values["external-id"];
+  const replaces = flags.values.replace;
+  const remove = flags.values.remove;
   const sourceItemId = flags.values["source-item"];
-  if (!who || extra.length || !provider || !externalId) return usage(command, flags.json, shape);
+  if (!who || extra.length || !provider) return usage(command, flags.json, shape);
+  const adding = externalId !== undefined && replaces === undefined && remove === undefined;
+  const replacing = externalId !== undefined && replaces !== undefined && remove === undefined;
+  const removing = remove !== undefined && externalId === undefined && replaces === undefined && handle === undefined && quote === undefined && sourceItemId === undefined;
+  if (!adding && !replacing && !removing) return usage(command, flags.json, `give one change: add, replace or remove, never a mix\n${shape}`);
   if (!(IDENTITY_PROVIDERS as readonly string[]).includes(provider)) return usage(command, flags.json, `unknown provider "${provider}". Providers: ${IDENTITY_PROVIDERS.join(", ")}`);
   if (sourceItemId && !UUID.test(sourceItemId)) return usage(command, flags.json, "--source-item must be a source item id from `draft sources search`");
 
@@ -179,18 +189,22 @@ export async function runPeopleUpdate(args: string[]): Promise<number> {
   const result = await call(command, flags.json, "people.update", {
     personId: target.id,
     provider,
-    externalId,
+    ...(removing ? { remove } : { externalId, ...(replacing ? { replaces } : {}) }),
     ...(handle ? { handle } : {}),
-    evidence: { quote: quote ?? "Added from the Draft CLI", ...(sourceItemId ? { sourceItemId } : {}) },
+    ...(removing ? {} : { evidence: { quote: quote ?? "Added from the Draft CLI", ...(sourceItemId ? { sourceItemId } : {}) } }),
   });
   if (typeof result === "number") return result;
 
   const outcome = (result.output as { outcome?: string } | null)?.outcome;
-  if (flags.json) { printJsonLine({ outcome, personId: target.id, provider, externalId }); return EXIT_SUCCESS; }
+  if (flags.json) {
+    printJsonLine({ outcome, personId: target.id, provider, ...(removing ? { removed: remove } : { externalId, ...(replacing ? { replaced: replaces } : {}) }) });
+    return EXIT_SUCCESS;
+  }
   const name = target.name ?? target.id;
-  console.log(outcome === "created"
-    ? `Added the ${provider} identity ${externalId} to ${name}. It is a guess until a connection or an admin confirms it, so it cannot be used to message them yet.`
-    : `${name} already has the ${provider} identity ${externalId}. Nothing changed.`);
+  if (removing) console.log(`Removed the ${provider} identity ${remove} from ${name}.`);
+  else if (outcome === "replaced") console.log(`Replaced the ${provider} identity ${replaces} with ${externalId} for ${name}. The new one is a guess until a connection sees the same id, so it cannot be used to message them yet.`);
+  else if (outcome === "created") console.log(`Added the ${provider} identity ${externalId} to ${name}. It is a guess until a connection sees the same id, so it cannot be used to message them yet.`);
+  else console.log(`${name} already has the ${provider} identity ${externalId}. Nothing changed.`);
   return EXIT_SUCCESS;
 }
 
@@ -264,6 +278,8 @@ function printPeopleHelp(): void {
   console.log(`  draft people find [name] [--me] [--email <address>] [--status <s>] [--json]   ${dim("Find people")}`);
   console.log(`  draft people create <name> [--email <a>] [--slack <id>] [--quote <why>] [--force]   ${dim("Add a teammate (pending unless you are an admin)")}`);
   console.log(`  draft people update <id or name> --provider <p> --external-id <id> [--handle <name>] [--quote <why>] [--source-item <id>]   ${dim("Record another way to recognise a person")}`);
+  console.log(`  draft people update <id or name> --provider <p> --replace <wrong id> --external-id <right id>   ${dim("Correct one in a single step")}`);
+  console.log(`  draft people update <id or name> --provider <p> --remove <id>   ${dim("Remove one (only a guess can be changed)")}`);
   console.log(`  draft people pending [--json]   ${dim("Who is waiting for approval")}`);
   console.log(`  draft people approve <id or name>   ${dim("Admins only")}`);
   console.log(`  draft people reject <id or name> [--reason <why>]   ${dim("Admins only")}`);
