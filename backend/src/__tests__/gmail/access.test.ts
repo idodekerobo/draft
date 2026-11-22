@@ -42,7 +42,7 @@ describe("gmailAccessFor", () => {
     expect(access).toEqual({
       ok: false,
       code: "google_not_connected",
-      message: "Connect Google to let your agent read your Gmail: draft connections connect google",
+      message: "Connect Google to let your agent read your Gmail: draft connections connect --provider google",
     });
   });
 

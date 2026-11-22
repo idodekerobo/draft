@@ -16,7 +16,7 @@ export interface GmailAccessDependencies {
   now?: () => Date;
 }
 
-const NOT_CONNECTED_MESSAGE = "Connect Google to let your agent read your Gmail: draft connections connect google";
+const NOT_CONNECTED_MESSAGE = "Connect Google to let your agent read your Gmail: draft connections connect --provider google";
 const RECONNECT_MESSAGE = "Reconnect Google";
 
 // Looks up only the user's own connection, so a caller can never reach a teammate's mailbox.

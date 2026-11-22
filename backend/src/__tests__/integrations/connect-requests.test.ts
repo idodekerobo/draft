@@ -30,7 +30,7 @@ describe("Google in listIntegrations", () => {
   it("is connected only by the caller's own live gmail connection, and is private to them", async () => {
     const db = fakeDb({ connections: [connection("gmail", "active", OTHER), connection("slack")] });
     const theirs = (await listIntegrations(fakeClient(db), WS, ME)).find((item) => item.provider === "google")!;
-    expect(theirs).toMatchObject({ status: "not_connected", destination: "only_you", connect: { cli: "draft connections connect google" } });
+    expect(theirs).toMatchObject({ status: "not_connected", destination: "only_you", connect: { cli: "draft connections connect --provider google" } });
     const mine = (await listIntegrations(fakeClient(db), WS, OTHER)).find((item) => item.provider === "google")!;
     expect(mine).toMatchObject({ status: "connected", connectedByYou: true });
     expect((await listIntegrations(fakeClient(db), WS, ME)).find((item) => item.provider === "slack")!.destination).toBe("company_context");

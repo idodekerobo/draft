@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
 import { recordRouteError } from "../errors/route-error";
+import { releaseGoogleCredential } from "../ingestion/google/release-credential";
 import { stopSlackListener } from "../ingestion/slack/bootstrap";
 import { deleteGranolaWebhookEndpoint } from "../ingestion/granola/webhook-endpoints";
 import type { ConnectionProvider } from "../types/enums";
@@ -14,11 +15,13 @@ export type DisconnectResult = { ok: true; outcome: DisconnectOutcome } | { ok: 
  */
 export async function disconnectConnection(
   client: SupabaseClient,
-  input: { workspaceId: string; userId: string; provider: ConnectionProvider; accountKind: "personal" | "workspace" | null },
+  input: { workspaceId: string; userId: string; provider: ConnectionProvider | "google"; accountKind: "personal" | "workspace" | null },
 ): Promise<DisconnectResult> {
+  // Google is connected as "google" but stored as the person's "gmail" connection.
+  const provider: ConnectionProvider = input.provider === "google" ? "gmail" : input.provider;
   const { data, error } = await client.rpc("disconnect_connection", {
     p_workspace_id: input.workspaceId,
-    p_provider: input.provider,
+    p_provider: provider,
     p_connected_by_user_id: input.userId,
     p_account_kind: input.accountKind,
   });
@@ -28,9 +31,19 @@ export async function disconnectConnection(
   const outcome = result?.outcome ?? "not_found";
   if (outcome !== "disconnected" || !result?.connection_id) return { ok: true, outcome };
 
-  if (input.provider === "slack") await stopSlackListener(result.connection_id);
-  if (input.provider === "granola") await deleteGranolaWebhookBestEffort(client, input.workspaceId, result.connection_id);
+  if (provider === "slack") await stopSlackListener(result.connection_id);
+  if (provider === "granola") await deleteGranolaWebhookBestEffort(client, input.workspaceId, result.connection_id);
+  if (provider === "gmail") await releaseGoogleBestEffort(client, input.workspaceId, result.connection_id);
   return { ok: true, outcome };
+}
+
+/** Revokes Draft's grant at Google. A failure here is recorded and does not undo the disconnect. */
+async function releaseGoogleBestEffort(client: SupabaseClient, workspaceId: string, connectionId: string): Promise<void> {
+  try {
+    await releaseGoogleCredential({ client, workspaceId, connectionId });
+  } catch (cleanupError) {
+    recordRouteError({ workspaceId, connectionId, operation: "auth", errorCode: "google_credential_release_failed", error: cleanupError });
+  }
 }
 
 /** Avoids the 4-day window before Granola auto-disables and emails about a dead endpoint. A failure here is not fatal. */

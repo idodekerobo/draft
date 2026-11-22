@@ -51,8 +51,8 @@ function fakeClient(options: { logRows?: LogRow[]; logError?: unknown } = {}) {
           select: () => builder,
           eq: (column: string, value: string) => (preds.push((r) => (column === "args_json->>provider" ? r.provider === value : r[column as keyof LogRow] === value)), builder),
           in: (column: keyof LogRow, values: string[]) => (preds.push((r) => values.includes(r[column] as string)), builder),
-          gte: (column: keyof LogRow, value: string) => (preds.push((r) => r[column] >= value), builder),
-          lte: (column: keyof LogRow, value: string) => (preds.push((r) => r[column] <= value), builder),
+          gte: (column: Exclude<keyof LogRow, "provider">, value: string) => (preds.push((r) => r[column] >= value), builder),
+          lte: (column: Exclude<keyof LogRow, "provider">, value: string) => (preds.push((r) => r[column] <= value), builder),
           limit: async (n: number) =>
             options.logError
               ? { data: null, error: options.logError }
