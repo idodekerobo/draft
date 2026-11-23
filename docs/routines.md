@@ -8,9 +8,15 @@ Repeating and event routines appear on the Routines tab in the web and desktop a
 
 | Routine | What it does | What you can change |
 | --- | --- | --- |
-| Update company context | Checks for new source material and updates the company context. If nothing is new, no synthesis run starts. | Schedule and on/off |
-| Summarize coding sessions | Turns newly captured coding sessions into summaries. Sessions already summarized are skipped. | Schedule and on/off |
+| Update company context | Checks for new source material and updates the company context. If nothing is new, no synthesis run starts. | Prompt, agent, model, reasoning, schedule and on/off |
+| Summarize coding sessions | Turns newly captured coding sessions into summaries. Sessions already summarized are skipped. | Prompt, agent, model, reasoning, schedule and on/off |
 | Sync Slack | Imports new messages from the connected Slack channels. Pick the channels in Connections. | On/off only |
+
+The prompt and agent settings for Update company context and Summarize coding sessions apply to the entire team. Edit them in the same composer used for other routines. Draft keeps the required inputs, tool permissions and output formats; the prompt controls what the agent should focus on. These routines retain their scheduled job behavior and cannot be deleted or given event triggers.
+
+Defaults live in code and are saved in `scheduled_tasks.config_json` when a built-in routine is registered. Existing tasks without saved settings show the defaults and save them on their first run or edit. Registration never overwrites customized settings. The one-time data migration `20261123182812_backfill_builtin_routine_agent_settings.sql` fills missing settings on existing active tasks without changing schedules, paused states or saved customizations.
+
+Each run snapshots its prompt, harness, model and reasoning in its `AgentRunSpec`. Both built-in routines and custom routines use the shared credential-aware sandbox launcher, which derives tools and the execution environment from that spec. Claude Code and Codex support the built-in routines' structured results, including batches of captured sessions. Synthesis has context read/write and all people tools, including approve, reject and notification to active teammates, without a default people-tool call cap. Summarization has no Draft-tool permissions. Codex uses the team's connected login and the same credential lease as other routines; refreshed logins are saved before the lease is released. Edits affect future runs, including automatic and on-demand context updates, and do not change runs already in progress.
 
 ## Run something once
 
