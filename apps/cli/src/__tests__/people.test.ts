@@ -208,6 +208,14 @@ describe("draft people notify", () => {
 });
 
 describe("draft people notification-status", () => {
+  test("--help and -h describe delivery states without needing a notification id", async () => {
+    for (const flag of ["--help", "-h"]) {
+      const result = await run(["notification-status", flag]);
+      expect(result.exitCode).toBe(0);
+      for (const phrase of ["notificationId", "--json", "sent", "delivered", "refreshed: false", "without sending"]) expect(result.stdout).toContain(phrase);
+    }
+  });
+
   test("prints one line per channel", async () => {
     let seen: Record<string, unknown> = {};
     backend.state.toolOutputs["people.notification_status"] = (input) => { seen = input; return { notificationId: NOTIFICATION, refreshed: true, deliveries: [{ channel: "email", status: "delivered", errorCode: null }, { channel: "slack", status: "failed", errorCode: "not_reachable" }] }; };

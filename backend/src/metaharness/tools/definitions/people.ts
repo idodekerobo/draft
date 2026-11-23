@@ -190,20 +190,20 @@ export function createPeopleTools(
     mcp: true,
     description:
       "Send a message to one teammate, by their id from people.find. Only active teammates can be messaged, and only on channels where Draft can reach them. " +
-      "Read recent messages with connections.read first and do not repeat a message already sent. " +
+      "When a relevant conversation is available, read recent messages with connections.read and do not repeat a message already sent. " +
       "A line saying which Draft agent or person sent it ends the message; you cannot change that line. Write only the body. Message only the people your instructions name. " +
       "Channels: slack (a direct message) and email (to the teammate's verified address; you never supply an address). Omit channels to use the person's own. " +
       "Write `text`, or `html` for a richer email, or both. If you send only `html`, Draft makes the plain text from it. Slack uses the text and ignores `subject` and `html`. " +
       "For email, `subject` is a short, factual topic such as 'Your meeting follow-ups', 'Review needed for the launch plan' or 'Weekly research update'. Draft adds the 'Draft: ' prefix once, so do not write it. " +
       "Without a subject, a text-only email is titled 'Draft: New message'. Recurring routines should reuse the same subject pattern each run. " +
-      "Pass `idempotencyKey` (for example 'meeting-123-followups') when a retry must not send twice: the same key with the same content returns the same notification and sends nothing new, and the same key with different content is refused. " +
+      "Pass `idempotencyKey` (for example 'meeting-123-followups') for retries: the same key and content returns the same notification with saved channel results, and sends only channels without a delivery record. Recorded failures are not retried by repeating the call. The same key with different content or recipients is refused. " +
       "The result has a notificationId and one entry per channel: sent, or failed with not_reachable or provider_error. For email, sent means the provider accepted it, not that it arrived: call people.notification_status with the notificationId to check. A failure on one channel does not stop the others.",
     input: z.object({
-      personId: z.string().uuid(),
+      personId: z.string().uuid().describe("The id of one active workspace teammate, from people.find. Never an email address."),
       text: z.string().min(1).max(2000).optional().describe("The message as plain text. Required unless html is given."),
       html: z.string().min(1).max(MAX_EMAIL_HTML_CHARS).optional().describe("Email only. A richer body. Plain text is made from it when text is omitted."),
       subject: z.string().min(1).max(140).optional().describe("Email only. A short, factual topic, without the 'Draft: ' prefix."),
-      link: z.string().url().optional(),
+      link: z.string().url().optional().describe("A URL appended to the plain text message on each channel."),
       idempotencyKey: z.string().min(1).max(128).optional().describe("A stable key for this message, so a retry does not send twice."),
       channels: z.array(z.enum(NOTIFY_CHANNELS)).min(1).optional().describe("Where to send. Omit to use the person's own channels."),
     }),
@@ -278,9 +278,9 @@ export function createPeopleTools(
       "Check what happened to a message sent with people.notify, by its notificationId. Returns one entry per channel with its status: " +
       "queued, sent (the provider accepted it), delivered (the recipient's mail server accepted it), delayed, bounced, complained or failed. " +
       "Delivered does not mean the message was read or reached the inbox. Reading status never sends anything. " +
-      "You can check messages you sent, messages sent for the person you work for, and messages shared with the team. " +
+      "You can check messages you sent or received, messages sent by this run or sent or received by the person it works for, and messages shared with the team. " +
       "If refreshed is false, the latest status could not be fetched and the saved one is shown.",
-    input: z.object({ notificationId: z.string().uuid() }),
+    input: z.object({ notificationId: z.string().uuid().describe("The Draft notificationId returned by people.notify, not the provider's email id.") }),
     auditArguments: (input) => ({ notificationId: input.notificationId }),
     handler: async ({ input, caller }) => {
       const workspaceId = callerWorkspaceId(caller);

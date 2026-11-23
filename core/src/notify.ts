@@ -12,7 +12,8 @@ export const isNotifyChannelId = (value: unknown): value is NotifyChannelId =>
   NOTIFY_CHANNELS.some((channel) => channel === value);
 
 /**
- * `subject`, `html` and `idempotencyKey` apply to email only. Slack sends `text` and `link` and ignores the rest.
+ * `subject` and `html` apply to email only. Slack sends `text` and `link` and ignores those fields.
+ * `idempotencyKey` deduplicates the whole notification, across its channels.
  * For email, `text` or `html` is enough: the missing one is made from the other.
  * `attribution` says which agent or person sent it. Channels put it at the end of what they send, and it is not stored with the body.
  */

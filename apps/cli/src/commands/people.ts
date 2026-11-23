@@ -257,10 +257,14 @@ function printNotifyHelp(): void {
   console.log("  Slack uses the message text and ignores the subject and HTML. A line naming the sender ends every message.");
   console.log("");
   console.log("Delivery:");
+  console.log("  <id or name>         One active teammate. Names must match exactly one person; email addresses come from verified identities.");
   console.log("  --channel            Where to send. Leave it out to use the person's own channels. Give one or both, such as slack,email.");
-  console.log("  --idempotency-key    A stable key such as meeting-123-followups. A retry with the same key and content sends nothing new.");
+  console.log("  --idempotency-key    A stable key such as meeting-123-followups. A retry returns saved channel results and sends only channels without a delivery record.");
   console.log("                       The same key with different content is refused.");
+  console.log("                       Recorded failures are not retried by repeating the call.");
   console.log("  --json               Print machine-readable output. It does not change what is sent.");
+  console.log("  --help, -h           Show this help without sending a message.");
+  console.log("  With run credentials, act as the agent run under its recipient and send limits; otherwise act as the signed-in person.");
   console.log("");
   console.log("The result has a notification id and one line per channel. For email, sent means the provider accepted it, not that it arrived.");
   console.log(`Check delivery with ${bold("draft people notification-status <notification id>")}.`);
@@ -321,6 +325,17 @@ export async function runPeopleNotify(args: string[]): Promise<number> {
 
 export async function runPeopleNotificationStatus(args: string[]): Promise<number> {
   const command = "draft people notification-status";
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`${bold(command)} — check a notification without sending it again.`);
+    console.log(`Usage: ${command} <notification id> [--json]`);
+    console.log("Use the notificationId returned by draft people notify. You may read your sent and received notifications, and shared notifications.");
+    console.log("With run credentials, the run's permissions and the person it works for determine access.");
+    console.log("Statuses: queued, sent, delivered, delayed, bounced, complained, failed.");
+    console.log("For email, sent means provider acceptance; delivered means acceptance by the recipient's mail server, not inbox placement or reading.");
+    console.log("If the latest status cannot be fetched, the saved status is returned with refreshed: false.");
+    console.log("--json prints the notificationId, refreshed flag, and per-channel deliveries. --help or -h shows this help.");
+    return EXIT_SUCCESS;
+  }
   const flags = parseFlags(args);
   if (flags.error) return usage(command, flags.json, flags.error);
   const [notificationId, ...extra] = flags.positionals;

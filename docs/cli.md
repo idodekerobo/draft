@@ -204,7 +204,7 @@ One-time rows show their scheduled time or when they fired. Routines an agent ma
 
 ## People
 
-`draft people` shows who Draft knows in your workspace and how to reach them. A person is not always a Draft user: it can be someone named in a meeting who has no account. Each command calls one MCP tool as you, and `--json` prints the tool's answer.
+`draft people` shows who Draft knows in your workspace and how to reach them. A person is not always a Draft user: it can be someone named in a meeting who has no account. Commands use the shared tool contract. With `DRAFT_RUN_ID` and `DRAFT_RUN_TOKEN`, they act as that run under its permissions; otherwise they act as the signed-in person. `--json` prints the tool's answer.
 
 | Command | What it does |
 | --- | --- |
@@ -213,7 +213,20 @@ One-time rows show their scheduled time or when they fired. Routines an agent ma
 | `draft people update <id or name> --provider <p> ...` | Record, correct or remove a way to recognise a person (below) |
 | `draft people pending` | Who is waiting for approval |
 | `draft people approve <id or name>` / `reject <id or name> [--reason <why>]` | Admins only |
-| `draft people notify <id or name> <message> [--link <url>]` | Send a message to a person |
+| `draft people notify <id or name> [<message>] [--channel slack\|email\|slack,email] [--subject <topic>] [--html-file <path>] [--link <url>] [--idempotency-key <key>]` | Message one active teammate on their verified channels |
+| `draft people notification-status <notification id>` | Check delivery without sending again |
+
+Creating a new pending person automatically attempts to notify workspace admins. This is a product-generated approval notice; the caller does not compose it or call `people.notify` separately. Adding or correcting an identity with `people update` does not send a message or verify that identity. A recorded guess cannot be used for delivery until it is trusted.
+
+`draft people notify --help` describes all sending options. Supply plain text, an HTML file, or both. HTML-only messages get a plain text fallback. Email subjects receive the `Draft:` prefix once; the default is `Draft: New message`. Draft resolves the verified address and adds sender attribution. Omit `--channel` to use the person's configured channels.
+
+```bash
+draft people notify "Ada Lovelace" "Your research is ready" --channel email
+draft people notify <person-id> --channel email --subject "Your meeting follow-ups" --html-file ./notification.html --idempotency-key meeting-123-followups --json
+draft people notification-status <notification-id> --json
+```
+
+Reusing a key with the same content returns saved channel results and sends only channels without a delivery record. Reusing it with different content or a different recipient is refused. Repeating a call does not retry recorded failures. For email, `sent` means provider acceptance; `delivered` means acceptance by the recipient's mail server, not reading or inbox placement. `notification-status --help` explains the states and the `refreshed` flag, which is false when only saved status is available.
 
 ### `draft people update`
 
