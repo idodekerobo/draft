@@ -219,3 +219,15 @@ describe("parseByteEnvVar", () => {
     expect(() => parseByteEnvVar(raw, 42)).toThrow("Invalid byte size env var value");
   });
 });
+
+
+it("accepts a bounded refreshed login separately from the model's result", async () => {
+  const authJson = '{"auth_mode":"chatgpt","tokens":{"refresh_token":"refreshed"}}';
+  const body = { run_id: runId, bundle_hash: bundleHash, result: { outcome: "no_change" }, auth_json: authJson };
+  const authenticated = await authenticateSandboxCallbackRequest(callbackRequest({ body: JSON.stringify(body) }), secret, { now });
+  expect(authenticated.authJson).toBe(authJson);
+  expect(authenticated.result).toEqual({ outcome: "no_change" });
+  for (const invalid of [123, "x".repeat(64 * 1024 + 1)]) {
+    await expect(authenticateSandboxCallbackRequest(callbackRequest({ body: JSON.stringify({ ...body, auth_json: invalid }) }), secret, { now })).rejects.toThrow("auth_json is invalid");
+  }
+});

@@ -37,6 +37,7 @@ export async function callback(
   body: unknown,
   transcript: unknown[] | undefined,
   delays: number[] = [0, 1_000, 3_000, 7_000],
+  authJson?: string,
 ): Promise<void> {
   let lastError = "callback failed";
   for (let attempt = 0; attempt < delays.length; attempt += 1) {
@@ -57,6 +58,7 @@ export async function callback(
           bundle_hash: bundleHash,
           result: body,
           ...(transcript !== undefined ? { transcript } : {}),
+          ...(authJson ? { auth_json: authJson } : {}),
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -137,6 +139,7 @@ export async function reportAndExit(input: {
   runId: string;
   bundleHash: string;
   transcript?: unknown[];
+  authJson?: string;
 }): Promise<void> {
   try {
     mkdirSync("/run/output", { recursive: true });
@@ -157,6 +160,8 @@ export async function reportAndExit(input: {
     input.bundleHash,
     input.finalResult,
     input.transcript,
+    undefined,
+    input.authJson,
   );
 
   runnerLog("final", {

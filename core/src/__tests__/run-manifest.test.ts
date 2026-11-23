@@ -62,10 +62,11 @@ describe("the run manifest", () => {
     expect(parse({ ...good, tools: { native: ["Read"], draftMcpUrl: MCP_URL } }).tools.draftMcpUrl).toBe(MCP_URL);
   });
 
-  it("keeps Codex to one streamed prompt", () => {
+  it("accepts Codex structured results and batches", () => {
     const codex = { ...good, harness: "codex", tools: { native: ["shell"], draftMcpUrl: null } };
-    expect(() => parse({ ...codex, output: structured })).toThrow("codex runs stream");
-    expect(() => parse({ ...codex, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } })).toThrow("codex runs stream");
+    expect(parse({ ...codex, output: structured }).output).toEqual(structured);
+    expect(parse({ ...codex, output: structured, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } }).prompt.kind).toBe("items");
+    expect(() => parse({ ...codex, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } })).toThrow("items need structured output");
   });
 });
 

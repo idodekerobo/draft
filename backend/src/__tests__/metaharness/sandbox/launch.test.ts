@@ -433,13 +433,13 @@ describe("launchSandboxRun routine runs", () => {
     await expect(run(routineSpec(), { codexAuthJson: "{}" })).rejects.toThrow("claudeCodeOAuthToken must not be empty");
   });
 
-  it("refuses a run the sandbox cannot do: Codex with a structured result, a local run, no output", async () => {
+  it("supports Codex structured results and refuses local runs, no output, and streamed batches", async () => {
     const { client } = fakeFlyClient();
     const { uploader } = fakeBundleUploader();
     const run = (spec: AgentRunSpec, prompt: object = text("p")) =>
       launchSandboxRun({ spec, bundle: bundle(), prompt: prompt as never, credentials: { claudeCodeOAuthToken: "t", codexAuthJson: "{}" }, config }, { provider: flyProvider(client), bundleUploader: uploader });
-    await expect(run({ ...routineSpec({ harness: "codex" }), output: { type: "structured", schema: jsonSchema } })).rejects.toThrow("Codex run streams text");
-    await expect(run({ ...routineSpec({ harness: "codex" }) }, { kind: "items", manifestPath: "input/manifest.json" })).rejects.toThrow("Codex run streams text");
+    await expect(run({ ...routineSpec({ harness: "codex" }), output: { type: "structured", schema: jsonSchema } })).resolves.toMatchObject({ machineId: "machine-1" });
+    await expect(run({ ...routineSpec({ harness: "codex" }) }, { kind: "items", manifestPath: "input/manifest.json" })).rejects.toThrow("items need structured output");
     await expect(run({ ...routineSpec(), runtime: { type: "local", hostId: "mac" as never } })).rejects.toThrow("cloud runtime");
     await expect(run({ ...routineSpec(), output: { type: "none" } })).rejects.toThrow("text or structured output");
   });

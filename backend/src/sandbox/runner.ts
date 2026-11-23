@@ -108,9 +108,10 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
 
   if (manifest.tools.draftMcpUrl) required("DRAFT_RUN_TOKEN");
 
+  prepareHarness(manifest, process.env);
+  delete process.env.CODEX_AUTH_JSON;
+
   if (manifest.output.kind === "stream") {
-    prepareHarness(manifest, process.env);
-    delete process.env.CODEX_AUTH_JSON;
     let nativeSessionId: string | null = null;
     const end = await runStream(
       manifest,
@@ -161,6 +162,7 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
     runId,
     bundleHash,
     transcript: result.transcript,
+    authJson: runnerSideFor(manifest.harness).refreshedLogin(),
   });
 }
 

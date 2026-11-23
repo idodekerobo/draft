@@ -125,9 +125,7 @@ export function validateRunnerManifest(value: unknown, checks: ManifestChecks): 
     throw new Error("run manifest: output.kind must be stream or structured");
   }
 
-  if (harness === "codex" && (output.kind === "structured" || prompt.kind === "items")) {
-    throw new Error("run manifest: codex runs stream a single prompt");
-  }
+  if (prompt.kind === "items" && output.kind !== "structured") throw new Error("run manifest: items need structured output");
   let sessionUpload: RunnerManifest["sessionUpload"];
   if (top.sessionUpload !== undefined) {
     if (output.kind !== "stream") throw new Error("run manifest: only a stream run keeps a session file");

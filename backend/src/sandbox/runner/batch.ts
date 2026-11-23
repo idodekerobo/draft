@@ -1,3 +1,4 @@
+import { runnerSideFor } from "./sides";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { RunnerManifest } from "draft-core/run-manifest";
@@ -97,7 +98,7 @@ export async function runBatch(
         input.manifest,
         prompt,
         input.serializedSchema,
-        input.timeoutMs,
+        Math.min(input.timeoutMs, Math.max(1, BATCH_WALL_CLOCK_BUDGET_MS - (Date.now() - batchStartedAt))),
         input.runId,
         scratchStdoutPath,
       );
@@ -119,6 +120,7 @@ export async function runBatch(
 
   await deps.reportAndExit({
     finalResult: { items },
+    authJson: runnerSideFor(input.manifest.harness).refreshedLogin(),
     success: true,
     failureCode: "none",
     callbackUrl: input.callbackUrl,

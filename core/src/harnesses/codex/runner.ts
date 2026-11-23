@@ -1,6 +1,6 @@
 import { chownSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { RunnerManifest } from "../../run-manifest";
-import type { RunnerSide } from "../types";
+import type { RunnerSide, StructuredResult } from "../types";
 
 const AGENT_UID = 1000;
 const AGENT_GID = 1000;
@@ -87,7 +87,7 @@ export function codexArgs(manifest: RunnerManifest): string[] {
   // workspace-write blocks the network for shell commands unless the run's network is open.
   const network = manifest.network === "open" ? ["-c", "sandbox_workspace_write.network_access=true"] : [];
   const persistence = manifest.sessionUpload ? [] : ["--ephemeral"];
-  return ["exec", "--json", "--sandbox", "workspace-write", ...network, "--skip-git-repo-check", ...persistence, ...(manifest.model ? ["-m", manifest.model] : []), ...(manifest.reasoningEffort ? ["-c", `model_reasoning_effort="${manifest.reasoningEffort}"`] : []), "-"];
+  return ["exec", "--json", "--sandbox", "workspace-write", ...network, "--skip-git-repo-check", ...persistence, ...(manifest.output.kind === "structured" ? ["--output-schema", manifest.output.schemaPath] : []), ...(manifest.model ? ["-m", manifest.model] : []), ...(manifest.reasoningEffort ? ["-c", `model_reasoning_effort="${manifest.reasoningEffort}"`] : []), "-"];
 }
 
 /** The end of a `codex exec --json` run: a finished turn is a result, a failed turn is an error result. */
@@ -106,7 +106,7 @@ export const codexRunner: RunnerSide = {
   command: (manifest, prompt, _schemaText, env) => ({
     argv: ["codex", ...codexArgs(manifest)],
     stdin: prompt,
-    cwd: CODEX_WORK_DIR,
+    cwd: manifest.output.kind === "structured" ? "/run" : CODEX_WORK_DIR,
     env: sanitizedCodexEnv(env),
   }),
   prepare: (manifest: RunnerManifest, env) => {
@@ -118,7 +118,12 @@ export const codexRunner: RunnerSide = {
   failureCodes: { error: "codex_error", exit: "codex_exit" },
   resultOfLine: parseCodexResultLine,
   refreshedLogin: readCodexAuth,
-  structured: null,
+  structured: {
+    completed: completedCodexResult,
+    payload: (result) => result?.is_error ? null : result?.result ?? null,
+    failureOf: (_result, current) => current,
+    transcript: codexTranscript,
+  },
   sessionFile: {
     root: `${CODEX_HOME}/sessions`,
     workingDir: CODEX_WORK_DIR,
@@ -136,3 +141,22 @@ export const codexRunner: RunnerSide = {
     versionCommand: ["codex", "--version"],
   },
 };
+
+function codexTranscript(stdout: string): unknown[] {
+  return stdout.split(/\r?\n/).flatMap((line) => {
+    try { return [JSON.parse(line)]; } catch { return []; }
+  });
+}
+
+export function completedCodexResult(stdout: string): StructuredResult | null {
+  let payload: unknown = null;
+  for (const event of codexTranscript(stdout)) {
+    if (!isObject(event)) continue;
+    if (event.type === "item.completed" && isObject(event.item) && event.item.type === "agent_message" && typeof event.item.text === "string") {
+      try { payload = JSON.parse(event.item.text); } catch { payload = null; }
+    }
+    if (event.type === "turn.failed") return { is_error: true, result: event.error };
+    if (event.type === "turn.completed") return { is_error: false, result: isObject(payload) ? payload : null };
+  }
+  return null;
+}

@@ -39,6 +39,7 @@ export interface AuthenticatedSandboxCallbackRequest {
   result: unknown;
   /** Full sandbox transcript (stream-json message array), when the caller sent one. */
   transcript?: unknown[];
+  authJson?: string;
   claims: SandboxCallbackClaims;
 }
 
@@ -153,7 +154,7 @@ function topLevelKeys(source: string): string[] {
 
 function parseBody(
   bytes: Uint8Array,
-): { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[] } {
+): { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[]; auth_json?: string } {
   let source: string;
   let parsed: unknown;
   try {
@@ -169,7 +170,7 @@ function parseBody(
   // "transcript" is optional -- batch/summarization callbacks don't send
   // one -- everything else about this shape stays exact-match strict.
   const required = new Set(["run_id", "bundle_hash", "result"]);
-  const optional = new Set(["transcript"]);
+  const optional = new Set(["transcript", "auth_json"]);
   const keys = topLevelKeys(source);
   const seen = new Set(keys);
   if (
@@ -189,10 +190,11 @@ function parseBody(
   ) {
     return reject("Callback body identifiers are invalid");
   }
+  if (body.auth_json !== undefined && (typeof body.auth_json !== "string" || Buffer.byteLength(body.auth_json) > 64 * 1024)) reject("Callback auth_json is invalid");
   if (body.transcript !== undefined && !Array.isArray(body.transcript)) {
     return reject("Callback body transcript must be an array");
   }
-  return body as { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[] };
+  return body as { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[]; auth_json?: string };
 }
 
 /**
@@ -256,5 +258,6 @@ export async function authenticateSandboxCallbackRequest(
     result: body.result,
     transcript: body.transcript,
     claims,
+    ...(body.auth_json ? { authJson: body.auth_json } : {}),
   };
 }

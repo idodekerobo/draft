@@ -26,9 +26,6 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
   const { spec } = input;
   if (spec.runtime.type !== "cloud") throw new Error("A sandbox run needs a cloud runtime");
   if (spec.output.type === "none") throw new Error("A sandbox run needs a text or structured output");
-  if (spec.harness === "codex" && (spec.output.type !== "text" || input.prompt.kind !== "text")) {
-    throw new Error("A Codex run streams text from a single prompt");
-  }
   const native = spec.runtime.toolset.nativeTools.filter((tool) => tool.harness === spec.harness).map((tool) => tool.tool as string);
   // The caller names the items file relative to the bundle. The runner reads it from /run.
   const itemsPath = input.prompt.kind === "items" ? (input.prompt.manifestPath.startsWith("/") ? input.prompt.manifestPath : `/run/${input.prompt.manifestPath}`) : "";
