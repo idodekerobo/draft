@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import { fetchSlackConversationHistory, listSlackChannels } from "draft-core/integrations/slack-hosted";
-import { attributionLine } from "../../../notify/attribution";
-import { workspaceSlackCredentialId, resolveWorkspaceSlackBotToken } from "../../../notify/slack-connection";
+import { attributionLine } from "../../../notify/agent/attribution";
+import { workspaceSlackCredentialId, resolveWorkspaceSlackBotToken } from "../../../notify/channels/slack/connection";
 import { postSlackMessage } from "../../../ingestion/slack/post";
 import { countRunToolCalls } from "../../../people/limits";
 import { listIntegrations } from "../../../integrations/service";

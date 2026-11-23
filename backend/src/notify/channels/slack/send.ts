@@ -1,9 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChannelSendResult, NotifyMessage } from "draft-core/notify";
-import { resolveWorkspaceSlackBotToken } from "./slack-connection";
-import { openSlackDm, postSlackMessage } from "../ingestion/slack/post";
-import type { PersonIdentityRow } from "../types/tables";
-import type { NotifyChannel, ReachablePerson } from "./types";
+import { resolveWorkspaceSlackBotToken } from "./connection";
+import { openSlackDm, postSlackMessage, SlackSendError } from "../../../ingestion/slack/post";
+import type { PersonIdentityRow } from "../../../types/tables";
+import { DeliveryUncertainError, type NotifyChannel, type ReachablePerson } from "../../delivery/types";
 
 export interface SlackChannelDeps {
   resolveBotToken?: (workspaceId: string, credentialId: string) => Promise<string>;
@@ -13,8 +13,9 @@ export interface SlackChannelDeps {
 
 const TRUSTED = ["confirmed", "from_connection"];
 
-/** `text`, then the link on its own line when there is one. */
-export const renderSlackText = (message: NotifyMessage) => (message.link ? `${message.text}\n${message.link}` : message.text);
+/** `text`, the link on its own line when there is one, then the attribution after a blank line. */
+export const renderSlackText = (message: NotifyMessage) =>
+  [message.text ?? "", message.link, message.attribution ? `\n${message.attribution}` : undefined].filter((part) => part !== undefined).join("\n");
 
 /** Messages a person as a Slack direct message from the workspace's connected app. */
 export function slackChannel(client: SupabaseClient, deps: SlackChannelDeps = {}): NotifyChannel {
@@ -51,14 +52,16 @@ export function slackChannel(client: SupabaseClient, deps: SlackChannelDeps = {}
     async send(person, message): Promise<ChannelSendResult> {
       const found = await target(person);
       if (!found) return { channel: "slack", status: "failed", code: "not_reachable" };
+      // A Slack error throws, so sendNotification can log it and report provider_error.
+      const botToken = await resolveBotToken(person.workspaceId, found.credentialId);
+      const channel = await openDm(botToken, found.slackUserId);
       try {
-        const botToken = await resolveBotToken(person.workspaceId, found.credentialId);
-        const channel = await openDm(botToken, found.slackUserId);
         await postMessage(botToken, channel, renderSlackText(message));
-        return { channel: "slack", status: "sent" };
-      } catch {
-        return { channel: "slack", status: "failed", code: "provider_error" };
+      } catch (error) {
+        if (!(error instanceof SlackSendError) || /^http_5/.test(error.slackError)) throw new DeliveryUncertainError(error);
+        throw error;
       }
+      return { channel: "slack", status: "sent" };
     },
   };
 }

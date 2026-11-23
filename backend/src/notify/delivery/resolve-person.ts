@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isNotifyChannelId, type NotifyChannelId } from "draft-core/notify";
 import { parsePersonId, parseWorkspaceId } from "draft-core/run-spec";
-import type { PeopleRow } from "../types/tables";
+import type { PeopleRow } from "../../types/tables";
 import { markReachable, type ReachablePerson } from "./types";
 
 export type ResolveFailure = "person_not_found" | "not_active" | "not_member";

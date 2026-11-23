@@ -5,9 +5,13 @@ import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermis
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
-import { markReachable, type NotifyChannel } from "../../notify/types";
-import { sendNotification } from "../../notify/send";
-import { slackChannel } from "../../notify/slack";
+import { SlackSendError } from "../../ingestion/slack/post";
+import { markReachable, type NotifyChannel } from "../../notify/delivery/types";
+import { sendAgentMessage } from "../../notify/agent/send";
+import { agentNotificationStatus } from "../../notify/agent/status";
+import { notifyAdminsOfPending } from "../../notify/product/person-pending";
+import { sendNotification } from "../../notify/delivery/send";
+import { renderSlackText, slackChannel } from "../../notify/channels/slack/send";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -42,9 +46,12 @@ const newDb = () =>
       source_items: [],
       scheduled_tasks: [{ id: TASK, workspace_id: WS, config_json: { title: "Meeting follow-up" } }],
       agent_run_tool_calls: [],
+      errors: [],
+      notifications: [],
+      notification_deliveries: [],
       agent_runs: [{ id: RUN, workspace_id: WS, scheduled_task_id: TASK }],
     },
-    { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]] }, uuidTables: ["people"] },
+    { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]], notifications: [["workspace_id", "idempotency_key"]], notification_deliveries: [["id"]] }, uuidTables: ["people", "notifications", "notification_deliveries"] },
   );
 
 function recordingChannel(result: ChannelSendResult = { channel: "slack", status: "sent" }, reachable = true) {
@@ -60,11 +67,27 @@ function recordingChannel(result: ChannelSendResult = { channel: "slack", status
   return { channel, sent };
 }
 
-function setup(options: { db?: ReturnType<typeof newDb>; channel?: NotifyChannel } = {}) {
+/** A fake client whose inserts into one table fail, as a database outage would. */
+function clientFor(db: ReturnType<typeof newDb>, failInsertInto?: string) {
+  const client = fakeClient(db);
+  if (!failInsertInto) return client;
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop !== "from") return Reflect.get(target, prop, receiver);
+      return (table: string) => {
+        const query = target.from(table);
+        if (table !== failInsertInto) return query;
+        return new Proxy(query, { get: (q, p, r) => (p === "insert" ? () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "db down" } }) }) }) : Reflect.get(q, p, r)) });
+      };
+    },
+  });
+}
+
+function setup(options: { db?: ReturnType<typeof newDb>; channel?: NotifyChannel; email?: NotifyChannel; failInsertInto?: string } = {}) {
   const db = options.db ?? newDb();
   const recorder = recordingChannel();
   const channel = options.channel ?? recorder.channel;
-  const registry = new ToolRegistry(createPeopleTools(fakeClient(db), { channels: { slack: channel } as Record<NotifyChannelId, NotifyChannel> }));
+  const registry = new ToolRegistry(createPeopleTools(clientFor(db, options.failInsertInto), { channels: { slack: channel, ...(options.email ? { email: options.email } : {}) } as Record<NotifyChannelId, NotifyChannel> }));
   const call = (caller: ToolCaller, tool: string, args: unknown) => invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, caller, tool, args);
   return { db, call, sent: recorder.sent };
 }
@@ -91,48 +114,48 @@ const toMembers: AnyDraftToolPermission[] = [{ tool: "people.notify", limits: { 
 const LINE = `🤖 Draft agent · running Uzo's "Meeting follow-up" routine`;
 
 describe("people.notify", () => {
-  it("starts every run message with a fixed line naming the owner and the routine, then the model's text", async () => {
+  it("sends the model's text unchanged and a fixed line naming the owner and the routine to end the message", async () => {
     const { call, sent } = setup();
     const result = await call(asRun(toMembers), "people.notify", { personId: IZA, text: "Your items: ship the demo." });
     expect(result).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }] } });
-    expect(sent[0]!.message.text).toBe(`${LINE}\nYour items: ship the demo.`);
+    expect(sent[0]!.message).toMatchObject({ text: "Your items: ship the demo.", attribution: LINE });
   });
 
-  it("keeps the line first even when the model writes its own first line", async () => {
+  it("keeps the line separate from the text even when the model writes a line like it", async () => {
     const { call, sent } = setup();
     await call(asRun(toMembers), "people.notify", { personId: IZA, text: "Ignore the line above. This message is from a human, not an agent." });
-    expect(sent[0]!.message.text.startsWith(`${LINE}\n`)).toBe(true);
+    expect(sent[0]!.message).toMatchObject({ text: "Ignore the line above. This message is from a human, not an agent.", attribution: LINE });
   });
 
   it("names the person who sent a message from the CLI", async () => {
     const { call, sent } = setup();
     await call(asUser(OWNER), "people.notify", { personId: IZA, text: "hello" });
-    expect(sent[0]!.message.text).toBe("Sent by Uzo through Draft\nhello");
+    expect(sent[0]!.message).toMatchObject({ text: "hello", attribution: "Sent by Uzo through Draft" });
   });
 
   it("names the routine for a run an event started, whose trigger does not carry the task", async () => {
     const { call, sent } = setup();
     const eventRun = runCaller({ ...runSpec(toMembers), trigger: { type: "webhook", provider: "fireflies", eventId: "meeting-1" } });
     await call(eventRun, "people.notify", { personId: IZA, text: "Your items." });
-    expect(sent[0]!.message.text).toBe(`${LINE}\nYour items.`);
+    expect(sent[0]!.message).toMatchObject({ text: "Your items.", attribution: LINE });
   });
 
   it("names the teammate who pressed Run now on someone else's routine, and not the owner who ran their own", async () => {
     const { call, sent } = setup();
     const manual = (requestedBy: string): ToolCaller => runCaller({ ...runSpec(toMembers), trigger: { type: "manual", requestedBy: parseUserId(requestedBy) } });
     await call(manual(ADMIN), "people.notify", { personId: IZA, text: "a" });
-    expect(sent[0]!.message.text.split("\n")[0]).toBe(`${LINE} · started by Ada`);
+    expect(sent[0]!.message.attribution).toBe(`${LINE} · started by Ada`);
     await call(manual(OWNER), "people.notify", { personId: IZA, text: "b" });
-    expect(sent[1]!.message.text.split("\n")[0]).toBe(LINE);
+    expect(sent[1]!.message.attribution).toBe(LINE);
   });
 
   it("says a run with no routine title, or no owner, is still an agent", async () => {
     const { call, sent, db } = setup();
     db.tables.scheduled_tasks![0]!.config_json = {};
     await call(asRun(toMembers), "people.notify", { personId: IZA, text: "a" });
-    expect(sent[0]!.message.text.split("\n")[0]).toBe("🤖 Draft agent · running a routine for Uzo");
+    expect(sent[0]!.message.attribution).toBe("🤖 Draft agent · running a routine for Uzo");
     await call(asRun([{ tool: "people.notify", limits: { recipients: "members" } }], null), "people.notify", { personId: IZA, text: "b" });
-    expect(sent[1]!.message.text.split("\n")[0]).toBe("🤖 Draft agent · routine run");
+    expect(sent[1]!.message.attribution).toBe("🤖 Draft agent · routine run");
   });
 
   it("refuses the whole call, with not_allowed, for a missing, pending or external person", async () => {
@@ -200,6 +223,224 @@ describe("people.notify", () => {
   });
 });
 
+function emailRecorder(outcome: ChannelSendResult & { providerMessageId?: string } = { channel: "email" as NotifyChannelId, status: "sent", providerMessageId: "em_1" }) {
+  const sent: Array<{ message: NotifyMessage; deliveryId?: string }> = [];
+  const channel: NotifyChannel = { id: "email" as NotifyChannelId, canReach: async () => true, send: async (_person, message, context) => { sent.push({ message, deliveryId: context?.deliveryId }); return outcome; } };
+  return { channel, sent };
+}
+
+describe("notification records", () => {
+  it("saves the agent's own text, private, with its sender and origin, and one sent delivery per channel", async () => {
+    const { channel: email, sent } = emailRecorder();
+    const db = newDb();
+    const { call } = setup({ db, email });
+    const out = await call(asRun(toMembers), "people.notify", { personId: UZO, text: "Your items.", subject: "Draft: Meeting follow-ups", channels: ["slack", "email"] });
+    expect(out).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] } });
+    const notificationId = (out as { output: { notificationId: string } }).output.notificationId;
+    expect(db.tables.notifications).toHaveLength(1);
+    expect(db.tables.notifications![0]).toMatchObject({ id: notificationId, recipient_person_id: UZO, sender_user_id: OWNER, kind: "message", subject: "Draft: Meeting follow-ups", body_text: "Your items.", visibility: "private", agent_run_id: RUN, scheduled_task_id: TASK });
+    expect(db.tables.notifications![0]!.body_text).not.toContain("Draft agent");
+    expect(db.tables.notification_deliveries!.map((row) => [row.channel, row.status])).toEqual([["slack", "sent"], ["email", "sent"]]);
+    expect(db.tables.notification_deliveries![1]).toMatchObject({ provider_message_id: "em_1", attempt_count: 1 });
+    expect(sent[0]!.deliveryId).toBe(db.tables.notification_deliveries![1]!.id as string);
+    expect(JSON.stringify(out)).not.toContain("em_1");
+  });
+
+  it("makes the stored text and subject from html and the text", async () => {
+    const { channel: email } = emailRecorder();
+    const db = newDb();
+    const { call } = setup({ db, email });
+    await call(asUser(), "people.notify", { personId: IZA, html: "<p>Hello <b>there</b></p>", channels: ["email"] });
+    expect(db.tables.notifications![0]).toMatchObject({ body_text: "Hello there", body_html: "<p>Hello <b>there</b></p>", subject: "Draft: New message", sender_user_id: OWNER, agent_run_id: null });
+  });
+
+  it("refuses a call with no body", async () => {
+    const db = newDb();
+    const { call } = setup({ db });
+    expect(await call(asUser(), "people.notify", { personId: IZA, subject: "x" })).toMatchObject({ status: "refused", code: "invalid_input" });
+    expect(db.tables.notifications).toHaveLength(0);
+  });
+
+  it("marks a delivery failed with a bounded, redacted detail when a channel throws", async () => {
+    const broken: NotifyChannel = { id: "slack", canReach: async () => true, send: async () => { throw new Error(`token=abc123 ${"x".repeat(600)}`); } };
+    const db = newDb();
+    const { call } = setup({ db, channel: broken });
+    await call(asUser(), "people.notify", { personId: IZA, text: "x" });
+    const row = db.tables.notification_deliveries![0]!;
+    expect(row).toMatchObject({ status: "failed", error_code: "provider_error" });
+    expect(String(row.error_detail).length).toBeLessThanOrEqual(500);
+    expect(String(row.error_detail)).not.toContain("abc123");
+  });
+
+  it("records a channel that cannot reach the person as a failed delivery", async () => {
+    const { channel } = recordingChannel({ channel: "slack", status: "sent" }, false);
+    const db = newDb();
+    const { call } = setup({ db, channel });
+    await call(asUser(), "people.notify", { personId: IZA, text: "x" });
+    expect(db.tables.notification_deliveries![0]).toMatchObject({ status: "failed", error_code: "not_reachable", attempt_count: 0 });
+  });
+
+  it("returns the same notification and sends nothing new for the same key and content", async () => {
+    const { call, sent, db } = setup();
+    const first = await call(asUser(), "people.notify", { personId: IZA, text: "once", idempotencyKey: "meeting-1" });
+    const second = await call(asUser(), "people.notify", { personId: IZA, text: "once", idempotencyKey: "meeting-1" });
+    expect((second as { output: unknown }).output).toEqual((first as { output: unknown }).output);
+    expect(sent).toHaveLength(1);
+    expect(db.tables.notifications).toHaveLength(1);
+    expect(db.tables.notification_deliveries).toHaveLength(1);
+  });
+
+  it("refuses the same key with different content or another recipient", async () => {
+    const { call, sent } = setup();
+    await call(asUser(), "people.notify", { personId: IZA, text: "once", idempotencyKey: "k" });
+    expect(await call(asUser(), "people.notify", { personId: IZA, text: "changed", idempotencyKey: "k" })).toMatchObject({ status: "refused", code: "idempotency_conflict" });
+    expect(await call(asUser(), "people.notify", { personId: UZO, text: "once", idempotencyKey: "k" })).toMatchObject({ status: "refused", code: "idempotency_conflict" });
+    expect(sent).toHaveLength(1);
+  });
+
+  it("sends only the channels a saved notification has no delivery for", async () => {
+    const { channel: email, sent: emailSent } = emailRecorder();
+    const slack = recordingChannel();
+    const db = newDb();
+    const { call } = setup({ db, channel: slack.channel, email });
+    await call(asUser(), "people.notify", { personId: IZA, text: "hi", idempotencyKey: "k", channels: ["slack"] });
+    const hash = db.tables.notifications![0]!.content_hash;
+    // The retry asks for both channels, so its content differs and is refused. Rebuild the saved row as if the first try had asked for both and stopped after Slack.
+    db.tables.notifications![0]!.content_hash = (await import("node:crypto")).createHash("sha256").update(JSON.stringify([IZA, "Draft: New message", "hi", null, null, ["email", "slack"]])).digest("hex");
+    expect(hash).not.toBe(db.tables.notifications![0]!.content_hash);
+    const retry = await call(asUser(), "people.notify", { personId: IZA, text: "hi", idempotencyKey: "k", channels: ["slack", "email"] });
+    expect(retry).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] } });
+    expect(slack.sent).toHaveLength(1);
+    expect(emailSent).toHaveLength(1);
+    expect(db.tables.notification_deliveries).toHaveLength(2);
+  });
+
+  it("derives a key for a run so an identical message in one run is saved once, and not for a person", async () => {
+    const run = setup();
+    await run.call(asRun(toMembers), "people.notify", { personId: IZA, text: "same" });
+    await run.call(asRun(toMembers), "people.notify", { personId: IZA, text: "same" });
+    expect(run.db.tables.notifications).toHaveLength(1);
+    expect(run.sent).toHaveLength(1);
+    const person = setup();
+    await person.call(asUser(), "people.notify", { personId: IZA, text: "same" });
+    await person.call(asUser(), "people.notify", { personId: IZA, text: "same" });
+    expect(person.db.tables.notifications).toHaveLength(2);
+  });
+
+  it("sends nothing and logs when the notification cannot be saved", async () => {
+    const db = newDb();
+    const { call, sent } = setup({ db, failInsertInto: "notifications" });
+    expect(await call(asUser(), "people.notify", { personId: IZA, text: "x" })).toMatchObject({ status: "refused", code: "notify_failed" });
+    expect(sent).toHaveLength(0);
+    expect(db.tables.errors!.some((row) => (row.detail_json as { code?: string }).code === "notify_record_failed")).toBe(true);
+  });
+});
+
+describe("people.notification_status", () => {
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+  function statusSetup(responses: Array<Response | Error>, key: string | undefined = "re_status") {
+    const { channel: email } = emailRecorder();
+    const db = newDb();
+    const calls: string[] = [];
+    const fetchFn = (async (url: string) => {
+      calls.push(url);
+      const next = responses.shift();
+      if (!next) throw new Error("unexpected call");
+      if (next instanceof Error) throw next;
+      return next;
+    }) as unknown as typeof fetch;
+    const registry = new ToolRegistry(createPeopleTools(fakeClient(db), { channels: { slack: recordingChannel().channel, email } as Record<NotifyChannelId, NotifyChannel>, statusApiKey: () => key, resend: { fetchFn } }));
+    const call = (caller: ToolCaller, tool: string, args: unknown) => invokeTool({ registry, audit: async () => {}, authorizeUser: async () => null }, caller, tool, args);
+    return { db, call, calls };
+  }
+  const sendEmail = async (s: ReturnType<typeof statusSetup>, caller: ToolCaller = asUser()) =>
+    ((await s.call(caller, "people.notify", { personId: UZO, text: "hi", channels: ["email"] })) as { output: { notificationId: string } }).output.notificationId;
+
+  it("refreshes a sent email from the provider and saves the new status", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "delivered" })]);
+    const notificationId = await sendEmail(s);
+    const out = await s.call(asUser(), "people.notification_status", { notificationId });
+    expect(out).toMatchObject({ status: "ok", output: { notificationId, refreshed: true, deliveries: [{ channel: "email", status: "delivered" }] } });
+    expect(s.calls).toEqual(["https://api.resend.com/emails/em_1"]);
+    expect(s.db.tables.notification_deliveries![0]).toMatchObject({ status: "delivered" });
+    expect(JSON.stringify(out)).not.toContain("em_1");
+  });
+
+  it("never moves a status back and does not ask again for a final one", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "bounced" }), json({ id: "em_1", last_event: "delivered" })]);
+    const notificationId = await sendEmail(s);
+    await s.call(asUser(), "people.notification_status", { notificationId });
+    const again = await s.call(asUser(), "people.notification_status", { notificationId });
+    expect(again).toMatchObject({ output: { deliveries: [{ status: "bounced" }] } });
+    expect(s.calls).toHaveLength(1);
+  });
+
+  it("shows the saved status and logs when the provider cannot be reached or there is no status key", async () => {
+    const down = statusSetup([json({ name: "restricted_api_key" }, 401)]);
+    const id = await sendEmail(down);
+    expect(await down.call(asUser(), "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok", output: { refreshed: false, deliveries: [{ status: "sent" }] } });
+    expect(down.db.tables.errors!.some((row) => (row.detail_json as { code?: string }).code === "notify_status_refresh_failed")).toBe(true);
+    const none = statusSetup([], undefined);
+    const id2 = await sendEmail(none);
+    expect(await none.call(asUser(), "people.notification_status", { notificationId: id2 })).toMatchObject({ output: { refreshed: false, deliveries: [{ status: "sent" }] } });
+  });
+
+  it("lets the sender and the recipient read a private notification, and nobody else", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "sent" }), json({ id: "em_1", last_event: "sent" })]);
+    const id = await sendEmail(s, asUser(OWNER));
+    const asRecipient = asUser(OWNER);
+    expect(await s.call(asRecipient, "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok" });
+    expect(await s.call(asUser(ADMIN), "people.notification_status", { notificationId: id })).toMatchObject({ status: "refused", code: "not_found" });
+    expect(await s.call(asUser(), "people.notification_status", { notificationId: "99999999-9999-4999-8999-999999999999" })).toMatchObject({ status: "refused", code: "not_found" });
+  });
+
+  it("does not show a notification from another workspace", async () => {
+    const s = statusSetup([]);
+    const id = await sendEmail(s);
+    s.db.tables.notifications![0]!.workspace_id = "99999999-9999-4999-8999-999999999999";
+    expect(await s.call(asUser(), "people.notification_status", { notificationId: id })).toMatchObject({ status: "refused", code: "not_found" });
+  });
+
+  it("lets the run that sent it, and anyone on a shared notification, read it", async () => {
+    const s = statusSetup([json({ id: "em_1", last_event: "sent" }), json({ id: "em_1", last_event: "sent" })]);
+    const withStatus = [...toMembers, { tool: "people.notification_status" } as AnyDraftToolPermission];
+    const id = await sendEmail(s, asRun(withStatus, null));
+    expect(await s.call(asRun(withStatus, null), "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok" });
+    s.db.tables.notifications![0]!.visibility = "shared";
+    expect(await s.call(asUser(ADMIN), "people.notification_status", { notificationId: id })).toMatchObject({ status: "ok" });
+  });
+});
+
+describe("notify error logging", () => {
+  it("logs a thrown channel error to the errors table without the message body", async () => {
+    const broken: NotifyChannel = { id: "slack", canReach: async () => true, send: async () => { throw new Error("slack_send_failed: channel_not_found"); } };
+    const db = newDb();
+    const { call } = setup({ channel: broken, db });
+    const out = await call(asUser(), "people.notify", { personId: IZA, text: "secret launch plan" });
+    expect(out).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "failed", code: "provider_error" }] } });
+    expect(db.tables.errors).toHaveLength(1);
+    expect(db.tables.errors![0]).toMatchObject({ workspace_id: WS, operation: "execution", agent_run_id: null });
+    expect(JSON.stringify(db.tables.errors![0])).not.toContain("secret launch plan");
+    expect(db.tables.errors![0]!.detail_json).toMatchObject({ code: "notify_send_failed", channel: "slack", personId: IZA });
+  });
+
+  it("links the logged error to the run that sent", async () => {
+    const broken: NotifyChannel = { id: "slack", canReach: async () => true, send: async () => { throw new Error("boom"); } };
+    const db = newDb();
+    const { call } = setup({ channel: broken, db });
+    await call(runCaller({ ...runSpec([{ tool: "people.notify", limits: { recipients: "members" } } as AnyDraftToolPermission]) }), "people.notify", { personId: IZA, text: "x" });
+    expect(db.tables.errors![0]).toMatchObject({ agent_run_id: RUN });
+  });
+
+  it("does not log not_reachable", async () => {
+    const { channel } = recordingChannel({ channel: "slack", status: "sent" }, false);
+    const db = newDb();
+    const { call } = setup({ channel, db });
+    await call(asUser(), "people.notify", { personId: IZA, text: "x" });
+    expect(db.tables.errors).toHaveLength(0);
+  });
+});
+
 describe("sendNotification", () => {
   const person = markReachable({ id: parsePersonId(IZA), workspaceId: parseWorkspaceId(WS), displayName: "Iza", userId: null, notifyChannels: ["slack"] });
 
@@ -226,6 +467,11 @@ describe("the Slack channel", () => {
   };
   const deps = () => ({ resolveBotToken: mock(async () => "xoxb-test"), openDm: mock(async () => "D123"), postMessage: mock(async () => {}) });
 
+  it("ends the Slack message with the attribution after a blank line", () => {
+    expect(renderSlackText({ text: "hello", link: "https://x.dev", attribution: "Sent by Uzo through Draft" })).toBe("hello\nhttps://x.dev\n\nSent by Uzo through Draft");
+    expect(renderSlackText({ text: "hello" })).toBe("hello");
+  });
+
   it("opens a DM with the person's Slack id and posts the text with its link", async () => {
     const d = deps();
     const channel = slackChannel(fakeClient(seed("from_connection")), d);
@@ -241,10 +487,15 @@ describe("the Slack channel", () => {
     expect(await slackChannel(fakeClient(newDb()), deps()).send(person, { text: "x" })).toEqual({ channel: "slack", status: "failed", code: "not_reachable" });
   });
 
-  it("reports provider_error when Slack refuses", async () => {
+  it("throws when Slack refuses, so the sender can log it and report provider_error", async () => {
     const d = deps();
-    d.postMessage = mock(async () => { throw new Error("channel_not_found"); });
-    expect(await slackChannel(fakeClient(seed("confirmed")), d).send(person, { text: "x" })).toEqual({ channel: "slack", status: "failed", code: "provider_error" });
+    d.postMessage = mock(async () => { throw new SlackSendError("channel_not_found"); });
+    const channel = slackChannel(fakeClient(seed("confirmed")), d);
+    await expect(channel.send(person, { text: "x" })).rejects.toThrow("channel_not_found");
+    const logged: unknown[] = [];
+    const result = await sendNotification({ slack: channel } as Record<NotifyChannelId, NotifyChannel>, person, { text: "x" }, ["slack"], (_id, error) => { logged.push(error); });
+    expect(result.results).toEqual([{ channel: "slack", status: "failed", code: "provider_error" }]);
+    expect(logged).toHaveLength(1);
   });
 });
 
@@ -253,7 +504,7 @@ describe("telling admins about a pending person", () => {
   const create = (call: ReturnType<typeof setup>["call"], caller: ToolCaller = asRun([{ tool: "people.find" }, { tool: "people.create" }])) =>
     call(caller, "people.create", { displayName: "Cory Banks", evidence });
 
-  it("sends each reachable admin the agent line, the quote, and how to approve", async () => {
+  it("sends each reachable admin a recorded product notice with the quote and how to approve", async () => {
     const { call, sent, db } = setup();
     db.tables.source_items!.push({ id: evidence.sourceItemId, workspace_id: WS, visibility: "shared", metadata_json: { title: "Nov 9 standup" } });
     const result = await create(call);
@@ -261,8 +512,10 @@ describe("telling admins about a pending person", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.personId).toBe(ADA);
-    const text = sent[0]!.message.text;
-    expect(text.startsWith(`${LINE}\nDraft found Cory Banks in "Nov 9 standup"`)).toBe(true);
+    const text = sent[0]!.message.text!;
+    expect(text.startsWith('Draft found Cory Banks in "Nov 9 standup"')).toBe(true);
+    expect(sent[0]!.message.attribution).toBe("Sent by Draft · Workspace administration");
+    expect(db.tables.notifications![0]).toMatchObject({ sender_user_id: null, agent_run_id: null, subject: "Draft: A teammate needs approval" });
     expect(text).toContain(evidence.quote);
     expect(text).toContain("draft people approve ");
     expect(text).toContain('approve Cory Banks in Draft');
@@ -303,5 +556,29 @@ it("lets synthesis notify active teammates without a human owner or the routine 
   const caller = runCaller({ ...runSpec(SYNTHESIS_PERMISSIONS, null), kind: "synthesis" });
   expect(await call(caller, "people.notify", { personId: IZA, text: "Synthetic test message." })).toMatchObject({ status: "ok" });
   expect(sent).toHaveLength(1);
-  expect(sent[0]!.message.text).toContain("synthesis run");
+  expect(sent[0]!.message.attribution).toContain("synthesis run");
+});
+
+
+it("enforces run grants when agent message services are called directly", async () => {
+  const db = newDb();
+  const caller = asRun([{ tool: "people.find" }]);
+  const { channel, sent } = recordingChannel();
+  expect(await sendAgentMessage(fakeClient(db), { slack: channel } as Record<NotifyChannelId, NotifyChannel>, caller, { personId: UZO, text: "hello" })).toMatchObject({ ok: false, code: "not_permitted" });
+  expect(await agentNotificationStatus(fakeClient(db), caller, { notificationId: UZO }, {})).toMatchObject({ ok: false, code: "not_permitted" });
+  expect(sent).toHaveLength(0);
+});
+
+it("deduplicates product notices independently of agent send permissions", async () => {
+  const db = newDb();
+  const { channel, sent } = recordingChannel();
+  const channels = { slack: channel } as Record<NotifyChannelId, NotifyChannel>;
+  const pending = { id: CORY, displayName: "Cory Banks", status: "pending", isUser: false, reachable: { slack: false } } as const;
+  await Promise.all([
+    notifyAdminsOfPending(fakeClient(db), channels, WS, pending, { quote: "Cory joined" }),
+    notifyAdminsOfPending(fakeClient(db), channels, WS, pending, { quote: "Cory joined" }),
+  ]);
+  expect(sent).toHaveLength(1);
+  expect(db.tables.notifications).toHaveLength(1);
+  expect(db.tables.notifications![0]).toMatchObject({ sender_user_id: null, agent_run_id: null });
 });

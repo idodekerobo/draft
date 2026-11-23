@@ -1,14 +1,17 @@
+import { agentMessageSchema, sendAgentMessage } from "../../../notify/agent/send";
+import { agentNotificationStatus } from "../../../notify/agent/status";
+import type { MessageResult } from "../../../notify/agent/result";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
-import { isNotifyChannelId, NOTIFY_CHANNELS, type NotifyChannelId } from "draft-core/notify";
-import { attributionLine } from "../../../notify/attribution";
-import { isFailure, resolvePerson } from "../../../notify/resolve-person";
-import { defaultChannels, sendNotification } from "../../../notify/send";
-import type { NotifyChannel } from "../../../notify/types";
+import type { NotifyChannelId } from "draft-core/notify";
+import { resendSettings } from "../../../config";
+import type { ResendDeps } from "../../../notify/channels/email/resend";
+import { defaultChannels } from "../../../notify/delivery/send";
+import type { NotifyChannel } from "../../../notify/delivery/types";
 import { createPerson } from "../../../people/create";
-import { notifyAdminsOfPending } from "../../../people/notify-admins";
+import { notifyAdminsOfPending } from "../../../notify/product/person-pending";
 import { decidePerson, isAdmin } from "../../../people/decide";
 import { findPeople } from "../../../people/find";
 import { addPersonIdentity, removePersonIdentity, replacePersonIdentity } from "../../../people/identities";
@@ -21,7 +24,6 @@ const PROVIDERS = ["email", "slack", "linear", "github", "whatsapp"] as const;
 
 const DEFAULT_MAX_CREATES_PER_RUN = 5;
 const DEFAULT_MAX_IDENTITIES_PER_RUN = 10;
-const DEFAULT_MAX_NOTIFIES_PER_RUN = 10;
 
 const IDENTITY_REFUSALS: Record<string, string> = {
   person_not_found: "No person with that id in this workspace.",
@@ -42,12 +44,12 @@ const identitySchema = z.object({
 });
 
 /** The most times a run may use a tool, from the permission that was fixed when the run started. */
-function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update" | "people.notify", fallback: number): number | undefined {
+function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update", fallback: number): number | undefined {
   const limits = findToolPermission(run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
   return limits?.maxPerRun ?? (run.kind === "synthesis" ? undefined : fallback);
 }
 
-async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
+async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update", fallback: number): Promise<ToolHandlerResult | null> {
   if (caller.origin.kind !== "run") return null;
   const { run } = caller.origin;
   const max = runLimit(run, tool, fallback);
@@ -56,9 +58,13 @@ async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "p
   return refuse("limit_reached", `This run has used ${tool} ${max} times, which is its limit. Stop and report what is left.`);
 }
 
-/** Synthesis can maintain the roster; other runs keep their permission and per-run limits. */
-export function createPeopleTools(client: SupabaseClient, deps: { channels?: Record<NotifyChannelId, NotifyChannel> } = {}) {
+/** The people tools. A person needs an account to approve or reject; a run can find, add and add identities within limits. */
+export function createPeopleTools(
+  client: SupabaseClient,
+  deps: { channels?: Record<NotifyChannelId, NotifyChannel>; statusApiKey?: () => string | undefined; resend?: ResendDeps } = {},
+) {
   const channels = deps.channels ?? defaultChannels(client);
+  const statusApiKey = deps.statusApiKey ?? (() => resendSettings().statusApiKey);
   const find = defineTool({
     name: "people.find",
     mcp: true,
@@ -119,7 +125,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
       // A new pending person is news for the admins. A failed message never fails the add.
       if (result.created && result.person.status === "pending") {
         try {
-          await notifyAdminsOfPending(client, channels, workspaceId, result.person, input.evidence, await attributionLine(client, caller));
+          await notifyAdminsOfPending(client, channels, workspaceId, result.person, input.evidence);
         } catch (error) {
           console.error(JSON.stringify({ source: "people_create", event: "admin_notice_failed", error: String(error) }));
         }
@@ -177,41 +183,39 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     name: "people.notify",
     mcp: true,
     description:
-      "Send a short message to one teammate, by their id from people.find. Only active teammates can be messaged, and only on channels where Draft can reach them. " +
-      "Read recent messages with connections.read first and do not repeat a message already sent. " +
-      "The message starts with a line saying a Draft agent sent it; you cannot change that line. Write only the body. Message only the people your instructions name. " +
-      "The result has one entry per channel: sent, or failed with not_reachable or provider_error. A failure on one channel does not stop the others.",
-    input: z.object({
-      personId: z.string().uuid(),
-      text: z.string().min(1).max(2000),
-      link: z.string().url().optional(),
-      channels: z.array(z.enum(NOTIFY_CHANNELS)).min(1).optional().describe("Where to send. Omit to use the person's own channels."),
+      "Send a message to one teammate, by their id from people.find. Only active teammates can be messaged, and only on channels where Draft can reach them. " +
+      "When a relevant conversation is available, read recent messages with connections.read and do not repeat a message already sent. " +
+      "A line saying which Draft agent or person sent it ends the message; you cannot change that line. Write only the body. Message only the people your instructions name. " +
+      "Channels: slack (a direct message) and email (to the teammate's verified address; you never supply an address). Omit channels to use the person's own. " +
+      "Write `text`, or `html` for a richer email, or both. If you send only `html`, Draft makes the plain text from it. Slack uses the text and ignores `subject` and `html`. " +
+      "For email, `subject` is a short, factual topic such as 'Your meeting follow-ups', 'Review needed for the launch plan' or 'Weekly research update'. Draft adds the 'Draft: ' prefix once, so do not write it. " +
+      "Without a subject, a text-only email is titled 'Draft: New message'. Recurring routines should reuse the same subject pattern each run. " +
+      "Pass `idempotencyKey` (for example 'meeting-123-followups') for retries: the same key and content returns the same notification with saved channel results, and sends only channels without a delivery record. Recorded failures are not retried by repeating the call. The same key with different content or recipients is refused. " +
+      "The result has a notificationId and one entry per channel: queued, sent, delayed, delivered, bounced, complained, or failed with not_reachable, provider_error, or recording_error. Queued means acceptance is pending or uncertain; do not switch keys to force a resend. For email, sent means the provider accepted it, not that it arrived: call people.notification_status with the notificationId to check. A failure on one channel does not stop the others.",
+    input: agentMessageSchema,
+    auditArguments: (input) => ({
+      personId: input.personId,
+      textBytes: input.text ? Buffer.byteLength(input.text, "utf8") : 0,
+      htmlBytes: input.html ? Buffer.byteLength(input.html, "utf8") : 0,
+      subjectChars: input.subject?.length ?? 0,
+      link: input.link,
+      channels: input.channels,
     }),
-    auditArguments: (input) => ({ personId: input.personId, textBytes: Buffer.byteLength(input.text, "utf8"), link: input.link, channels: input.channels }),
-    handler: async ({ input, caller }) => {
-      const workspaceId = callerWorkspaceId(caller);
+    handler: async ({ input, caller }) => messageToolResult(await sendAgentMessage(client, channels, caller, input)),
+  });
 
-      // The checks run in this order, and the first one that fails refuses the whole call.
-      const person = await resolvePerson(client, workspaceId, input.personId);
-      if (isFailure(person)) {
-        const why = { person_not_found: "No person with that id in this workspace.", not_active: "That person is not active yet, so they cannot be messaged.", not_member: "Only teammates can be messaged." }[person.failure];
-        return refuse("not_allowed", why);
-      }
-
-      if (caller.origin.kind === "run") {
-        const { run } = caller.origin;
-        const limits = findToolPermission(run, "people.notify")?.limits as DraftToolLimits["people.notify"] | undefined;
-        const recipients = limits?.recipients ?? "self";
-        const allowed = recipients === "members" || (recipients === "self" ? run.onBehalfOf !== null && person.userId === run.onBehalfOf : recipients.includes(person.id));
-        if (!allowed) return refuse("not_allowed", recipients === "self" ? "This run may only message the person it works for." : "This run may not message that person.");
-        const limited = await overRunLimit(client, caller, "people.notify", DEFAULT_MAX_NOTIFIES_PER_RUN);
-        if (limited) return limited;
-      }
-
-      const line = await attributionLine(client, caller);
-      const result = await sendNotification(channels, person, { text: `${line}\n${input.text}`, ...(input.link ? { link: input.link } : {}) }, input.channels?.filter(isNotifyChannelId));
-      return { status: "ok", output: result, summary: result.results.map((entry) => `${entry.channel}: ${entry.status}`).join(", ") };
-    },
+  const notificationStatus = defineTool({
+    name: "people.notification_status",
+    mcp: true,
+    description:
+      "Check what happened to a message sent with people.notify, by its notificationId. Returns one entry per channel with its status: " +
+      "queued, sent (the provider accepted it), delivered (the recipient's mail server accepted it), delayed, bounced, complained or failed. " +
+      "Delivered does not mean the message was read or reached the inbox. Reading status never sends anything. " +
+      "You can check messages you sent or received, messages sent by this run or sent or received by the person it works for, and messages shared with the team. " +
+      "If refreshed is false, the latest status could not be fetched and the saved one is shown.",
+    input: z.object({ notificationId: z.string().uuid().describe("The Draft notificationId returned by people.notify, not the provider's email id.") }),
+    auditArguments: (input) => ({ notificationId: input.notificationId }),
+    handler: async ({ input, caller }) => messageToolResult(await agentNotificationStatus(client, caller, input, { statusApiKey, resend: deps.resend })),
   });
 
   const approve = defineTool({
@@ -247,5 +251,9 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     return { status: "ok", output: { person: result.person }, summary: `${to === "active" ? "approved" : "rejected"} ${result.person.displayName}` };
   }
 
-  return [find, create, addIdentityTool, notify, approve, reject];
+  return [find, create, addIdentityTool, notify, notificationStatus, approve, reject];
+}
+
+function messageToolResult<T>(result: MessageResult<T>): ToolHandlerResult {
+  return result.ok ? { status: "ok", output: result.output, summary: result.summary } : refuse(result.code, result.message);
 }

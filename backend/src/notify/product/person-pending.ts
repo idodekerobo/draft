@@ -1,13 +1,13 @@
+import { recordError } from "../../errors/record-error";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NotifyChannelId } from "draft-core/notify";
-import type { NotifyChannel } from "../notify/types";
-import { isFailure, resolvePerson } from "../notify/resolve-person";
-import { sendNotification } from "../notify/send";
-import type { PersonView } from "./view";
+import type { NotifyChannel } from "../delivery/types";
+import { isFailure, resolvePerson } from "../delivery/resolve-person";
+import { deliverNotification } from "../delivery/deliver";
+import type { PersonView } from "../../people/view";
 
 /**
- * Tells each admin who can be reached that someone is waiting for approval. The gateway sends this after a person
- * is added, so it carries the same agent line as any message a run sends. A failed message never fails the add.
+ * Tells admins about a newly pending person. This product notice uses fixed content and system attribution.
  */
 export async function notifyAdminsOfPending(
   client: SupabaseClient,
@@ -15,7 +15,6 @@ export async function notifyAdminsOfPending(
   workspaceId: string,
   pending: PersonView,
   evidence: { sourceItemId?: string; quote: string },
-  line: string,
 ): Promise<void> {
   const { data: workspace, error: workspaceError } = await client.from("workspaces").select("team_id").eq("id", workspaceId).maybeSingle();
   if (workspaceError) throw workspaceError;
@@ -43,12 +42,23 @@ export async function notifyAdminsOfPending(
   }
   const quote = evidence.quote.slice(0, 200);
   const text =
-    `${line}\nDraft found ${pending.displayName} in ${where}: "${quote}"\n` +
+    `Draft found ${pending.displayName} in ${where}: "${quote}"\n` +
     `To add them, ask Claude "approve ${pending.displayName} in Draft", or run \`draft people approve ${pending.id}\`.`;
 
   for (const row of (people ?? []) as Array<{ id: string }>) {
     const admin = await resolvePerson(client, workspaceId, row.id);
     if (isFailure(admin)) continue;
-    await sendNotification(channels, admin, { text }).catch(() => undefined);
+    try {
+      const result = await deliverNotification(client, channels, admin, {
+        text,
+        subject: "A teammate needs approval",
+        attribution: "Sent by Draft · Workspace administration",
+        idempotencyKey: `person-pending:${pending.id}:${admin.id}`,
+        origin: { senderUserId: null, agentRunId: null, scheduledTaskId: null },
+      });
+      if (!result.ok) throw new Error(result.code);
+    } catch (error) {
+      await recordError({ client, workspaceId, operation: "execution", code: "product_notification_failed", message: "Pending-person notice could not be recorded", detail: { personId: pending.id, recipientPersonId: admin.id }, error });
+    }
   }
 }

@@ -1,8 +1,9 @@
-// commands/people.ts — draft people find | create | update | pending | approve | reject | notify
+// commands/people.ts — draft people find | create | update | pending | approve | reject | notify | notification-status
 //
 // Who the workspace's people are, and how to reach them. Each command is one Draft tool, called as the
 // signed-in person. An agent that adds a person leaves them pending; an admin decides here.
 
+import { readFileSync } from "node:fs";
 import { callPersonTool, runModeErrorMessage, type FetchErrorCode } from "../cloud-client.ts";
 import { EXIT_OPERATIONAL_ERROR, EXIT_SUCCESS, EXIT_USAGE_ERROR, errorPayload, printJsonLine } from "../utils/json-output.ts";
 import { bold, dim, red } from "../utils/output.ts";
@@ -26,7 +27,7 @@ interface Flags {
   error?: string;
 }
 
-const VALUE_FLAGS = new Set(["email", "slack", "quote", "status", "reason", "link", "channel", "name", "provider", "external-id", "handle", "source-item", "replace", "remove"]);
+const VALUE_FLAGS = new Set(["email", "slack", "quote", "status", "reason", "link", "name", "provider", "external-id", "handle", "source-item", "replace", "remove", "subject", "html-file", "idempotencyKey", "personId", "text", "html", "channels", "notificationId"]);
 const IDENTITY_PROVIDERS = ["email", "slack", "linear", "github", "whatsapp"] as const;
 const BOOLEAN_FLAGS = new Set(["json", "me", "force"]);
 
@@ -39,7 +40,7 @@ function parseFlags(args: string[]): Flags {
     if (BOOLEAN_FLAGS.has(rawName)) { (flags as unknown as Record<string, boolean>)[rawName] = true; continue; }
     if (!VALUE_FLAGS.has(rawName)) return { ...flags, error: `unknown flag: ${arg}` };
     const value = inline ?? args[++i];
-    if (value === undefined) return { ...flags, error: `--${rawName} requires a value` };
+    if (value === undefined || (inline === undefined && value.startsWith("--"))) return { ...flags, error: `--${rawName} requires a value` };
     flags.values[rawName] = value;
   }
   return flags;
@@ -239,13 +240,66 @@ async function decide(args: string[], tool: "people.approve" | "people.reject", 
 export const runPeopleApprove = (args: string[]) => decide(args, "people.approve", "draft people approve");
 export const runPeopleReject = (args: string[]) => decide(args, "people.reject", "draft people reject");
 
+const NOTIFY_USAGE = "usage: draft people notify [<id or name>] [--personId <id>] [--text <message>] [--html <body> | --html-file <path>] [--channels slack|email|slack,email] [--subject <topic>] [--link <url>] [--idempotencyKey <key>] [--json]";
+const accepted = (status: string) => status === "sent" || status === "delivered" || status === "delayed";
+
+function printNotifyHelp(): void {
+  console.log(`${bold("draft people notify")} — send a message to one active teammate, on Slack, by email, or both.`);
+  console.log("");
+  console.log("Usage:");
+  console.log(`  ${NOTIFY_USAGE.replace("usage: ", "")}`);
+  console.log("");
+  console.log("Content:");
+  console.log("  --text <message>     Plain text. Required unless --html or --html-file is given.");
+  console.log("  --html <body>       Inline HTML, matching the MCP html field.");
+  console.log("  --html-file <path>   Email only. A richer body. If you give no text, the plain text is made from the HTML.");
+  console.log("  --subject <topic>    Email only. A short, factual topic. Draft adds the \"Draft: \" prefix once, so leave it out.");
+  console.log("                       Without one, a text-only email is titled \"Draft: New message\".");
+  console.log("  --link <url>         A link added after the message.");
+  console.log("  Slack uses the message text and ignores the subject and HTML. A line naming the sender ends every message.");
+  console.log("");
+  console.log("Delivery:");
+  console.log("  --personId <id>      One active teammate by id. Alternatively supply one positional id or name; never both. Names must match exactly one person; email addresses come from verified identities.");
+  console.log("  --channels          Where to send. Leave it out to use the person's own channels. Give one or both, such as slack,email.");
+  console.log("  --idempotencyKey     A stable key such as meeting-123-followups. A retry returns saved channel results and sends only channels without a delivery record.");
+  console.log("                       The same key with different content is refused.");
+  console.log("                       Recorded failures and queued deliveries are not retried by repeating the call.");
+  console.log("  Queued means sending is in progress or acceptance is uncertain. Check status; do not change keys to force another send.");
+  console.log("  recording_error means that channel was not sent by this call; other channels may have succeeded.");
+  console.log("  --json               Print machine-readable output. It does not change what is sent.");
+  console.log("  --help, -h           Show this help without sending a message.");
+  console.log("  With run credentials, act as the agent run under its recipient and send limits; otherwise act as the signed-in person.");
+  console.log("");
+  console.log("The result has a notification id and one line per channel. For email, sent means the provider accepted it, not that it arrived.");
+  console.log(`Check delivery with ${bold("draft people notification-status <notification id>")}.`);
+  console.log("");
+  console.log("Examples:");
+  console.log("  draft people notify \"Ada Lovelace\" --text \"Your research is ready\" --channels email");
+  console.log("  draft people notify <id> --channels email --subject \"Your meeting follow-ups\" --html-file ./notification.html --idempotencyKey meeting-123-followups --json");
+  console.log("  Subjects arrive as: Draft: Your meeting follow-ups · Draft: Review needed for the launch plan · Draft: Weekly research update");
+}
+
 export async function runPeopleNotify(args: string[]): Promise<number> {
   const command = "draft people notify";
+  if (args.includes("--help") || args.includes("-h")) { printNotifyHelp(); return EXIT_SUCCESS; }
   const flags = parseFlags(args);
   if (flags.error) return usage(command, flags.json, flags.error);
-  const [who, ...words] = flags.positionals;
-  const text = words.join(" ").trim();
-  if (!who || !text) return usage(command, flags.json, "usage: draft people notify <id or name> <message> [--link <url>] [--channel slack]");
+  const allowed = new Set(["personId", "text", "html", "html-file", "channels", "subject", "link", "idempotencyKey"]);
+  if (flags.me || flags.force || Object.keys(flags.values).some((key) => !allowed.has(key))) return usage(command, flags.json, NOTIFY_USAGE);
+  const [positional, ...extra] = flags.positionals;
+  const who = flags.values.personId ?? positional;
+  const text = flags.values.text?.trim();
+  const htmlFile = flags.values["html-file"];
+  if (!who || extra.length || (flags.values.personId && positional) || (flags.values.personId && !UUID.test(who)) || (!text && !htmlFile && !flags.values.html) || (htmlFile && flags.values.html !== undefined)) return usage(command, flags.json, NOTIFY_USAGE);
+
+  let html: string | undefined = flags.values.html;
+  if (htmlFile) {
+    try {
+      html = readFileSync(htmlFile, "utf8");
+    } catch {
+      return fail(command, flags.json, errorPayload("html_file_unreadable", `Could not read ${htmlFile}.`));
+    }
+  }
 
   let personId = who;
   if (!UUID.test(who)) {
@@ -257,18 +311,54 @@ export async function runPeopleNotify(args: string[]): Promise<number> {
     }
     personId = matches[0]!.id;
   }
+  const channels = flags.values.channels?.split(",").map((channel) => channel.trim()).filter(Boolean);
+  if (channels && (!channels.length || channels.some((channel) => channel !== "slack" && channel !== "email"))) return usage(command, flags.json, "--channels must contain slack, email, or both");
   const result = await call(command, flags.json, "people.notify", {
     personId,
-    text,
+    ...(text ? { text } : {}),
+    ...(html ? { html } : {}),
+    ...(flags.values.subject ? { subject: flags.values.subject } : {}),
     ...(flags.values.link ? { link: flags.values.link } : {}),
-    ...(flags.values.channel ? { channels: [flags.values.channel] } : {}),
+    ...(flags.values["idempotencyKey"] ? { idempotencyKey: flags.values["idempotencyKey"] } : {}),
+    ...(channels?.length ? { channels } : {}),
   });
   if (typeof result === "number") return result;
 
-  const results = (result.output as { results?: Array<{ channel: string; status: string; code?: string }> }).results ?? [];
-  if (flags.json) { printJsonLine({ results }); return EXIT_SUCCESS; }
-  for (const entry of results) console.log(`${entry.channel}: ${entry.status === "sent" ? "sent" : `not sent (${entry.code ?? "failed"})`}`);
-  return results.some((entry) => entry.status === "sent") ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR;
+  const { notificationId, results = [] } = result.output as { notificationId?: string; results?: Array<{ channel: string; status: string; code?: string }> };
+  if (flags.json) { printJsonLine({ notificationId, results }); return results.some((entry) => accepted(entry.status)) ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR; }
+  for (const entry of results) console.log(`${entry.channel}: ${entry.status === "failed" ? `not sent (${entry.code ?? "failed"})` : entry.status}`);
+  if (notificationId) console.log(`Notification ${notificationId}. Check delivery: draft people notification-status ${notificationId}`);
+  return results.some((entry) => accepted(entry.status)) ? EXIT_SUCCESS : EXIT_OPERATIONAL_ERROR;
+}
+
+export async function runPeopleNotificationStatus(args: string[]): Promise<number> {
+  const command = "draft people notification-status";
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`${bold(command)} — check a notification without sending it again.`);
+    console.log(`Usage: ${command} [<notification id> | --notificationId <id>] [--json]`);
+    console.log("Use the notificationId returned by draft people notify. You may read your sent and received notifications, and shared notifications.");
+    console.log("With run credentials, the run's permissions and the person it works for determine access.");
+    console.log("Statuses: queued, sent, delivered, delayed, bounced, complained, failed.");
+    console.log("For email, sent means provider acceptance; delivered means acceptance by the recipient's mail server, not inbox placement or reading.");
+    console.log("If the latest status cannot be fetched, the saved status is returned with refreshed: false.");
+    console.log("--json prints the notificationId, refreshed flag, and per-channel deliveries. --help or -h shows this help.");
+    return EXIT_SUCCESS;
+  }
+  const flags = parseFlags(args);
+  if (flags.error) return usage(command, flags.json, flags.error);
+  const [positional, ...extra] = flags.positionals;
+  const notificationId = flags.values.notificationId ?? positional;
+  if (flags.me || flags.force || Object.keys(flags.values).some((key) => key !== "notificationId") || (flags.values.notificationId && positional)) return usage(command, flags.json, "give one notificationId, as a flag or positional argument");
+  if (!notificationId || extra.length || !UUID.test(notificationId)) return usage(command, flags.json, "usage: draft people notification-status <notification id> [--json]");
+
+  const result = await call(command, flags.json, "people.notification_status", { notificationId });
+  if (typeof result === "number") return result;
+
+  const status = result.output as { notificationId: string; refreshed: boolean; deliveries: Array<{ channel: string; status: string; errorCode: string | null }> };
+  if (flags.json) { printJsonLine(status); return EXIT_SUCCESS; }
+  for (const delivery of status.deliveries) console.log(`${delivery.channel}: ${delivery.status}${delivery.errorCode ? ` (${delivery.errorCode})` : ""}`);
+  if (!status.refreshed) console.log(dim("The latest status could not be fetched, so this is the last saved one."));
+  return EXIT_SUCCESS;
 }
 
 function printPeopleHelp(): void {
@@ -283,7 +373,8 @@ function printPeopleHelp(): void {
   console.log(`  draft people pending [--json]   ${dim("Who is waiting for approval")}`);
   console.log(`  draft people approve <id or name>   ${dim("Admins only")}`);
   console.log(`  draft people reject <id or name> [--reason <why>]   ${dim("Admins only")}`);
-  console.log(`  draft people notify <id or name> <message> [--link <url>]   ${dim("Send a message to a person")}`);
+  console.log(`  draft people notify <id or name> --text <message> [--channels slack|email] [--subject <topic>] [--html-file <path>] [--link <url>] [--idempotencyKey <key>]   ${dim("Send a message (see draft people notify --help)")}`);
+  console.log(`  draft people notification-status <notification id> [--json]   ${dim("Check whether a message was delivered")}`);
 }
 
 export async function runPeople(args: string[]): Promise<number> {
@@ -299,6 +390,7 @@ export async function runPeople(args: string[]): Promise<number> {
   if (sub === "approve") return runPeopleApprove(rest);
   if (sub === "reject") return runPeopleReject(rest);
   if (sub === "notify") return runPeopleNotify(rest);
-  console.error(red(`draft people: unknown subcommand "${sub}". Use find, create, update, pending, approve, reject or notify.`));
+  if (sub === "notification-status") return runPeopleNotificationStatus(rest);
+  console.error(red(`draft people: unknown subcommand "${sub}". Use find, create, update, pending, approve, reject, notify or notification-status.`));
   return EXIT_USAGE_ERROR;
 }

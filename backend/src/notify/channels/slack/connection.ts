@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { resolveProviderCredentialById } from "../credentials/resolve-provider-credential";
+import { resolveProviderCredentialById } from "../../../credentials/resolve-provider-credential";
 
 export async function workspaceSlackCredentialId(client: SupabaseClient, workspaceId: string): Promise<string | null> {
   const { data, error } = await client.from("connections").select("credential_id")

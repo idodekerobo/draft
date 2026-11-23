@@ -19,9 +19,22 @@ export type ReachablePerson = {
 /** Builds the value `resolvePerson` returns. Kept here so the brand is made in one place. */
 export const markReachable = (person: Omit<ReachablePerson, typeof checked>): ReachablePerson => person as ReachablePerson;
 
+/** What a channel reports. `providerMessageId` stays inside Draft: it is stored on the delivery and never shown to an agent. */
+export type ChannelOutcome = ChannelSendResult & { providerMessageId?: string };
+
+/** `deliveryId` is the `notification_deliveries` row for this send. Email uses it as the provider's idempotency key. */
+export type SendContext = { deliveryId?: string };
+
 export interface NotifyChannel {
   id: NotifyChannelId;
   /** True when the person has a confirmed or from_connection identity for this channel and the workspace has it connected. */
   canReach(person: ReachablePerson): Promise<boolean>;
-  send(person: ReachablePerson, message: NotifyMessage): Promise<ChannelSendResult>;
+  send(person: ReachablePerson, message: NotifyMessage, context?: SendContext): Promise<ChannelOutcome>;
+}
+
+export class DeliveryUncertainError extends Error {
+  constructor(public readonly cause: unknown) {
+    super("delivery_acceptance_unknown");
+    this.name = "DeliveryUncertainError";
+  }
 }

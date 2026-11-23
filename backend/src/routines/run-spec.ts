@@ -31,7 +31,7 @@ export function routinePermissions(
     { tool: "routines.create", limits: { maxPerRun: ROUTINE_CREATE_MAX_PER_RUN } },
     { tool: "routines.update" }, { tool: "routines.delete" }, { tool: "routines.list" }, { tool: "routines.run" }, { tool: "routines.runs" },
   ];
-  if (routine.canNotify) permissions.push({ tool: "people.find" }, { tool: "people.notify", limits: { recipients: "members", maxPerRun: ROUTINE_NOTIFY_MAX_PER_RUN } });
+  if (routine.canNotify) permissions.push({ tool: "people.find" }, { tool: "people.notify", limits: { recipients: "members", maxPerRun: ROUTINE_NOTIFY_MAX_PER_RUN } }, { tool: "people.notification_status" });
   if (routine.postChannels) permissions.push(
     { tool: "connections.list", provider: "slack" }, { tool: "connections.read", provider: "slack" },
     { tool: "connections.post", provider: "slack", limits: { channels: routine.postChannels, maxPerRun: 10 } },

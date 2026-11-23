@@ -19,3 +19,12 @@ test("results count delivered actions and unique recipients and documents", () =
 test("reads and unsuccessful delivery leave room for summary fallback", () => {
   expect(runResultLine([call("sources.read", "read source"), call("people.notify", "slack: failed", { personId: "a" }), call("context.write", "no change")])).toBeNull();
 });
+
+test("includes email sends and deduplicates recipients across repeated calls", () => {
+  expect(runResultLine([
+    call("people.notify", "email: sent", { personId: "a" }),
+    call("people.notify", "slack: sent, email: delivered", { personId: "a" }),
+    call("people.notify", "email: queued", { personId: "b" }),
+    call("people.notify", "email: bounced", { personId: "c" }),
+  ])).toBe("DM'd 1 person · Emailed 1 person");
+});

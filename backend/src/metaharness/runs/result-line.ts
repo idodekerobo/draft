@@ -11,6 +11,7 @@ interface ActionCall {
 export function runResultLine(calls: ReadonlyArray<ActionCall>): string | null {
   const channels = new Set<string>();
   const people = new Set<string>();
+  const emailed = new Set<string>();
   const documents = new Set<string>();
   for (const call of calls) {
     if (call.status !== "ok") continue;
@@ -21,6 +22,9 @@ export function runResultLine(calls: ReadonlyArray<ActionCall>): string | null {
     if (call.tool_name === "people.notify" && /(?:^|, )slack: sent(?:,|$)/.test(call.result_summary ?? "")) {
       if (typeof call.arguments.personId === "string") people.add(call.arguments.personId);
     }
+    if (call.tool_name === "people.notify" && /(?:^|, )email: (?:sent|delivered|delayed)(?:,|$)/.test(call.result_summary ?? "")) {
+      if (typeof call.arguments.personId === "string") emailed.add(call.arguments.personId);
+    }
     if (call.tool_name === "context.write" && call.result_summary?.startsWith("wrote ")) {
       for (const path of call.result_summary.slice(6).split(", ")) documents.add(path);
     }
@@ -28,6 +32,7 @@ export function runResultLine(calls: ReadonlyArray<ActionCall>): string | null {
   const parts = [
     channels.size ? `Posted in ${[...channels].join(", ")}` : null,
     people.size ? `DM'd ${people.size} ${people.size === 1 ? "person" : "people"}` : null,
+    emailed.size ? `Emailed ${emailed.size} ${emailed.size === 1 ? "person" : "people"}` : null,
     documents.size ? `Updated ${documents.size} ${documents.size === 1 ? "doc" : "docs"}` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;

@@ -32,7 +32,7 @@ describe("buildRoutineRunSpec", () => {
   it("grants reading and writing the shared context, with no path limit", () => {
     expect(ROUTINE_PERMISSIONS).toEqual([
       { tool: "context.read" }, { tool: "context.list" }, { tool: "context.write" },
-      { tool: "sources.search" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
+      { tool: "sources.search" }, { tool: "sources.list" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
     ]);
   });
 
@@ -55,6 +55,7 @@ describe("routine permissions", () => {
       ...ROUTINE_TOOLS,
       { tool: "people.find" },
       { tool: "people.notify", limits: { recipients: "members", maxPerRun: 15 } },
+      { tool: "people.notification_status" },
     ]);
   });
 

@@ -40,6 +40,7 @@ export const DRAFT_TOOLS = [
   { name: "people.create", access: "write" },
   { name: "people.update", access: "write" },
   { name: "people.notify", access: "write" },
+  { name: "people.notification_status", access: "read" },
   { name: "people.approve", access: "write" },
   { name: "people.reject", access: "write" },
 ] as const;
@@ -88,6 +89,7 @@ export interface DraftToolLimits {
   "people.update": { maxPerRun?: number };
   /** `recipients` is who the run may message: its own user, any member, or these people. */
   "people.notify": { recipients?: "self" | "members" | ReadonlyArray<PersonId>; maxPerRun?: number };
+  "people.notification_status": Record<string, never>;
   "people.approve": Record<string, never>;
   "people.reject": Record<string, never>;
 }
@@ -118,6 +120,7 @@ export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   { tool: "people.create" },
   { tool: "people.update" },
   { tool: "people.notify", limits: { recipients: "members" } },
+  { tool: "people.notification_status" },
   { tool: "people.approve" },
   { tool: "people.reject" },
 ];

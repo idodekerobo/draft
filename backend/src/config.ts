@@ -66,6 +66,14 @@ export function googleOAuthSettings(): GoogleOAuthSettings | null {
   };
 }
 
+/**
+ * Read on demand so deployments without email still start. `apiKey` sends. `statusApiKey` only reads delivery
+ * status and must stay in the backend.
+ */
+export function resendSettings(): { apiKey: string | undefined; statusApiKey: string | undefined } {
+  return { apiKey: process.env.RESEND_API_KEY, statusApiKey: process.env.RESEND_STATUS_API_KEY };
+}
+
 export function loadConfig(): BackendConfig {
   const port = Number(process.env.PORT ?? 8787);
   const githubAppPrivateKeyPreviousRaw = process.env.GITHUB_APP_PRIVATE_KEY_PREVIOUS;

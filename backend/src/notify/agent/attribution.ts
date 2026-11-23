@@ -24,7 +24,7 @@ async function routineTitle(client: SupabaseClient, workspaceId: string, schedul
 }
 
 /**
- * The first line of every message Draft sends for a caller. The gateway adds it after the model has handed over
+ * The last line of every message Draft sends for a caller. The gateway adds it after the model has handed over
  * its text, so a model cannot leave it out or change it. Run and owner come from the run spec, not from the model.
  */
 export async function attributionLine(client: SupabaseClient, caller: ToolCaller): Promise<string> {
@@ -43,4 +43,10 @@ export async function attributionLine(client: SupabaseClient, caller: ToolCaller
     return starter ? `${line} · started by ${starter}` : line;
   }
   return owner ? `🤖 Draft agent · working for ${owner}` : `🤖 Draft agent · ${run.kind} run`;
+}
+
+/** The routine a run belongs to. A scheduled run names it in its trigger. Any other run is tied to it through its own row. */
+export async function originTaskId(client: SupabaseClient, run: { id: string; trigger: { type: string; scheduledTaskId?: string } }): Promise<string | null> {
+  if (run.trigger.type === "cron" && run.trigger.scheduledTaskId) return run.trigger.scheduledTaskId;
+  return taskOfRun(client, run.id);
 }
