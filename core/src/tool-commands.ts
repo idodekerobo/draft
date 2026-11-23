@@ -41,6 +41,7 @@ export const TOOL_COMMANDS: Record<DraftToolName, string | null> = {
   "people.create": "people create",
   "people.update": "people update",
   "people.notify": "people notify",
+  "people.notification_status": "people notification-status",
   "people.approve": "people approve",
   "people.reject": "people reject",
 };
