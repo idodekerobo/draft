@@ -77,6 +77,7 @@ export interface Routine {
   lastCheckedAt: string | null;
   lastRun: RoutineLastRun | null;
   updatedByName: string | null;
+  builtIn?: Pick<AgentRoutine, "prompt" | "harness" | "model" | "reasoningEffort">;
   agent: AgentRoutine | null;
   /** One-time, recurring, or triggers only. */
   kind: NonNullable<RoutineListFilter["kind"]>;

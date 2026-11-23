@@ -336,6 +336,11 @@ function formatRoutine(routine: RoutineSummary, detail: boolean): string {
   const lines = [`${bold(routine.title)} — ${state}`, `  id: ${routine.id}`];
   if (!agent) {
     lines.push(`  built-in routine (${routine.taskType})`, `  when: ${whenLine(routine)}`, `  next run: ${routine.nextRunAt ?? "none scheduled"}`);
+    if (routine.builtIn) {
+      const settings = routine.builtIn;
+      lines.push(`  agent: ${settings.harness}, ${settings.model ?? "default model"}${settings.reasoningEffort ? `, ${settings.reasoningEffort}` : ""}`);
+      if (detail) lines.push("  prompt:", ...settings.prompt.split("\n").map((line) => `    ${line}`));
+    }
     return lines.join("\n");
   }
   lines.push(

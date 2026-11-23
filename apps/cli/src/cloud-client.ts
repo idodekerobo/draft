@@ -932,6 +932,7 @@ export interface RoutineSummary {
   visibility: "shared" | "private";
   canEdit: boolean;
   updatedByName: string | null;
+  builtIn?: Pick<RoutineAgent, "prompt" | "harness" | "model"> & { reasoningEffort?: string };
   agent: RoutineAgent | null;
 }
 

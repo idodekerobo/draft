@@ -41,8 +41,9 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   const titleId = `${ids}-title`;
   const editable = canEdit && routine.editable === "full";
   const isSynthesis = routine.taskType === "synthesize_workspace";
+  const settings = routine.agent ?? routine.builtIn;
   const original = useMemo<AgentValue | null>(
-    () => routine.agent && { title: routine.title, prompt: routine.agent.prompt, harness: routine.agent.harness, model: routine.agent.model, effort: routine.agent.reasoningEffort ?? null },
+    () => settings ? { title: routine.title, prompt: settings.prompt, harness: settings.harness, model: settings.model, effort: settings.reasoningEffort ?? null } : null,
     [routine],
   );
   const [agent, setAgent] = useState<AgentValue | null>(original);
@@ -95,7 +96,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
     if (agent.harness !== original.harness) agentEdit.harness = agent.harness;
     if (agent.harness !== original.harness || agent.model !== original.model) agentEdit.model = agent.model;
     if (agent.harness !== original.harness || agent.model !== original.model || agent.effort !== original.effort) agentEdit.reasoningEffort = agent.effort;
-    Object.assign(agentEdit, capabilityChanges(originalCapabilities, capabilities));
+    if (routine.agent) Object.assign(agentEdit, capabilityChanges(originalCapabilities, capabilities));
   }
   // The rule sets the schedule (null when it is off) and the triggers. Parts that did not change are left out.
   const rule: RoutineRule = {};
@@ -290,6 +291,32 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
         {actions}
       </form>
     );
+  } else if (routine.builtIn && agent) {
+    body = (
+      <form className="ui-routines__editor" onSubmit={submit}>
+        <div className="ui-routine-form">
+          <div className="ui-routine-form__edit">
+            <div className="ui-routines__fields">
+              <AgentFields value={agent} onChange={setAgent} disabled={!editable || busy} hideName agents={agents} blocked={blocked}
+                renderAgentSetup={renderAgentSetup} refreshAgents={refreshAgents} fieldError={fieldError} />
+            </div>
+            {scheduleFields}
+            {scheduleNotices}
+            <p className="ui-routines__notice">Changes apply to the whole team on the next run. Required inputs and output formats are managed by Draft.</p>
+          </div>
+          <aside className="ui-routine-preview" aria-label="What this routine will do">
+            <h3 className="ui-routines__subheading">What it will do</h3>
+            <ul className="ui-routine-preview__list">
+              <li>{routine.enabled ? (preset === "custom" ? routine.scheduleDescription : `${scheduleSentence({ preset, time, weekday })} (${zoneLabel(effectiveTimezone)})`) : "Paused. It won’t run until it’s resumed."}</li>
+              {nextRun && <li>Next run {formatAbsolute(nextRun.toISOString(), effectiveTimezone)}</li>}
+              <li>Runs on {agentLabel(agent)}</li>
+              <li>{routine.routineDescription}</li>
+            </ul>
+          </aside>
+        </div>
+        {actions}
+      </form>
+    );
   } else if (routine.editable === "toggle_only") {
     body = (
       <div className="ui-dialog__info">
@@ -316,7 +343,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   }
 
   return (
-    <Dialog titleId={titleId} onClose={onClose} busy={busy} wide={!!routine.agent} returnFocusTo={returnFocusTo}>
+    <Dialog titleId={titleId} onClose={onClose} busy={busy} wide={!!settings} returnFocusTo={returnFocusTo}>
       <header className="ui-dialog__header">
         <h2 id={titleId}>{routine.title}</h2>
         <button type="button" className="ui-routines__btn" aria-label="Close routine details" disabled={busy} onClick={onClose}>

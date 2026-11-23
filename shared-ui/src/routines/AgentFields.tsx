@@ -21,11 +21,12 @@ export const isDisconnected = (status: RoutineAgentStatus | undefined): status i
   status === "not_connected" || status === "needs_reconnect";
 
 /** The fields shared by the new routine dialog and the routine editor. Render them inside `.ui-routines__fields`. */
-export function AgentFields({ value, onChange, disabled, autoFocus, agents, blocked, renderAgentSetup, refreshAgents, fieldError }: {
+export function AgentFields({ value, onChange, disabled, autoFocus, agents, blocked, renderAgentSetup, refreshAgents, fieldError, hideName = false }: {
   value: AgentValue;
   onChange: (value: AgentValue) => void;
   disabled: boolean;
   autoFocus?: boolean;
+  hideName?: boolean;
   agents: AgentStatuses;
   /** True when the chosen agent cannot run the routine yet. The connect help shows then. */
   blocked: boolean;
@@ -39,11 +40,11 @@ export function AgentFields({ value, onChange, disabled, autoFocus, agents, bloc
 
   return (
     <>
-      <label className="ui-routines__field ui-routines__field--wide">
+      {!hideName && <label className="ui-routines__field ui-routines__field--wide">
         Name
         <input type="text" value={title} maxLength={120} placeholder="Weekly product digest" disabled={disabled} autoFocus={autoFocus} onChange={(event) => onChange({ ...value, title: event.target.value })} />
         {fieldError("title")}
-      </label>
+      </label>}
       <label className="ui-routines__field ui-routines__field--wide">
         What should it do?
         <textarea

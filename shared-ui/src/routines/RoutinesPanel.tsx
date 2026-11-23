@@ -186,7 +186,7 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
 
   async function onSave(routine: Routine, patch: RoutinePatch) {
     await save.mutateAsync({ id: routine.id, patch });
-    toast.success(routine.agent ? `${routine.title} saved.` : "Schedule saved.");
+    toast.success(routine.agent || routine.builtIn ? `${routine.title} saved.` : "Schedule saved.");
     setOpenId(null);
   }
 
@@ -301,10 +301,10 @@ function RoutinesList({ workspaceId, onReconnect, onOpenRun, renderAgentSetup, i
                       {routine.title}
                     </button>
                     {routine.connectionLabel && <div className="ui-routines__secondary">{routine.connectionLabel}</div>}
-                    {routine.agent && (
+                    {(routine.agent || routine.builtIn) && (
                       <div className="ui-routines__secondary">
-                        {agentLabel({ ...routine.agent, effort: routine.agent.reasoningEffort })}
-                        {routine.agent.createdByName ? ` · by ${routine.agent.createdByName}` : ""}
+                        {agentLabel({ ...(routine.agent ?? routine.builtIn!), effort: (routine.agent ?? routine.builtIn!)?.reasoningEffort })}
+                        {routine.agent?.createdByName ? ` · by ${routine.agent.createdByName}` : ""}
                       </div>
                     )}
                     {routine.madeByAgent && (routine.createdBySessionId && onOpenRun ? (

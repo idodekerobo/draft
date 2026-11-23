@@ -633,3 +633,33 @@ describe("when a routine runs", () => {
     expect(createRoutine.mock.calls[0]![0]).not.toHaveProperty("canNotify");
   });
 });
+
+
+describe("built-in routine editing", () => {
+  for (const taskType of ["synthesize_workspace", "summarize_sessions"]) {
+    it(`edits ${taskType} using the shared composer without agent-only controls`, async () => {
+      const routine = agentRoutine({ taskType, agent: null, builtIn: { harness: "claude", model: "haiku", prompt: "Original instructions." } });
+      const { updateRoutine } = setup({ routines: [routine], initialOpenId: routine.id });
+      const editor = await screen.findByRole("dialog");
+      expect(within(editor).getByLabelText("What should it do?")).toBeTruthy();
+      expect(within(editor).getByRole("button", { name: "Agent and model" })).toBeTruthy();
+      expect(within(editor).queryByRole("textbox", { name: "Name" })).toBeNull();
+      expect(within(editor).queryByRole("button", { name: "Delete routine" })).toBeNull();
+      expect(within(editor).queryByText("Runs", { selector: "h3" })).toBeNull();
+      fireEvent.change(within(editor).getByLabelText("What should it do?"), { target: { value: "Focus on customer decisions." } });
+      fireEvent.click(within(editor).getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { prompt: "Focus on customer decisions." }));
+    });
+  }
+});
+
+
+it("switches a built-in routine to Codex without changing its tool permissions", async () => {
+  const routine = agentRoutine({ taskType: "synthesize_workspace", agent: null, builtIn: { harness: "claude", model: "haiku", prompt: "Focus on decisions." } });
+  const { updateRoutine } = setup({ routines: [routine], initialOpenId: routine.id, agents: { claude: "connected", codex: "connected" } });
+  const editor = await screen.findByRole("dialog");
+  fireEvent.click(within(editor).getByRole("button", { name: "Agent and model" }));
+  fireEvent.click(within(editor).getByRole("menuitemradio", { name: /Codex/ }));
+  await act(async () => fireEvent.click(within(editor).getByRole("button", { name: "Save changes" })));
+  await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { harness: "codex", model: null, reasoningEffort: null }));
+});
