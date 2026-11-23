@@ -1,3 +1,4 @@
+import { DEFAULT_SYNTHESIS_PROMPT } from "../routines/built-in-defaults";
 import type { ValidatedRunBundle } from "./context-version-files";
 import type { DimensionHint } from "./types";
 
@@ -89,6 +90,7 @@ function buildPrompt(
   sourceFiles: SourceFileEntry[],
   dimensions?: DimensionHint[],
   hasRoster = false,
+  instructions = DEFAULT_SYNTHESIS_PROMPT,
 ): string {
   const contextList =
     contextFiles
@@ -119,30 +121,7 @@ ${bootstrapSection}${memorySection}
 ## New source material to reconcile against the context above
 ${sourceList}
 
-Read each source file, then read the existing context files above before deciding what changes.
-
-**SIGNAL -- capture:**
-- Product or architecture decisions made
-- Action items with clear owners
-- Direction changes, new constraints, or validated/invalidated assumptions
-- Team-relevant facts about users, customers, competitors, or the market
-
-**NOISE -- skip:**
-- Small talk, scheduling, logistics
-- Anything already captured in the existing context files
-- Speculative ideas with no decision or action
-- Implementation minutiae
-
-**Specificity rule:** "Decided to drop X in favor of Y after confirming Z" is SIGNAL.
-"Discussed some options" is NOISE.
-
-## Judgment
-- Preserve all still-valid context. Rewrite a file only when the evidence makes its durable current state clearer.
-- A later timestamp is not a resolution receipt. Do not treat recency alone as proof one side of a conflict supersedes another.
-- Use needs_input only for a named conflict whose competing claims cannot be safely reconciled from the evidence. Name both claims and their sources.
-- Do not invent information not present in the source material.
-- Do not copy raw source text verbatim into context; write synthesized insights.
-
+${instructions}
 ## Writing documents
 Write documents with the \`context.write\` tool of the "draft" tool server, not to disk. Do not modify the files under input/.
 - One call can write one document or many. You may call it more than once.
@@ -184,7 +163,7 @@ When you are done writing, reply with this JSON and nothing else:
 
 Rules:
 - Use "changed" only if a \`context.write\` call succeeded. If you wrote nothing, use "no_change".
-- "needs_input" is optional and independent of "outcome" -- a run can be "changed" and still raise a question.
+- "needs_input" is independent of "outcome" -- a run can be "changed" and still raise a question. Use an empty array when there are no questions.
 `;
 }
 
@@ -217,7 +196,7 @@ function buildJsonSchema(): Record<string, unknown> {
     $schema: "http://json-schema.org/draft-07/schema#",
     type: "object",
     additionalProperties: false,
-    required: ["outcome", "summary"],
+    required: ["outcome", "summary", "needs_input"],
     properties: {
       outcome: { type: "string", enum: ["changed", "no_change"] },
       summary: { type: "string", minLength: 1 },
@@ -232,10 +211,11 @@ function buildJsonSchema(): Record<string, unknown> {
 export async function renderSynthesisPrompt(
   bundle: ValidatedRunBundle,
   dimensions?: DimensionHint[],
+  instructions = DEFAULT_SYNTHESIS_PROMPT,
 ): Promise<{ prompt: string; jsonSchema: Record<string, unknown> }> {
   const contextFiles = collectContextFiles(bundle);
   const sourceFiles = collectSourceFiles(bundle);
-  const prompt = buildPrompt(contextFiles, sourceFiles, dimensions, "input/people.json" in bundle.files);
+  const prompt = buildPrompt(contextFiles, sourceFiles, dimensions, "input/people.json" in bundle.files, instructions);
   const jsonSchema = buildJsonSchema();
   return { prompt, jsonSchema };
 }

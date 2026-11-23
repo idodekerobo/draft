@@ -1,3 +1,4 @@
+import { releaseCodexLeaseForRun } from "../credentials/codex-credential";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunStatus } from "draft-core/run-spec";
 import { recordError } from "../errors/record-error";
@@ -45,7 +46,7 @@ export interface FailSynthesisRunInput {
 
 type FailedRunRow = Pick<
   AgentRunRow,
-  "workspace_id" | "scheduled_task_id" | "attempt" | "retry_of_run_id" | "sandbox_machine_id"
+  "workspace_id" | "scheduled_task_id" | "attempt" | "retry_of_run_id" | "sandbox_machine_id" | "harness"
 >;
 
 // Marks the run failed and writes exactly one error row carrying the attempt
@@ -67,10 +68,11 @@ export async function failSynthesisRun(input: FailSynthesisRunInput): Promise<bo
     .eq("id", runId)
     .eq("kind", "synthesis")
     .in("status", ACTIVE_WRITER_STATUSES)
-    .select("workspace_id, scheduled_task_id, attempt, retry_of_run_id, sandbox_machine_id");
+    .select("workspace_id, scheduled_task_id, attempt, retry_of_run_id, sandbox_machine_id, harness");
   if (error) throw error;
   const run = ((data ?? []) as FailedRunRow[])[0];
   if (!run) return false;
+  if (run.harness === "codex") await releaseCodexLeaseForRun(client, run.workspace_id, runId);
 
   const plan = retryPlan(run.attempt, completedAt);
   await recordError({

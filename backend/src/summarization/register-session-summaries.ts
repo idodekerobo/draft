@@ -1,3 +1,4 @@
+import { defaultBuiltInConfig } from "../routines/built-in-config";
 import { CronExpressionParser } from "cron-parser";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -19,6 +20,7 @@ export async function registerSessionSummaryTask(workspaceId: string, client: Su
   const { error } = await client.from("scheduled_tasks").upsert({
     workspace_id: workspaceId,
     task_type: "summarize_sessions",
+    config_json: { ...defaultBuiltInConfig("summarize_sessions") },
     task_key: workspaceId,
     schedule_kind: "cron",
     cron_expression: SESSION_SUMMARY_CRON,

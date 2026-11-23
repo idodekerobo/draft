@@ -422,10 +422,22 @@ describe("schedules routes", () => {
       expect(await (await patch("task-agent", { model: "not-a-model" })).json()).toMatchObject({ error: "invalid_body", field: "model" });
     });
 
-    it("rejects agent fields on a built-in routine", async () => {
-      const response = await patch("task-1", { prompt: "Do something else." });
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ error: "field_not_editable", field: "prompt" });
+    it("saves built-in prompts and models in the team's scheduled task", async () => {
+      const response = await patch("task-1", { prompt: "Focus on customer evidence.", model: "haiku" });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ builtIn: { prompt: "Focus on customer evidence.", harness: "claude", model: "haiku" } });
+      expect(tables.scheduled_tasks!.find((task) => task.id === "task-1")!.config_json).toMatchObject({ prompt: "Focus on customer evidence.", model: "haiku" });
+    });
+
+    it("keeps built-in permissions, titles and triggers managed by Draft", async () => {
+      for (const field of ["title", "canNotify", "canReadGmail", "builtInTools"]) {
+        const response = await patch("task-1", { [field]: field === "title" ? "New" : true });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toMatchObject({ error: "field_not_editable", field });
+      }
+      expect((await patch("task-1", { harness: "codex" })).status).toBe(409);
+      expect((await patch("task-1", { prompt: " " })).status).toBe(400);
+      expect((await patch("task-1", { when: { events: ["github.push"] } })).status).toBe(400);
     });
 
     it("refuses to switch to Codex when Codex is not connected, and leaves the routine as it was", async () => {

@@ -1,3 +1,4 @@
+import type { BuiltInRoutineConfig } from "../routines/built-in-config";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SandboxRunReceipt } from "../metaharness/sandbox";
@@ -61,7 +62,7 @@ export async function prepareRun(
     | "retryOfRunId"
     | "client"
     | "now"
-  >,
+  > & { settings?: BuiltInRoutineConfig },
 ): Promise<string> {
   const client =
     options.client ?? (await import("../db/client")).serviceClient;
@@ -195,6 +196,7 @@ export async function prepareRun(
     retryOfRunId: options.retryOfRunId,
     contextVersionId: baseContextVersionId,
     resultSchema: {},
+    settings: options.settings,
   });
   try {
     await createAgentRun(client, {

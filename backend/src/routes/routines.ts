@@ -1,3 +1,4 @@
+import { isConfigurableBuiltIn, parseBuiltInConfig } from "../routines/built-in-config";
 import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
@@ -89,12 +90,12 @@ export const PATCH = withAuth<ScheduleRequest>(async (req, caller) => {
     const { definition, task } = routineTask;
     const current = task.task_type === "agent_routine" ? parseAgentRoutineConfig(task.config_json) : null;
 
-    const validation = validatePatch(body, definition.editable, current);
+    const validation = validatePatch(body, definition.editable, current, isConfigurableBuiltIn(task.task_type) ? parseBuiltInConfig(task.task_type, task.config_json) : undefined);
     if (!validation.ok) {
       return Response.json({ error: validation.error, field: validation.field }, { status: 400 });
     }
-    const harness = validation.patch.agent?.harness;
-    const agentProblem = harness && harness !== current?.harness ? await routineAgentProblem(serviceClient, workspaceId, harness) : null;
+    const harness = validation.patch.agent?.harness ?? validation.patch.builtIn?.harness;
+    const agentProblem = harness && harness !== (current?.harness ?? (isConfigurableBuiltIn(task.task_type) ? parseBuiltInConfig(task.task_type, task.config_json).harness : undefined)) ? await routineAgentProblem(serviceClient, workspaceId, harness) : null;
     if (agentProblem) return Response.json({ error: agentProblem.code, message: agentProblem.message, field: "harness" }, { status: 409 });
     return Response.json(await updateRoutine(routineTask, validation.patch, caller.userId, new Date(), { via: callSurface(req) }));
   } catch (error) {

@@ -1,3 +1,6 @@
+import { releaseCodexLeaseForRun } from "../credentials/codex-credential";
+import { loadBuiltInConfig, type BuiltInRoutineConfig } from "../routines/built-in-config";
+import { launchWithCredentials, reserveCodexRunLogin, RoutineLeaseBusyError } from "../metaharness/sandbox/launch-with-credentials";
 import { randomUUID } from "node:crypto";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -11,8 +14,7 @@ import { renderSessionTranscript } from "./render-transcript";
 import { buildSummarizationBundle } from "./build-bundle";
 import { buildSummarizationRunSpec } from "./run-spec";
 import { summarizationJsonSchema } from "./render-prompt";
-import { resolveInferenceCredential } from "../synthesis/resolve-credential";
-import { launchSandboxRun, type SandboxDeploymentConfig } from "../metaharness/sandbox";
+import { type SandboxDeploymentConfig } from "../metaharness/sandbox";
 
 const MAX_SESSIONS_PER_BATCH = 25;
 
@@ -36,25 +38,38 @@ export interface LaunchSummarizationBatchResult {
 export async function launchSummarizationBatch(
   options: LaunchSummarizationBatchOptions,
 ): Promise<LaunchSummarizationBatchResult | null> {
+  const settings = await loadBuiltInConfig(options.client, options.workspaceId, "summarize_sessions");
+  const agentRunId = randomUUID();
   await reportExpiredSummaryLeases(options.workspaceId, options.client);
-  const sessions = await claimPendingSummarySessions(
-    options.workspaceId,
-    MAX_SESSIONS_PER_BATCH,
-    options.client,
-  );
-  if (sessions.length === 0) return null;
+  if (settings.harness === "codex") {
+    try {
+      await reserveCodexRunLogin(options.client, options.workspaceId, agentRunId);
+    } catch (error) {
+      if (!(error instanceof RoutineLeaseBusyError)) throw error;
+      console.log(JSON.stringify({ event: "summarization_deferred", workspaceId: options.workspaceId, reason: "codex_login_busy" }));
+      return null;
+    }
+  }
 
-  const { agentRunId, spec } = await startSummarizationRun(options, sessions.map((session) => session.id), summarizationJsonSchema());
-
+  let started = false;
+  let launched = false;
   try {
-    return await launchBatch(options, sessions, spec);
+    const sessions = await claimPendingSummarySessions(options.workspaceId, MAX_SESSIONS_PER_BATCH, options.client);
+    if (sessions.length === 0) return null;
+    const { spec } = await startSummarizationRun(options, sessions.map((session) => session.id), summarizationJsonSchema(), settings, agentRunId);
+    started = true;
+    const result = await launchBatch(options, sessions, spec);
+    launched = true;
+    return result;
   } catch (error) {
-    await finishAgentRun(options.client, agentRunId, {
+    if (started) await finishAgentRun(options.client, agentRunId, {
       status: "failed",
       failureCode: "summarization_launch_failed",
       failureDetail: describeError(error),
     });
     throw error;
+  } finally {
+    if (!launched && settings.harness === "codex") await releaseCodexLeaseForRun(options.client, options.workspaceId, agentRunId);
   }
 }
 
@@ -66,10 +81,13 @@ export async function startSummarizationRun(
   options: Pick<LaunchSummarizationBatchOptions, "workspaceId" | "schedule" | "client">,
   sessionIds: string[],
   resultSchema: ReturnType<typeof summarizationJsonSchema>,
+  savedSettings?: BuiltInRoutineConfig,
+  agentRunId = randomUUID(),
 ): Promise<{ agentRunId: string; spec: AgentRunSpec }> {
-  const agentRunId = randomUUID();
   const contextVersionId = await resolveBaseContextVersionId(options.client, options.workspaceId);
+  const settings = savedSettings ?? await loadBuiltInConfig(options.client, options.workspaceId, "summarize_sessions");
   const spec = buildSummarizationRunSpec({
+    settings,
     id: agentRunId,
     workspaceId: options.workspaceId,
     scheduledTaskId: options.schedule.scheduledTaskId,
@@ -77,7 +95,7 @@ export async function startSummarizationRun(
     contextVersionId,
     resultSchema,
   });
-  await createAgentRun(options.client, { spec, idempotencyKey: `summarize:${agentRunId}`, status: "preparing" });
+  await createAgentRun(options.client, { spec, idempotencyKey: `summarize:${agentRunId}`, status: "preparing", scheduledTaskId: options.schedule.scheduledTaskId });
   const { error: linkError } = await options.client
     .from("captured_sessions")
     .update({ summary_agent_run_id: agentRunId })
@@ -116,17 +134,15 @@ async function launchBatch(
     workspaceId: options.workspaceId,
     sessions: sessionInputs,
     runId: agentRunId,
+    instructions: spec.instructions,
   });
 
-  const claudeCodeOAuthToken = await resolveInferenceCredential(options.workspaceId, options.client);
-
-  const receipt = await launchSandboxRun({
+  const receipt = await launchWithCredentials({
     spec,
     bundle,
     prompt: { kind: "items", manifestPath: bundle.manifestPath },
-    credentials: { claudeCodeOAuthToken },
     config: options.config,
-  });
+  }, options.client);
 
   await markAgentRunRunning(options.client, agentRunId, receipt.machineId);
 

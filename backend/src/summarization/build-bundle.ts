@@ -24,6 +24,7 @@ export function buildSummarizationBundle(input: {
   workspaceId: string;
   sessions: SummarizationSessionInput[];
   runId?: string;
+  instructions?: string;
 }): SummarizationBundle {
   if (input.sessions.length === 0) {
     throw new Error("buildSummarizationBundle requires at least one session");
@@ -38,7 +39,7 @@ export function buildSummarizationBundle(input: {
   }));
 
   for (const { session, transcript } of input.sessions) {
-    files[promptPathFor(session.id)] = { content: buildSummarizationPrompt(transcript) };
+    files[promptPathFor(session.id)] = { content: buildSummarizationPrompt(transcript, input.instructions) };
   }
   files[MANIFEST_PATH] = { content: `${JSON.stringify(manifest, null, 2)}\n` };
 

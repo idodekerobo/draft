@@ -1,3 +1,4 @@
+import { completeRunCredentials } from "../metaharness/sandbox/launch-with-credentials";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { finishAgentRun } from "../metaharness/runs/lifecycle";
 import { describeError } from "../errors/describe-error";
@@ -58,6 +59,7 @@ export async function completeSummarizationRunCallback(
       if (runError) throw runError;
       workspaceId = (runRow as { workspace_id: string } | null)?.workspace_id ?? null;
     }
+    if (agentRunId) await completeRunCredentials(resolvedClient, agentRunId, authenticated.authJson);
     if (!workspaceId) throw new Error(`Cannot recover workspace from run id: ${authenticated.runId}`);
 
     // The runner reports setup failures (e.g. bundle fetch) as {error, diagnostics}

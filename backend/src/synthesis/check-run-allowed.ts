@@ -1,3 +1,5 @@
+import type { HarnessId } from "draft-core/harnesses";
+import { routineAgentProblem } from "../routines/agent-status";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkspaceRow } from "../types/tables";
 
@@ -19,6 +21,7 @@ export type CheckRunAllowedResult = { ok: true } | { ok: false; reason: string }
 export async function checkRunAllowed(
   workspaceId: string,
   client: SupabaseClient,
+  harness: HarnessId = "claude",
 ): Promise<CheckRunAllowedResult> {
   const { data: workspaceData, error: workspaceError } = await client
     .from("workspaces")
@@ -37,8 +40,13 @@ export async function checkRunAllowed(
 
   // Fail fast here rather than deep inside resolveInferenceCredential,
   // after prepareRun has already created the run row.
-  if (!workspace.inference_credential_id) {
+  if (harness === "claude" && !workspace.inference_credential_id) {
     return { ok: false, reason: "no inference credential configured for this workspace" };
+  }
+
+  if (harness !== "claude") {
+    const problem = await routineAgentProblem(client, workspaceId, harness);
+    if (problem) return { ok: false, reason: problem.message };
   }
 
   if (workspace.max_runs_per_day !== null) {

@@ -1,3 +1,4 @@
+import { defaultBuiltInConfig } from "../routines/built-in-config";
 import { CronExpressionParser } from "cron-parser";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScheduledTaskRow } from "../types/tables";
@@ -32,6 +33,7 @@ export async function createInitialWorkspaceSynthesis(
       workspace_id: workspace.id,
       connection_id: null,
       task_type: "synthesize_workspace",
+      config_json: { ...defaultBuiltInConfig("synthesize_workspace") },
       task_key: workspace.id,
       schedule_kind: "cron",
       cron_expression: SYNTHESIS_SCHEDULE_CRON,
@@ -40,7 +42,7 @@ export async function createInitialWorkspaceSynthesis(
       enabled: true,
       next_due_at: nextDueAt.toISOString(),
     } satisfies Partial<ScheduledTaskRow>,
-    { onConflict: "workspace_id,task_type,task_key" },
+    { onConflict: "workspace_id,task_type,task_key", ignoreDuplicates: true },
   );
   if (error) throw error;
 }

@@ -1,3 +1,4 @@
+import { releaseCodexLeaseForRun } from "../../credentials/codex-credential";
 import { captureProductEvent } from "../../observability/product-analytics";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
@@ -39,7 +40,12 @@ export async function finishAgentRun(client: SupabaseClient, runId: string, outc
   try {
     const { data, error } = await client.from("agent_runs").update(outcomeColumns(outcome)).eq("id", runId).in("status", ACTIVE_AGENT_RUN_STATUSES).select("id, workspace_id, kind, session_id, scheduled_task_id, on_behalf_of_user_id, harness, runtime, trigger, completed_at");
     if (error) logLifecycleFailure("finish_failed", error);
-    else await captureCompletedRuns(client, data ?? [], outcome);
+    else {
+      for (const run of data ?? []) {
+        if (run.harness === "codex" && run.kind === "summarization") await releaseCodexLeaseForRun(client, run.workspace_id, run.id);
+      }
+      await captureCompletedRuns(client, data ?? [], outcome);
+    }
   } catch (error) { logLifecycleFailure("finish_failed", error); }
 }
 

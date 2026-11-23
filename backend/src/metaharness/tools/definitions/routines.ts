@@ -1,3 +1,4 @@
+import { isConfigurableBuiltIn, parseBuiltInConfig } from "../../../routines/built-in-config";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
 import { routineBuiltInTools, ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
@@ -302,11 +303,12 @@ export function createRoutineTools(client: SupabaseClient) {
         }
         const { validatePatch } = await import("../../../routines/validate-patch");
         const config = task.task.task_type === "agent_routine" ? parseAgentRoutineConfig(task.task.config_json) : null;
-        const patch = validatePatch(input.patch, task.definition.editable, config);
+        const patch = validatePatch(input.patch, task.definition.editable, config, isConfigurableBuiltIn(task.task.task_type) ? parseBuiltInConfig(task.task.task_type, task.task.config_json) : undefined);
         if (!patch.ok) return refuse(patch.error === "field_not_editable" ? "not_permitted" : "invalid_input", patch.field ?? "Invalid routine patch.");
-        if (patch.patch.agent?.harness) {
+        const nextHarness = patch.patch.agent?.harness ?? patch.patch.builtIn?.harness;
+        if (nextHarness) {
           const { routineAgentProblem } = await import("../../../routines/agent-status");
-          const agentProblem = await routineAgentProblem(client, actor.workspaceId, patch.patch.agent.harness);
+          const agentProblem = await routineAgentProblem(client, actor.workspaceId, nextHarness);
           if (agentProblem) return refuse(agentProblem.code, agentProblem.message);
         }
         if (actor.type === "run") {

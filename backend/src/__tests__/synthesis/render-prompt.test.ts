@@ -304,3 +304,14 @@ describe("renderSynthesisPrompt", () => {
     expect(prompt).not.toContain("Memory dimension");
   });
 });
+
+
+it("replaces the default judgment with the team's prompt while keeping the input and output contract", async () => {
+  const bundle = buildValidatedRunBundle(bundleInput());
+  const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, undefined, "Focus on customer evidence.");
+  expect(prompt).toContain("Focus on customer evidence.");
+  expect(prompt).not.toContain("**SIGNAL -- capture:**");
+  expect(prompt).toContain("context.write");
+  expect(prompt).toContain("baseSha");
+  expect(jsonSchema.required).toEqual(["outcome", "summary", "needs_input"]);
+});

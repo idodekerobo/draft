@@ -2,15 +2,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { runCaller } from "draft-core/tools";
 import { loadVersionDocuments } from "../metaharness/context/context-store";
-import { acquireCodexLease, releaseCodexLease, resolveCodexCredential } from "../credentials/codex-credential";
-import { launchSandboxRun, type SandboxDeploymentConfig } from "../metaharness/sandbox";
+import { launchWithCredentials } from "../metaharness/sandbox/launch-with-credentials";
+export { RoutineLeaseBusyError } from "../metaharness/sandbox/launch-with-credentials";
+import { type SandboxDeploymentConfig } from "../metaharness/sandbox";
 import { needsDraftToolServer } from "../metaharness/sandbox/run-manifest";
-import { resolveInferenceCredential } from "../synthesis/resolve-credential";
 import { buildRoutineBundle, renderRoutinePrompt } from "./build-bundle";
 import { ROUTINE_RUN_TIMEOUT_SECONDS, type AgentRoutineConfig } from "./config";
 import type { RoutineEventPayload } from "./event";
 import { mintRoutineSessionUpload } from "./session-upload";
-import { recordError } from "../errors/record-error";
 
 export interface LaunchRoutineRunInput {
   sessionId: string;
@@ -33,14 +32,6 @@ export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<{ machi
 /** The fields the prompt reads. The event's name and provider id stay out of it. */
 function toPromptEvent({ description, providerLabel, sourceItemId, facts, title, text, truncated }: RoutineEventPayload) {
   return { description, providerLabel, sourceItemId, facts, title, text, truncated };
-}
-
-/** Another run holds the workspace's Codex login, and two runs at once would break its refresh token. */
-export class RoutineLeaseBusyError extends Error {
-  constructor() {
-    super("The workspace's Codex login is in use by another run");
-    this.name = "RoutineLeaseBusyError";
-  }
 }
 
 export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agentRun, workspaceId, routine, setup, manual, config, client, events }) => {
@@ -73,20 +64,6 @@ export const launchRoutineRun: LaunchRoutineRun = async ({ sessionId, run: agent
     sessionUpload: (await mintRoutineSessionUpload(client, workspaceId, sessionId)) ?? undefined,
   };
 
-  if (routine.harness !== "codex") {
-    const receipt = await launchSandboxRun({ ...launch, credentials: { claudeCodeOAuthToken: await resolveInferenceCredential(workspaceId, client) } });
-    return { machineId: receipt.machineId };
-  }
-
-  const { credentialId, authJson } = await resolveCodexCredential(client, workspaceId);
-  if (!(await acquireCodexLease(client, credentialId, workspaceId, sessionId))) throw new RoutineLeaseBusyError();
-  try {
-    const receipt = await launchSandboxRun({ ...launch, credentials: { codexAuthJson: authJson } });
-    return { machineId: receipt.machineId };
-  } catch (launchError) {
-    await releaseCodexLease(client, credentialId, sessionId).catch((releaseError) =>
-      recordError({ client, workspaceId, sessionId, operation: "scheduling", code: "codex_lease_release_failed", message: "Releasing the Codex login after a failed launch failed", error: releaseError }),
-    );
-    throw launchError;
-  }
+  const receipt = await launchWithCredentials(launch, client, sessionId);
+  return { machineId: receipt.machineId };
 };

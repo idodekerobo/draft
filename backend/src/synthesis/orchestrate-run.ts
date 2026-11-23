@@ -1,9 +1,8 @@
+import { launchWithCredentials, completeRunCredentials } from "../metaharness/sandbox/launch-with-credentials";
+import { loadBuiltInConfig } from "../routines/built-in-config";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { checkRunAllowed, RunNotAllowedError } from "./check-run-allowed";
-import {
-  authenticateSandboxCallbackRequest,
-  launchSandboxRun,
-} from "../metaharness/sandbox";
+import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
 import { loadValidatedRunBundle, PILOT_RUN_BUNDLE_LIMITS } from "./load-run-bundle";
 import { finalizeSynthesisResult, InvalidSynthesisResultError } from "./finalize-result";
 import { failSynthesisRun } from "./handle-run-failure";
@@ -17,7 +16,6 @@ import { renderSynthesisPrompt } from "./render-prompt";
 import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
 import { syncMembers } from "../people/sync-members";
 import { buildSynthesisRunSpec } from "./run-spec";
-import { resolveInferenceCredential } from "./resolve-credential";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
 import { saveAgentRunSpec } from "../metaharness/runs/agent-run-store";
 import { recordError } from "../errors/record-error";
@@ -65,7 +63,8 @@ export async function launchSynthesisRun(
 ): Promise<LaunchSynthesisRunResult> {
   const client = options.client ?? (await import("../db/client")).serviceClient;
 
-  const admission = await checkRunAllowed(options.workspaceId, client);
+  const settings = await loadBuiltInConfig(client, options.workspaceId, "synthesize_workspace");
+  const admission = await checkRunAllowed(options.workspaceId, client, settings.harness);
   if (!admission.ok) {
     await recordError({
       client,
@@ -82,7 +81,7 @@ export async function launchSynthesisRun(
   let stage = "preparation";
   let runId: string | undefined;
   try {
-    runId = await prepareRun(options);
+    runId = await prepareRun({ ...options, settings });
 
     // Make sure every member is a person, so the roster the run reads can name them.
     await syncMembers(client, options.workspaceId).catch((error) =>
@@ -96,13 +95,8 @@ export async function launchSynthesisRun(
       limits: PILOT_RUN_BUNDLE_LIMITS,
     });
 
-    stage = "credential";
-    const claudeCodeOAuthToken = await resolveInferenceCredential(
-      options.workspaceId,
-      options.client,
-    );
     stage = "prompt";
-    const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, options.dimensions);
+    const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, options.dimensions, settings.prompt);
 
     stage = "sandbox";
     const spec = buildSynthesisRunSpec({
@@ -115,15 +109,15 @@ export async function launchSynthesisRun(
       contextVersionId: bundle.baseContextVersionId,
       resultSchema: jsonSchema,
       permissions: SYNTHESIS_PERMISSIONS,
+      settings,
     });
     await saveAgentRunSpec(client, spec);
-    const receipt = await launchSandboxRun({
+    const receipt = await launchWithCredentials({
       spec,
       bundle,
       prompt: { kind: "text", text: prompt },
-      credentials: { claudeCodeOAuthToken },
       config: options.config,
-    });
+    }, client);
 
     stage = "mark_launched";
     await markRunLaunched(runId, receipt, options.client);
@@ -170,6 +164,7 @@ export async function completeSynthesisRunCallback(
 
     const authenticated = await authenticateSandboxCallbackRequest(request, callbackSecret);
     runId = authenticated.runId;
+    await completeRunCredentials(resolvedClient, runId, authenticated.authJson);
 
     // Best-effort and unconditional: saved before validation/commit so it
     // lands even when validateSynthesisResult throws immediately (a

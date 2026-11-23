@@ -1,3 +1,4 @@
+import type { BuiltInRoutineConfig } from "../routines/built-in-config";
 import { AGENT_RUN_SYSTEM_REASONS, cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
 import { type AnyDraftToolPermission } from "draft-core/tools";
 import { cloudToolsetFor } from "draft-core/harnesses";
@@ -13,6 +14,7 @@ export interface SynthesisRunSpecInput {
   /** The version the run's files come from. */
   contextVersionId: string;
   resultSchema: JsonSchema;
+  settings?: BuiltInRoutineConfig;
   permissions?: ReadonlyArray<AnyDraftToolPermission>;
 }
 
@@ -47,11 +49,11 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: synthesisTrigger(input),
     onBehalfOf: null,
-    runtime: { type: "cloud", toolset: cloudToolsetFor("claude") },
-    harness: "claude",
-    model: null,
-    reasoningEffort: null,
-    instructions: "",
+    runtime: { type: "cloud", toolset: cloudToolsetFor(input.settings?.harness ?? "claude") },
+    harness: input.settings?.harness ?? "claude",
+    model: input.settings?.model ?? null,
+    reasoningEffort: input.settings?.reasoningEffort ?? null,
+    instructions: input.settings?.prompt ?? "",
     inputs: { contextVersionId: parseContextVersionId(input.contextVersionId) },
     permissions: input.permissions ?? [],
     output: { type: "structured", schema: input.resultSchema },

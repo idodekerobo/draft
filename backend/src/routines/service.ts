@@ -1,3 +1,4 @@
+import { isConfigurableBuiltIn, parseBuiltInConfig, type BuiltInRoutineConfig } from "./built-in-config";
 import { captureProductEvent, type RoutineAttribution } from "../observability/product-analytics";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -107,6 +108,7 @@ export interface Routine {
   // Synthesis only; other routines record checks, not runs.
   lastRun: RoutineLastRun | null;
   updatedByName: string | null;
+  builtIn?: BuiltInRoutineConfig;
   // Agent routines only.
   agent: AgentRoutineInfo | null;
 }
@@ -191,6 +193,7 @@ function toRoutine(
       : null,
     updatedByName,
     agent,
+    ...(isConfigurableBuiltIn(task.task_type) ? { builtIn: parseBuiltInConfig(task.task_type, task.config_json) } : {}),
   };
 }
 
@@ -502,6 +505,7 @@ export async function updateRoutine(
   const changes: Partial<ScheduledTaskRow> = {};
   if (patch.enabled !== undefined) changes.enabled = patch.enabled;
   if (patch.agent) changes.config_json = { ...patch.agent };
+  if (patch.builtIn) changes.config_json = { ...task.config_json, ...patch.builtIn, reasoningEffort: patch.builtIn.reasoningEffort ?? null };
 
   const resolved = patch.when ? resolveWhenOrThrow(patch.when, now) : null;
   if (resolved?.kind === "once") {

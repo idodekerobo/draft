@@ -1,23 +1,18 @@
+import { DEFAULT_SUMMARIZATION_PROMPT } from "../routines/built-in-defaults";
 const OUTPUT_PATH = "output/result.json";
 
-export function buildSummarizationPrompt(transcript: string): string {
+export function buildSummarizationPrompt(transcript: string, instructions = DEFAULT_SUMMARIZATION_PROMPT): string {
   return `# Draft Session Summarization Task
 
 You are summarizing one coding agent session transcript for Draft, a shared
-team context layer. The transcript is inlined below -- you have no filesystem
-access and do not need any.
+team context layer. The transcript is inlined below; use it as the source for this summary.
 
 ## Transcript
 ${transcript}
 
-## Judgment
-- Identify who was working (from the transcript content, not metadata) and on what project.
-- Describe the outcome plainly: what shipped, what was left unresolved, what broke.
-- List only decisions with real consequence -- architecture choices, scope cuts, direction changes. Skip routine implementation steps.
-- Do not invent information not present in the transcript.
-
+${instructions}
 ## Output contract
-Write exactly one JSON document to ${OUTPUT_PATH}. No other output, no commentary.
+Return exactly one JSON document as your final response. Draft saves it to ${OUTPUT_PATH}. No commentary.
 
 {
   "who": "who was working in this session, as best identified from the transcript",
@@ -28,7 +23,7 @@ Write exactly one JSON document to ${OUTPUT_PATH}. No other output, no commentar
 
 Rules:
 - "keyDecisions" may be empty if the session made no consequential decisions.
-- Write nothing else to disk.
+- Do not write files; return the JSON directly.
 `;
 }
 
