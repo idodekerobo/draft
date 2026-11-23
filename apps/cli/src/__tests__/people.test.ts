@@ -157,7 +157,7 @@ describe("draft people notify", () => {
     let seen: Record<string, unknown> = {};
     backend.state.toolOutputs["people.find"] = () => ({ people: [uzo] });
     backend.state.toolOutputs["people.notify"] = (input) => { seen = input; return { results: [{ channel: "slack", status: "sent" }] }; };
-    const result = await run(["notify", "uzo", "Your", "items", "are", "ready", "--link", "https://app.example/x"]);
+    const result = await run(["notify", "uzo", "--text", "Your items are ready", "--link", "https://app.example/x"]);
     expect(result.exitCode).toBe(0);
     expect(seen).toEqual({ personId: ID, text: "Your items are ready", link: "https://app.example/x" });
     expect(result.stdout).toBe("slack: sent");
@@ -165,7 +165,7 @@ describe("draft people notify", () => {
 
   test("exits 1 when nothing was sent", async () => {
     backend.state.toolOutputs["people.notify"] = () => ({ results: [{ channel: "slack", status: "failed", code: "not_reachable" }] });
-    const result = await run(["notify", ID, "hello"]);
+    const result = await run(["notify", ID, "--text", "hello"]);
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain("not sent (not_reachable)");
   });
@@ -179,7 +179,7 @@ describe("draft people notify", () => {
     const file = join(home, "notification.html");
     writeFileSync(file, "<p>Here are your follow-ups</p>");
     backend.state.toolOutputs["people.notify"] = (input) => { seen = input; return { notificationId: NOTIFICATION, results: [{ channel: "email", status: "sent" }] }; };
-    const result = await run(["notify", ID, "--channel", "email", "--subject", "Your meeting follow-ups", "--html-file", file, "--idempotency-key", "meeting-123-followups"]);
+    const result = await run(["notify", ID, "--channels", "email", "--subject", "Your meeting follow-ups", "--html-file", file, "--idempotencyKey", "meeting-123-followups"]);
     expect(result.exitCode).toBe(0);
     expect(seen).toEqual({ personId: ID, html: "<p>Here are your follow-ups</p>", subject: "Your meeting follow-ups", idempotencyKey: "meeting-123-followups", channels: ["email"] });
     expect(result.stdout).toContain("email: sent");
@@ -189,9 +189,40 @@ describe("draft people notify", () => {
   test("takes several channels, and keeps the notification id in JSON output", async () => {
     let seen: Record<string, unknown> = {};
     backend.state.toolOutputs["people.notify"] = (input) => { seen = input; return { notificationId: NOTIFICATION, results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] }; };
-    const result = await run(["notify", ID, "hello", "--channel", "slack,email", "--json"]);
+    const result = await run(["notify", ID, "--text", "hello", "--channels", "slack,email", "--json"]);
     expect(seen).toMatchObject({ channels: ["slack", "email"] });
     expect(JSON.parse(result.stdout)).toMatchObject({ notificationId: NOTIFICATION, results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] });
+  });
+
+  test("uses MCP field names for flag-only HTML sends", async () => {
+    let seen: Record<string, unknown> = {};
+    backend.state.toolOutputs["people.notify"] = (input) => { seen = input; return { notificationId: NOTIFICATION, results: [{ channel: "email", status: "sent" }] }; };
+    const result = await run(["notify", "--personId", ID, "--html", "<p>Hello</p>", "--channels", "email", "--idempotencyKey", "event-1", "--json"]);
+    expect(result.exitCode).toBe(0);
+    expect(seen).toEqual({ personId: ID, html: "<p>Hello</p>", channels: ["email"], idempotencyKey: "event-1" });
+  });
+
+  test("rejects legacy positional messages, aliases, and conflicting recipient/body flags", async () => {
+    for (const args of [
+      ["notify", ID, "hello"],
+      ["notify", ID, "--text", "hello", "--channel", "email"],
+      ["notify", ID, "--text", "hello", "--idempotency-key", "k"],
+      ["notify", ID, "--personId", ID, "--text", "hello"],
+      ["notify", ID, "--html", "<p>Hello</p>", "--html-file", "unused.html"],
+      ["notify", ID, "--text", "--channels", "email"],
+      ["notify", ID, "--text", "hello", "--channels", "unknown"],
+    ]) expect((await run(args)).exitCode).toBe(2);
+  });
+
+  test("queued and failed sends retain their notification id and use exit 1 in both output modes", async () => {
+    backend.state.toolOutputs["people.notify"] = () => ({ notificationId: NOTIFICATION, results: [{ channel: "email", status: "queued" }] });
+    const text = await run(["notify", ID, "--text", "hello"]);
+    expect(text.exitCode).toBe(1);
+    expect(text.stdout).toContain("email: queued");
+    expect(text.stdout).toContain(NOTIFICATION);
+    const json = await run(["notify", ID, "--text", "hello", "--json"]);
+    expect(json.exitCode).toBe(1);
+    expect(JSON.parse(json.stdout)).toMatchObject({ notificationId: NOTIFICATION, results: [{ status: "queued" }] });
   });
 
   test("fails clearly when the HTML file cannot be read", async () => {
@@ -203,7 +234,7 @@ describe("draft people notify", () => {
   test("--help names text and HTML modes, the subject prefix, idempotency and the status command", async () => {
     const result = await run(["notify", "--help"]);
     expect(result.exitCode).toBe(0);
-    for (const phrase of ["--html-file", "Draft: ", "Draft: New message", "--idempotency-key", "notification-status", "plain text is made from the HTML"]) expect(result.stdout).toContain(phrase);
+    for (const phrase of ["--html-file", "Draft: ", "Draft: New message", "--idempotencyKey", "notification-status", "plain text is made from the HTML"]) expect(result.stdout).toContain(phrase);
   });
 });
 
@@ -223,6 +254,12 @@ describe("draft people notification-status", () => {
     expect(result.exitCode).toBe(0);
     expect(seen).toEqual({ notificationId: NOTIFICATION });
     expect(result.stdout).toBe("email: delivered\nslack: failed (not_reachable)");
+  });
+
+  test("takes notificationId as a flag and refuses extra identifiers", async () => {
+    backend.state.toolOutputs["people.notification_status"] = (input) => ({ ...input, refreshed: true, deliveries: [] });
+    expect((await run(["notification-status", "--notificationId", NOTIFICATION, "--json"])).exitCode).toBe(0);
+    expect((await run(["notification-status", NOTIFICATION, "--notificationId", NOTIFICATION])).exitCode).toBe(2);
   });
 
   test("says when the latest status could not be fetched", async () => {

@@ -38,6 +38,8 @@ _draft_completion() {
 
   if [[ "\$cur" == -* ]]; then
     case "\${COMP_WORDS[1]}:\${COMP_WORDS[2]}" in
+      people:notify) flags="--personId --text --html --html-file --channels --subject --link --idempotencyKey --json --help" ;;
+      people:notification-status) flags="--notificationId --json --help" ;;
       auth:login) flags="--force --json" ;;
       connections:connect) flags="--provider --json --wait --no-open --workspace-key --credential-stdin --credential-fd" ;;
       connections:list) flags="--provider --available --query --limit --cursor --json" ;;
@@ -178,6 +180,13 @@ _draft() {
           _describe 'subcommand' subcmds
           ;;
         people)
+          if [[ "\${words[3]}" == "notify" ]]; then
+            _arguments '--personId[Recipient person id]:id:' '--text[Plain text message]:text:' '--html[HTML body]:html:' '--html-file[Read HTML from a file]:file:_files' '--channels[Delivery channels]:channels:(slack email slack,email)' '--subject[Email topic]:subject:' '--link[Link]:url:' '--idempotencyKey[Stable message key]:key:' '--json[Print as JSON]' '--help[Show help]'
+            return
+          elif [[ "\${words[3]}" == "notification-status" ]]; then
+            _arguments '--notificationId[Draft notification id]:id:' '--json[Print as JSON]' '--help[Show help]'
+            return
+          fi
           local subcmds=('find:Find people' 'create:Add a teammate' 'update:Record another way to recognise a person' 'pending:List people waiting for approval' 'approve:Approve a pending person' 'reject:Reject a pending person' 'notify:Send a message to a person' 'notification-status:Check whether a message was delivered')
           _describe 'subcommand' subcmds
           ;;

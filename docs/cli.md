@@ -187,7 +187,7 @@ Instructions must be a self-contained brief: what to do, why, and what done mean
 | `--preset <preset>` | `draft_default`, `hourly`, `daily`, `weekdays` or `weekly`. |
 | `--time HH:MM`, `--weekday <day>`, `--timezone <zone>` | Time on a 24-hour clock, weekday (`sun`…`sat`) and IANA timezone. Daily, weekdays and weekly use a time; weekly uses a weekday. |
 | `--on <trigger>` | Run on this event. Repeat the flag or pass a comma list. |
-| `--notify` / `--no-notify` | Allow or forbid the agent to message teammates on Slack. |
+| `--notify` / `--no-notify` | Allow or forbid the agent to message teammates on Slack or by email. |
 | `--post-channels joined` or `--post-channels '#general,#eng'` | Where the agent can post on Slack. `--no-post` removes that access on update. |
 | `--github owner/repo[,owner/repo]` | GitHub repos the agent can use. `--github-access read` is the default; `write` lets it open pull requests. `--no-github` removes access on update. |
 | `--schedule` / `--no-schedule` | On update, turn the repeating schedule on or off. Event triggers remain active when the schedule is off. |
@@ -213,20 +213,26 @@ One-time rows show their scheduled time or when they fired. Routines an agent ma
 | `draft people update <id or name> --provider <p> ...` | Record, correct or remove a way to recognise a person (below) |
 | `draft people pending` | Who is waiting for approval |
 | `draft people approve <id or name>` / `reject <id or name> [--reason <why>]` | Admins only |
-| `draft people notify <id or name> [<message>] [--channel slack\|email\|slack,email] [--subject <topic>] [--html-file <path>] [--link <url>] [--idempotency-key <key>]` | Message one active teammate on their verified channels |
+| `draft people notify <id or name> [--text <message>] [--channels slack\|email\|slack,email] [--subject <topic>] [--html-file <path>] [--link <url>] [--idempotencyKey <key>]` | Message one active teammate on their verified channels |
 | `draft people notification-status <notification id>` | Check delivery without sending again |
 
 Creating a new pending person automatically attempts to notify workspace admins. This is a product-generated approval notice; the caller does not compose it or call `people.notify` separately. Adding or correcting an identity with `people update` does not send a message or verify that identity. A recorded guess cannot be used for delivery until it is trusted.
 
-`draft people notify --help` describes all sending options. Supply plain text, an HTML file, or both. HTML-only messages get a plain text fallback. Email subjects receive the `Draft:` prefix once; the default is `Draft: New message`. Draft resolves the verified address and adds sender attribution. Omit `--channel` to use the person's configured channels.
+`draft people notify --help` describes all sending options. Supply `--text`, `--html`, or `--html-file` (a local file convenience that supplies the tool’s `html` field). Use at most one positional recipient, or `--personId <id>`; do not provide both. The former positional message, `--channel`, and `--idempotency-key` syntax is no longer accepted. HTML-only messages get a plain text fallback. Email subjects receive the `Draft:` prefix once; the default is `Draft: New message`, and the stored subject matches the email subject. Draft resolves the verified address and adds sender attribution. Omit `--channels` to use the person's configured channels.
 
 ```bash
-draft people notify "Ada Lovelace" "Your research is ready" --channel email
-draft people notify <person-id> --channel email --subject "Your meeting follow-ups" --html-file ./notification.html --idempotency-key meeting-123-followups --json
+draft people notify "Ada Lovelace" --text "Your research is ready" --channels email
+draft people notify <person-id> --channels email --subject "Your meeting follow-ups" --html-file ./notification.html --idempotencyKey meeting-123-followups --json
 draft people notification-status <notification-id> --json
 ```
 
 Reusing a key with the same content returns saved channel results and sends only channels without a delivery record. Reusing it with different content or a different recipient is refused. Repeating a call does not retry recorded failures. For email, `sent` means provider acceptance; `delivered` means acceptance by the recipient's mail server, not reading or inbox placement. `notification-status --help` explains the states and the `refreshed` flag, which is false when only saved status is available.
+
+A send returns the saved channel states: `queued`, `sent`, `delayed`, `delivered`, `bounced`, `complained`, or `failed`. `recording_error` means that channel could not be claimed in storage, so it was not sent by this call; other channels may have succeeded. `queued` means a send is in progress or acceptance is uncertain. Check status using the same notification ID; do not use a new key to force a resend. An uncertain send without a provider ID cannot be reconciled automatically yet. Inspect provider records before deciding whether to send a new notification.
+
+Resend requests use bounded retries with the same delivery key. Repeating the notification call never retries an existing delivery, including a recorded failure or a queued delivery. A crash after claiming a delivery can therefore leave it queued. This favors preventing duplicate messages over automatic recovery; delivery webhooks and automated reconciliation are not included yet.
+
+`notification-status` accepts one positional notification ID or `--notificationId <id>`. Notify exits successfully when any channel is accepted (`sent`, `delayed`, or `delivered`); otherwise it exits 1. `--json` preserves that exit behavior and includes all channel outcomes.
 
 ### `draft people update`
 
