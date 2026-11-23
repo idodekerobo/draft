@@ -136,7 +136,8 @@ When the sources name a teammate Draft may not know, for example someone new in 
 - Add teammates only. Do not add clients, guests, vendors, candidates, or people who are only mentioned.
 - Call \`people.find\` first. Never add someone Draft already knows or whose name is close to a known person.
 - Give the exact quote that shows who they are as \`evidence\`. Use an email address as an identity only when the source states it.
-- A person you add waits for an admin to approve. You cannot approve or message anyone.
+- You may approve or reject people using the people tools when the source evidence supports that decision. Use people.update to keep their identities accurate.
+- You may message active teammates with people.notify when the task instructions call for it.
 ${peopleRosterLine}
 ## Action items
 When you write an action item into context:

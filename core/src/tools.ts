@@ -111,12 +111,15 @@ export const ROUTINE_READ_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   { tool: "sources.search" }, { tool: "sources.list" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
 ];
 
-/** What a synthesis run may do: read and write context, and note new teammates. It can never message anyone. */
+/** Synthesis maintains the shared context and people for the workspace. */
 export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   ...CONTEXT_READ_WRITE_PERMISSIONS,
   { tool: "people.find" },
-  { tool: "people.create", limits: { maxPerRun: 5 } },
-  { tool: "people.update", limits: { maxPerRun: 10 } },
+  { tool: "people.create" },
+  { tool: "people.update" },
+  { tool: "people.notify", limits: { recipients: "members" } },
+  { tool: "people.approve" },
+  { tool: "people.reject" },
 ];
 
 /** Where a call came in. `app` is an older app with an unknown surface; only CLI/MCP count as external agent queries. */

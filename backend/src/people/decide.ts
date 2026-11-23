@@ -12,12 +12,12 @@ export async function isAdmin(client: SupabaseClient, userId: string): Promise<b
 
 export type DecideResult = { ok: true; person: PersonView } | { ok: false; code: "person_not_found" | "already_decided" };
 
-/** A decision is only ever made by a person, so the caller passes a user id and a run cannot reach this. */
+/** Keep a human decision on the user column and a synthesis decision in its evidence and tool audit. */
 export async function decidePerson(
   client: SupabaseClient,
   workspaceId: string,
-  userId: string,
-  decision: { personId: string; to: "active" | "rejected"; reason?: string },
+  userId: string | null,
+  decision: { personId: string; to: "active" | "rejected"; reason?: string; runId?: string },
 ): Promise<DecideResult> {
   const { data, error } = await client.from("people").select("*").eq("id", decision.personId).eq("workspace_id", workspaceId).maybeSingle();
   if (error) throw error;
@@ -28,13 +28,14 @@ export async function decidePerson(
   const allowedFrom = decision.to === "active" ? ["pending", "rejected"] : ["pending"];
   if (!allowedFrom.includes(row.status)) return { ok: false, code: "already_decided" };
 
+  const { decidedByRunId: _previousRun, ...evidence } = row.evidence;
   const { error: updateError } = await client
     .from("people")
     .update({
       status: decision.to,
       decided_by_user_id: userId,
       decided_at: new Date().toISOString(),
-      ...(decision.reason ? { evidence: { ...row.evidence, rejectionReason: decision.reason } } : {}),
+      evidence: { ...evidence, ...(decision.reason ? { rejectionReason: decision.reason } : {}), ...(decision.runId ? { decidedByRunId: decision.runId } : {}) },
     })
     .eq("id", row.id)
     .eq("workspace_id", workspaceId);

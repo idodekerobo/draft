@@ -448,7 +448,7 @@ export interface PeopleRow {
   created_by_user_id: string | null;
   /** The user whose permissions the agent used. Null unless an agent added the person. */
   on_behalf_of_user_id: string | null;
-  evidence: { sourceItemId?: string; quote?: string };
+  evidence: { sourceItemId?: string; quote?: string; rejectionReason?: string; decidedByRunId?: string };
   decided_by_user_id: string | null;
   decided_at: string | null;
   created_at: string;

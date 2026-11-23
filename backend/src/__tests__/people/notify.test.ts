@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ChannelSendResult, NotifyChannelId, NotifyMessage } from "draft-core/notify";
 import { parseAgentRunId, parseContextVersionId, parsePersonId, parseUserId, parseWorkspaceId, parseScheduledTaskId, parseIsoTimestamp, type AgentRunSpec } from "draft-core/run-spec";
-import { personCaller, runCaller, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
+import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
@@ -294,4 +294,14 @@ describe("telling admins about a pending person", () => {
     await call(asRun([{ tool: "people.find" }, { tool: "people.create" }]), "people.create", { displayName: "Uzo", evidence });
     expect(sent).toHaveLength(0);
   });
+});
+
+
+it("lets synthesis notify active teammates without a human owner or the routine fallback cap", async () => {
+  const { call, db, sent } = setup();
+  for (let i = 0; i < 100; i++) db.tables.agent_run_tool_calls!.push({ agent_run_id: RUN, tool_name: "people.notify", status: "ok" });
+  const caller = runCaller({ ...runSpec(SYNTHESIS_PERMISSIONS, null), kind: "synthesis" });
+  expect(await call(caller, "people.notify", { personId: IZA, text: "Synthetic test message." })).toMatchObject({ status: "ok" });
+  expect(sent).toHaveLength(1);
+  expect(sent[0]!.message.text).toContain("synthesis run");
 });

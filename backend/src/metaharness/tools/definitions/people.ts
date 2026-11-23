@@ -42,20 +42,21 @@ const identitySchema = z.object({
 });
 
 /** The most times a run may use a tool, from the permission that was fixed when the run started. */
-function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update" | "people.notify", fallback: number): number {
+function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update" | "people.notify", fallback: number): number | undefined {
   const limits = findToolPermission(run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
-  return limits?.maxPerRun ?? fallback;
+  return limits?.maxPerRun ?? (run.kind === "synthesis" ? undefined : fallback);
 }
 
 async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
   if (caller.origin.kind !== "run") return null;
   const { run } = caller.origin;
   const max = runLimit(run, tool, fallback);
+  if (max === undefined) return null;
   if ((await countRunToolCalls(client, run.id, tool)) < max) return null;
   return refuse("limit_reached", `This run has used ${tool} ${max} times, which is its limit. Stop and report what is left.`);
 }
 
-/** The people tools. A person needs an account to approve or reject; a run can find, add and add identities within limits. */
+/** Synthesis can maintain the roster; other runs keep their permission and per-run limits. */
 export function createPeopleTools(client: SupabaseClient, deps: { channels?: Record<NotifyChannelId, NotifyChannel> } = {}) {
   const channels = deps.channels ?? defaultChannels(client);
   const find = defineTool({
@@ -95,7 +96,7 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
     mcp: true,
     description:
       "Add a teammate Draft does not know yet, for example someone new named in a meeting. Only add teammates, not clients, guests or people who are only mentioned. " +
-      "Call people.find first. Give the exact quote that shows who they are. A person you add waits for an admin to approve; you cannot message them or approve them. " +
+      "Call people.find first. Give the exact quote that shows who they are. A person you add starts pending. A workspace admin or a synthesis run with people.approve can approve them. " +
       "If Draft already knows the person, or a similar name, you get that back instead and nothing is created.",
     input: z.object({
       displayName: z.string().min(1).max(120),
@@ -216,8 +217,8 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
   const approve = defineTool({
     name: "people.approve",
     mcp: true,
-    description: "Approve a pending person so they become an active teammate who can be messaged. Admins only. Only a person can do this, never an agent run.",
-    allowedOrigins: ["person"],
+    description: "Approve a pending or rejected person so they become an active teammate who can be messaged. Available to workspace admins and synthesis runs with this permission.",
+    allowedOrigins: ["person", "synthesis"],
     input: z.object({ personId: z.string().uuid() }),
     handler: async ({ input, caller }) => decide(caller, input.personId, "active"),
   });
@@ -225,16 +226,21 @@ export function createPeopleTools(client: SupabaseClient, deps: { channels?: Rec
   const reject = defineTool({
     name: "people.reject",
     mcp: true,
-    description: "Turn away a pending person. Draft remembers the name, so synthesis does not add them again. Admins only. Only a person can do this, never an agent run.",
-    allowedOrigins: ["person"],
+    description: "Turn away a pending person. Draft remembers the name so it is not added again. Available to workspace admins and synthesis runs with this permission.",
+    allowedOrigins: ["person", "synthesis"],
     input: z.object({ personId: z.string().uuid(), reason: z.string().max(500).optional() }),
     handler: async ({ input, caller }) => decide(caller, input.personId, "rejected", input.reason),
   });
 
   async function decide(caller: ToolCaller, personId: string, to: "active" | "rejected", reason?: string): Promise<ToolHandlerResult> {
-    const user = requireUser(caller, to === "active" ? "people.approve" : "people.reject");
-    if (!(await isAdmin(client, user.userId))) return refuse("not_admin", "Only an admin can approve or reject people.");
-    const result = await decidePerson(client, user.workspaceId, user.userId, { personId, to, reason });
+    const synthesis = caller.origin.kind === "run" && caller.origin.run.kind === "synthesis" ? caller.origin.run : null;
+    let userId: string | null = null;
+    if (!synthesis) {
+      const user = requireUser(caller, to === "active" ? "people.approve" : "people.reject");
+      if (!(await isAdmin(client, user.userId))) return refuse("not_admin", "Only an admin can approve or reject people.");
+      userId = user.userId;
+    }
+    const result = await decidePerson(client, callerWorkspaceId(caller), userId, { personId, to, reason, runId: synthesis?.id });
     if (!result.ok) {
       return refuse(result.code, result.code === "already_decided" ? "This person is not waiting for a decision." : "No person with that id in this workspace.");
     }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
-import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
+import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, DRAFT_TOOLS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
@@ -298,7 +298,7 @@ describe("people.approve and people.reject", () => {
     expect(cory).toMatchObject({ status: "rejected", evidence: { quote: evidence.quote, rejectionReason: "a client" } });
   });
 
-  it("never lets a run approve or reject, even one that holds the permission", async () => {
+  it("keeps routine runs from approving or rejecting, even with the permission", async () => {
     const { call, db } = setup();
     await call(asRun(), "people.create", { displayName: "Cory Banks", evidence });
     const cory = db.tables.people!.find((p) => p.display_name === "Cory Banks")!;
@@ -324,11 +324,36 @@ describe("people.approve and people.reject", () => {
 });
 
 describe("synthesis permissions", () => {
-  it("can find, create and add identities, and cannot notify, approve or reject", () => {
+  const synthesis = (permissions: ReadonlyArray<AnyDraftToolPermission> = SYNTHESIS_PERMISSIONS) => runCaller({ ...runSpec(permissions, null), kind: "synthesis" });
+
+  it("grants every registered people tool and context read/write without default call caps", () => {
     const tools = SYNTHESIS_PERMISSIONS.map((permission) => permission.tool);
-    expect(tools).toEqual(expect.arrayContaining(["context.read", "context.write", "people.find", "people.create", "people.update"]));
-    expect(tools).not.toContain("people.notify");
-    expect(tools).not.toContain("people.approve");
-    expect(tools).not.toContain("people.reject");
+    expect(tools).toEqual(expect.arrayContaining(["context.read", "context.write", ...DRAFT_TOOLS.filter((tool) => tool.name.startsWith("people.")).map((tool) => tool.name)]));
+    for (const permission of SYNTHESIS_PERMISSIONS) expect((permission.limits as { maxPerRun?: number } | undefined)?.maxPerRun).toBeUndefined();
+  });
+
+  it("lets synthesis approve and reject within its workspace, attributing the decision to its run", async () => {
+    const { call, db } = setup();
+    await call(synthesis(), "people.create", { displayName: "Cory Banks", evidence });
+    const cory = db.tables.people!.find((p) => p.display_name === "Cory Banks")!;
+    expect(await call(synthesis(), "people.reject", { personId: cory.id, reason: "Incorrect teammate" })).toMatchObject({ status: "ok" });
+    expect(cory).toMatchObject({ status: "rejected", decided_by_user_id: null, evidence: { decidedByRunId: RUN, rejectionReason: "Incorrect teammate" } });
+    expect(await call(synthesis(), "people.approve", { personId: cory.id })).toMatchObject({ status: "ok" });
+    expect(cory.status).toBe("active");
+    expect(cory.evidence).toMatchObject({ decidedByRunId: RUN });
+    db.tables.people!.push({ id: "88888888-8888-4888-8888-888888888888", workspace_id: OTHER_WS, display_name: "Other workspace", status: "pending" });
+    expect(await call(synthesis(), "people.approve", { personId: "88888888-8888-4888-8888-888888888888" })).toMatchObject({ status: "refused", code: "person_not_found" });
+    expect(await call(synthesis([{ tool: "people.find" }]), "people.approve", { personId: cory.id })).toMatchObject({ status: "denied", code: "not_permitted" });
+  });
+
+  it("does not apply the routine fallback caps to synthesis, but honors an explicit cap", async () => {
+    const { call, db } = setup();
+    for (const tool of ["people.create", "people.update"]) {
+      for (let i = 0; i < 100; i++) db.tables.agent_run_tool_calls!.push({ agent_run_id: RUN, tool_name: tool, status: "ok" });
+    }
+    expect(await call(synthesis(), "people.create", { displayName: "Cory Banks", evidence })).toMatchObject({ status: "ok" });
+    const cory = db.tables.people!.find((p) => p.display_name === "Cory Banks")!;
+    expect(await call(synthesis(), "people.update", { personId: cory.id, provider: "slack", externalId: "U_NEW", evidence })).toMatchObject({ status: "ok" });
+    expect(await call(synthesis([{ tool: "people.create", limits: { maxPerRun: 1 } }]), "people.create", { displayName: "Other Person", evidence })).toMatchObject({ status: "refused", code: "limit_reached" });
   });
 });

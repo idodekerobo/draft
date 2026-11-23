@@ -16,7 +16,7 @@ create table people (
   created_by_run_id  uuid,
   created_by_user_id uuid references users(id) on delete set null,
   on_behalf_of_user_id uuid references users(id) on delete set null,
-  -- { sourceItemId, quote }: why the person was added.
+  -- { sourceItemId, quote }: why the person was added; decidedByRunId attributes a synthesis decision.
   evidence           jsonb not null default '{}',
   decided_by_user_id uuid references users(id) on delete set null,
   decided_at         timestamptz,
