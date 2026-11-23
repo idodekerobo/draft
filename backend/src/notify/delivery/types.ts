@@ -31,3 +31,10 @@ export interface NotifyChannel {
   canReach(person: ReachablePerson): Promise<boolean>;
   send(person: ReachablePerson, message: NotifyMessage, context?: SendContext): Promise<ChannelOutcome>;
 }
+
+export class DeliveryUncertainError extends Error {
+  constructor(public readonly cause: unknown) {
+    super("delivery_acceptance_unknown");
+    this.name = "DeliveryUncertainError";
+  }
+}

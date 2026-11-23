@@ -32,7 +32,7 @@ describe("buildRoutineRunSpec", () => {
   it("grants reading and writing the shared context, with no path limit", () => {
     expect(ROUTINE_PERMISSIONS).toEqual([
       { tool: "context.read" }, { tool: "context.list" }, { tool: "context.write" },
-      { tool: "sources.search" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
+      { tool: "sources.search" }, { tool: "sources.list" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
     ]);
   });
 

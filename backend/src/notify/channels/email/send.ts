@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NotifyMessage } from "draft-core/notify";
-import { resendSettings } from "../config";
-import type { PersonIdentityRow } from "../types/tables";
+import { resendSettings } from "../../../config";
+import type { PersonIdentityRow } from "../../../types/tables";
 import { EMAIL_SENDERS } from "./constants";
-import { renderEmail } from "./email-render";
-import { sendResendEmail, type ResendDeps } from "./resend";
-import type { ChannelOutcome, NotifyChannel, ReachablePerson, SendContext } from "./types";
+import { renderEmail } from "./render";
+import { sendResendEmail, ResendError, type ResendDeps } from "./resend";
+import { DeliveryUncertainError, type ChannelOutcome, type NotifyChannel, type ReachablePerson, type SendContext } from "../../delivery/types";
 
 export interface EmailChannelDeps extends ResendDeps {
   apiKey?: () => string | undefined;
@@ -46,7 +46,13 @@ export function emailChannel(client: SupabaseClient, deps: EmailChannelDeps = {}
       if (!rendered.ok) throw new Error(`email_content_invalid: ${rendered.code}`);
 
       // Resend remembers a key for 24 hours across the whole account. A delivery id is unique, and a retry reuses it.
-      const { id } = await sendResendEmail(key, { from: EMAIL_SENDERS.notification, to: [to], ...rendered.email }, context?.deliveryId ?? randomUUID(), deps);
+      let id: string;
+      try {
+        ({ id } = await sendResendEmail(key, { from: EMAIL_SENDERS.notification, to: [to], ...rendered.email }, context?.deliveryId ?? randomUUID(), deps));
+      } catch (error) {
+        if (error instanceof ResendError && (error.statusCode === null || error.statusCode >= 500 || error.resendName === "missing_id")) throw new DeliveryUncertainError(error);
+        throw error;
+      }
       return { channel: "email", status: "sent", providerMessageId: id };
     },
   };

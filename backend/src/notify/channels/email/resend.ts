@@ -34,7 +34,7 @@ const retryable = (status: number) => status === 429 || status >= 500;
 
 /**
  * Sends one email and returns Resend's id for it. The same `idempotencyKey` is sent on every attempt, so a retry after
- * a timeout cannot deliver twice. Resend remembers a key for 24 hours.
+ * a timeout reuses the provider request. Exhausted uncertain sends are not automatically retried later.
  */
 export async function sendResendEmail(apiKey: string, email: ResendEmail, idempotencyKey: string, deps: ResendDeps = {}): Promise<{ id: string }> {
   const fetchFn = deps.fetchFn ?? fetch;

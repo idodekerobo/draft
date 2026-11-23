@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { getResendEmail, ResendError, sendResendEmail } from "../../notify/resend";
+import { getResendEmail, ResendError, sendResendEmail } from "../../notify/channels/email/resend";
 
 const email = { from: "Draft <notifications@notify.draftai.us>", to: ["a@example.com"], subject: "Draft: Hi", text: "hi", html: "<p>hi</p>" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });

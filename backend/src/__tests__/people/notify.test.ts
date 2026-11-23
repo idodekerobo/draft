@@ -5,9 +5,13 @@ import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermis
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
-import { markReachable, type NotifyChannel } from "../../notify/types";
-import { sendNotification } from "../../notify/send";
-import { renderSlackText, slackChannel } from "../../notify/slack";
+import { SlackSendError } from "../../ingestion/slack/post";
+import { markReachable, type NotifyChannel } from "../../notify/delivery/types";
+import { sendAgentMessage } from "../../notify/agent/send";
+import { agentNotificationStatus } from "../../notify/agent/status";
+import { notifyAdminsOfPending } from "../../notify/product/person-pending";
+import { sendNotification } from "../../notify/delivery/send";
+import { renderSlackText, slackChannel } from "../../notify/channels/slack/send";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -47,7 +51,7 @@ const newDb = () =>
       notification_deliveries: [],
       agent_runs: [{ id: RUN, workspace_id: WS, scheduled_task_id: TASK }],
     },
-    { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]], notifications: [["workspace_id", "idempotency_key"]] }, uuidTables: ["people", "notifications", "notification_deliveries"] },
+    { unique: { people: [["workspace_id", "user_id"]], person_identities: [["workspace_id", "provider", "external_id"]], notifications: [["workspace_id", "idempotency_key"]], notification_deliveries: [["id"]] }, uuidTables: ["people", "notifications", "notification_deliveries"] },
   );
 
 function recordingChannel(result: ChannelSendResult = { channel: "slack", status: "sent" }, reachable = true) {
@@ -234,7 +238,7 @@ describe("notification records", () => {
     expect(out).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] } });
     const notificationId = (out as { output: { notificationId: string } }).output.notificationId;
     expect(db.tables.notifications).toHaveLength(1);
-    expect(db.tables.notifications![0]).toMatchObject({ id: notificationId, recipient_person_id: UZO, sender_user_id: OWNER, kind: "message", subject: "Meeting follow-ups", body_text: "Your items.", visibility: "private", agent_run_id: RUN, scheduled_task_id: TASK });
+    expect(db.tables.notifications![0]).toMatchObject({ id: notificationId, recipient_person_id: UZO, sender_user_id: OWNER, kind: "message", subject: "Draft: Meeting follow-ups", body_text: "Your items.", visibility: "private", agent_run_id: RUN, scheduled_task_id: TASK });
     expect(db.tables.notifications![0]!.body_text).not.toContain("Draft agent");
     expect(db.tables.notification_deliveries!.map((row) => [row.channel, row.status])).toEqual([["slack", "sent"], ["email", "sent"]]);
     expect(db.tables.notification_deliveries![1]).toMatchObject({ provider_message_id: "em_1", attempt_count: 1 });
@@ -247,7 +251,7 @@ describe("notification records", () => {
     const db = newDb();
     const { call } = setup({ db, email });
     await call(asUser(), "people.notify", { personId: IZA, html: "<p>Hello <b>there</b></p>", channels: ["email"] });
-    expect(db.tables.notifications![0]).toMatchObject({ body_text: "Hello there", body_html: "<p>Hello <b>there</b></p>", subject: "Hello there", sender_user_id: OWNER, agent_run_id: null });
+    expect(db.tables.notifications![0]).toMatchObject({ body_text: "Hello there", body_html: "<p>Hello <b>there</b></p>", subject: "Draft: New message", sender_user_id: OWNER, agent_run_id: null });
   });
 
   it("refuses a call with no body", async () => {
@@ -302,7 +306,7 @@ describe("notification records", () => {
     await call(asUser(), "people.notify", { personId: IZA, text: "hi", idempotencyKey: "k", channels: ["slack"] });
     const hash = db.tables.notifications![0]!.content_hash;
     // The retry asks for both channels, so its content differs and is refused. Rebuild the saved row as if the first try had asked for both and stopped after Slack.
-    db.tables.notifications![0]!.content_hash = (await import("node:crypto")).createHash("sha256").update(JSON.stringify([IZA, "hi", "hi", null, null, ["email", "slack"]])).digest("hex");
+    db.tables.notifications![0]!.content_hash = (await import("node:crypto")).createHash("sha256").update(JSON.stringify([IZA, "Draft: New message", "hi", null, null, ["email", "slack"]])).digest("hex");
     expect(hash).not.toBe(db.tables.notifications![0]!.content_hash);
     const retry = await call(asUser(), "people.notify", { personId: IZA, text: "hi", idempotencyKey: "k", channels: ["slack", "email"] });
     expect(retry).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "sent" }, { channel: "email", status: "sent" }] } });
@@ -485,7 +489,7 @@ describe("the Slack channel", () => {
 
   it("throws when Slack refuses, so the sender can log it and report provider_error", async () => {
     const d = deps();
-    d.postMessage = mock(async () => { throw new Error("channel_not_found"); });
+    d.postMessage = mock(async () => { throw new SlackSendError("channel_not_found"); });
     const channel = slackChannel(fakeClient(seed("confirmed")), d);
     await expect(channel.send(person, { text: "x" })).rejects.toThrow("channel_not_found");
     const logged: unknown[] = [];
@@ -500,7 +504,7 @@ describe("telling admins about a pending person", () => {
   const create = (call: ReturnType<typeof setup>["call"], caller: ToolCaller = asRun([{ tool: "people.find" }, { tool: "people.create" }])) =>
     call(caller, "people.create", { displayName: "Cory Banks", evidence });
 
-  it("sends each reachable admin the agent line, the quote, and how to approve", async () => {
+  it("sends each reachable admin a recorded product notice with the quote and how to approve", async () => {
     const { call, sent, db } = setup();
     db.tables.source_items!.push({ id: evidence.sourceItemId, workspace_id: WS, visibility: "shared", metadata_json: { title: "Nov 9 standup" } });
     const result = await create(call);
@@ -510,7 +514,8 @@ describe("telling admins about a pending person", () => {
     expect(sent[0]!.personId).toBe(ADA);
     const text = sent[0]!.message.text!;
     expect(text.startsWith('Draft found Cory Banks in "Nov 9 standup"')).toBe(true);
-    expect(sent[0]!.message.attribution).toBe(LINE);
+    expect(sent[0]!.message.attribution).toBe("Sent by Draft · Workspace administration");
+    expect(db.tables.notifications![0]).toMatchObject({ sender_user_id: null, agent_run_id: null, subject: "Draft: A teammate needs approval" });
     expect(text).toContain(evidence.quote);
     expect(text).toContain("draft people approve ");
     expect(text).toContain('approve Cory Banks in Draft');
@@ -551,5 +556,29 @@ it("lets synthesis notify active teammates without a human owner or the routine 
   const caller = runCaller({ ...runSpec(SYNTHESIS_PERMISSIONS, null), kind: "synthesis" });
   expect(await call(caller, "people.notify", { personId: IZA, text: "Synthetic test message." })).toMatchObject({ status: "ok" });
   expect(sent).toHaveLength(1);
-  expect(sent[0]!.message.text).toContain("synthesis run");
+  expect(sent[0]!.message.attribution).toContain("synthesis run");
+});
+
+
+it("enforces run grants when agent message services are called directly", async () => {
+  const db = newDb();
+  const caller = asRun([{ tool: "people.find" }]);
+  const { channel, sent } = recordingChannel();
+  expect(await sendAgentMessage(fakeClient(db), { slack: channel } as Record<NotifyChannelId, NotifyChannel>, caller, { personId: UZO, text: "hello" })).toMatchObject({ ok: false, code: "not_permitted" });
+  expect(await agentNotificationStatus(fakeClient(db), caller, { notificationId: UZO }, {})).toMatchObject({ ok: false, code: "not_permitted" });
+  expect(sent).toHaveLength(0);
+});
+
+it("deduplicates product notices independently of agent send permissions", async () => {
+  const db = newDb();
+  const { channel, sent } = recordingChannel();
+  const channels = { slack: channel } as Record<NotifyChannelId, NotifyChannel>;
+  const pending = { id: CORY, displayName: "Cory Banks", status: "pending", isUser: false, reachable: { slack: false } } as const;
+  await Promise.all([
+    notifyAdminsOfPending(fakeClient(db), channels, WS, pending, { quote: "Cory joined" }),
+    notifyAdminsOfPending(fakeClient(db), channels, WS, pending, { quote: "Cory joined" }),
+  ]);
+  expect(sent).toHaveLength(1);
+  expect(db.tables.notifications).toHaveLength(1);
+  expect(db.tables.notifications![0]).toMatchObject({ sender_user_id: null, agent_run_id: null });
 });

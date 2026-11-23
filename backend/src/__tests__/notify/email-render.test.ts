@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { htmlToText, MAX_EMAIL_HTML_CHARS, MAX_EMAIL_SUBJECT_CHARS, MAX_EMAIL_TEXT_CHARS, normalizeSubject, renderEmail, textToHtml } from "../../notify/email-render";
+import { htmlToText, MAX_EMAIL_HTML_CHARS, MAX_EMAIL_SUBJECT_CHARS, MAX_EMAIL_TEXT_CHARS, normalizeSubject, renderEmail, textToHtml } from "../../notify/channels/email/render";
 
 describe("normalizeSubject", () => {
   it("adds the Draft prefix once", () => {

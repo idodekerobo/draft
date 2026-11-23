@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { emailStatusFromResend, mergeEmailStatus } from "../../notify/email-status";
+import { emailStatusFromResend, mergeEmailStatus } from "../../notify/channels/email/status";
 
 describe("emailStatusFromResend", () => {
   it("maps Resend events to Draft statuses", () => {

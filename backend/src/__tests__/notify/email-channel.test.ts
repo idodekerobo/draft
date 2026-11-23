@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { parsePersonId, parseWorkspaceId } from "draft-core/run-spec";
 import type { NotifyChannelId } from "draft-core/notify";
-import { emailChannel } from "../../notify/email";
-import { sendNotification } from "../../notify/send";
-import { markReachable, type NotifyChannel } from "../../notify/types";
+import { emailChannel } from "../../notify/channels/email/send";
+import { sendNotification } from "../../notify/delivery/send";
+import { markReachable, type NotifyChannel } from "../../notify/delivery/types";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -74,6 +74,14 @@ describe("the email channel", () => {
     const result = await sendNotification({ email: channel } as Record<NotifyChannelId, NotifyChannel>, person, { text: "x" }, ["email"], (_id, error) => { logged.push(error); });
     expect(result.results).toEqual([{ channel: "email", status: "failed", code: "provider_error" }]);
     expect(logged[0]).toMatchObject({ name: "ResendError", statusCode: 422 });
+  });
+
+  it("keeps acceptance uncertain after bounded network retries", async () => {
+    const { channel, calls } = setup("confirmed", "re_key", new Error("timeout"));
+    const result = await sendNotification({ email: channel } as Record<NotifyChannelId, NotifyChannel>, person, { text: "x" }, ["email"]);
+    expect(result.results).toEqual([{ channel: "email", status: "queued" }]);
+    expect(calls).toHaveLength(3);
+    expect(new Set(calls.map((call) => call.headers["Idempotency-Key"])).size).toBe(1);
   });
 
   it("throws for a message with no body", async () => {

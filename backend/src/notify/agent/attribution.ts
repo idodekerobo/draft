@@ -44,3 +44,9 @@ export async function attributionLine(client: SupabaseClient, caller: ToolCaller
   }
   return owner ? `🤖 Draft agent · working for ${owner}` : `🤖 Draft agent · ${run.kind} run`;
 }
+
+/** The routine a run belongs to. A scheduled run names it in its trigger. Any other run is tied to it through its own row. */
+export async function originTaskId(client: SupabaseClient, run: { id: string; trigger: { type: string; scheduledTaskId?: string } }): Promise<string | null> {
+  if (run.trigger.type === "cron" && run.trigger.scheduledTaskId) return run.trigger.scheduledTaskId;
+  return taskOfRun(client, run.id);
+}

@@ -1,20 +1,17 @@
+import { agentMessageSchema, sendAgentMessage } from "../../../notify/agent/send";
+import { agentNotificationStatus } from "../../../notify/agent/status";
+import type { MessageResult } from "../../../notify/agent/result";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
-import { isNotifyChannelId, NOTIFY_CHANNELS, type NotifyChannelId, type NotifyResult } from "draft-core/notify";
+import type { NotifyChannelId } from "draft-core/notify";
 import { resendSettings } from "../../../config";
-import { recordError } from "../../../errors/record-error";
-import { attributionLine } from "../../../notify/attribution";
-import { isFailure, resolvePerson } from "../../../notify/resolve-person";
-import { deliverNotification, originTaskId } from "../../../notify/deliver";
-import { htmlToText, MAX_EMAIL_HTML_CHARS, renderEmail } from "../../../notify/email-render";
-import { emailStatusFromResend, mergeEmailStatus, type EmailStatus } from "../../../notify/email-status";
-import { getResendEmail, type ResendDeps } from "../../../notify/resend";
-import { defaultChannels } from "../../../notify/send";
-import type { NotifyChannel } from "../../../notify/types";
+import type { ResendDeps } from "../../../notify/channels/email/resend";
+import { defaultChannels } from "../../../notify/delivery/send";
+import type { NotifyChannel } from "../../../notify/delivery/types";
 import { createPerson } from "../../../people/create";
-import { notifyAdminsOfPending } from "../../../people/notify-admins";
+import { notifyAdminsOfPending } from "../../../notify/product/person-pending";
 import { decidePerson, isAdmin } from "../../../people/decide";
 import { findPeople } from "../../../people/find";
 import { addPersonIdentity, removePersonIdentity, replacePersonIdentity } from "../../../people/identities";
@@ -27,9 +24,6 @@ const PROVIDERS = ["email", "slack", "linear", "github", "whatsapp"] as const;
 
 const DEFAULT_MAX_CREATES_PER_RUN = 5;
 const DEFAULT_MAX_IDENTITIES_PER_RUN = 10;
-const DEFAULT_MAX_NOTIFIES_PER_RUN = 10;
-/** An email in one of these cannot get better, so Draft stops asking the provider. A delivered one can still turn into a complaint. */
-const FINAL_EMAIL_STATUSES: ReadonlyArray<EmailStatus> = ["failed", "bounced", "complained"];
 
 const IDENTITY_REFUSALS: Record<string, string> = {
   person_not_found: "No person with that id in this workspace.",
@@ -50,12 +44,12 @@ const identitySchema = z.object({
 });
 
 /** The most times a run may use a tool, from the permission that was fixed when the run started. */
-function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update" | "people.notify", fallback: number): number | undefined {
+function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update", fallback: number): number | undefined {
   const limits = findToolPermission(run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
   return limits?.maxPerRun ?? (run.kind === "synthesis" ? undefined : fallback);
 }
 
-async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update" | "people.notify", fallback: number): Promise<ToolHandlerResult | null> {
+async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update", fallback: number): Promise<ToolHandlerResult | null> {
   if (caller.origin.kind !== "run") return null;
   const { run } = caller.origin;
   const max = runLimit(run, tool, fallback);
@@ -131,7 +125,7 @@ export function createPeopleTools(
       // A new pending person is news for the admins. A failed message never fails the add.
       if (result.created && result.person.status === "pending") {
         try {
-          await notifyAdminsOfPending(client, channels, workspaceId, result.person, input.evidence, await attributionLine(client, caller));
+          await notifyAdminsOfPending(client, channels, workspaceId, result.person, input.evidence);
         } catch (error) {
           console.error(JSON.stringify({ source: "people_create", event: "admin_notice_failed", error: String(error) }));
         }
@@ -197,16 +191,8 @@ export function createPeopleTools(
       "For email, `subject` is a short, factual topic such as 'Your meeting follow-ups', 'Review needed for the launch plan' or 'Weekly research update'. Draft adds the 'Draft: ' prefix once, so do not write it. " +
       "Without a subject, a text-only email is titled 'Draft: New message'. Recurring routines should reuse the same subject pattern each run. " +
       "Pass `idempotencyKey` (for example 'meeting-123-followups') for retries: the same key and content returns the same notification with saved channel results, and sends only channels without a delivery record. Recorded failures are not retried by repeating the call. The same key with different content or recipients is refused. " +
-      "The result has a notificationId and one entry per channel: sent, or failed with not_reachable or provider_error. For email, sent means the provider accepted it, not that it arrived: call people.notification_status with the notificationId to check. A failure on one channel does not stop the others.",
-    input: z.object({
-      personId: z.string().uuid().describe("The id of one active workspace teammate, from people.find. Never an email address."),
-      text: z.string().min(1).max(2000).optional().describe("The message as plain text. Required unless html is given."),
-      html: z.string().min(1).max(MAX_EMAIL_HTML_CHARS).optional().describe("Email only. A richer body. Plain text is made from it when text is omitted."),
-      subject: z.string().min(1).max(140).optional().describe("Email only. A short, factual topic, without the 'Draft: ' prefix."),
-      link: z.string().url().optional().describe("A URL appended to the plain text message on each channel."),
-      idempotencyKey: z.string().min(1).max(128).optional().describe("A stable key for this message, so a retry does not send twice."),
-      channels: z.array(z.enum(NOTIFY_CHANNELS)).min(1).optional().describe("Where to send. Omit to use the person's own channels."),
-    }),
+      "The result has a notificationId and one entry per channel: queued, sent, delayed, delivered, bounced, complained, or failed with not_reachable, provider_error, or recording_error. Queued means acceptance is pending or uncertain; do not switch keys to force a resend. For email, sent means the provider accepted it, not that it arrived: call people.notification_status with the notificationId to check. A failure on one channel does not stop the others.",
+    input: agentMessageSchema,
     auditArguments: (input) => ({
       personId: input.personId,
       textBytes: input.text ? Buffer.byteLength(input.text, "utf8") : 0,
@@ -215,60 +201,7 @@ export function createPeopleTools(
       link: input.link,
       channels: input.channels,
     }),
-    handler: async ({ input, caller }) => {
-      const workspaceId = callerWorkspaceId(caller);
-
-      // The checks run in this order, and the first one that fails refuses the whole call.
-      const person = await resolvePerson(client, workspaceId, input.personId);
-      if (isFailure(person)) {
-        const why = { person_not_found: "No person with that id in this workspace.", not_active: "That person is not active yet, so they cannot be messaged.", not_member: "Only teammates can be messaged." }[person.failure];
-        return refuse("not_allowed", why);
-      }
-
-      if (caller.origin.kind === "run") {
-        const { run } = caller.origin;
-        const limits = findToolPermission(run, "people.notify")?.limits as DraftToolLimits["people.notify"] | undefined;
-        const recipients = limits?.recipients ?? "self";
-        const allowed = recipients === "members" || (recipients === "self" ? run.onBehalfOf !== null && person.userId === run.onBehalfOf : recipients.includes(person.id));
-        if (!allowed) return refuse("not_allowed", recipients === "self" ? "This run may only message the person it works for." : "This run may not message that person.");
-        const limited = await overRunLimit(client, caller, "people.notify", DEFAULT_MAX_NOTIFIES_PER_RUN);
-        if (limited) return limited;
-      }
-
-      const text = input.text ?? (input.html ? htmlToText(input.html) : "");
-      const content = renderEmail({ subject: input.subject, text, html: input.html });
-      if (!content.ok) {
-        const why = { empty_body: "Give text, html, or both.", subject_too_long: "The subject is too long.", text_too_long: "The text is too long.", html_too_long: "The html is too long." }[content.code];
-        return refuse("invalid_input", why);
-      }
-
-      const origin = caller.origin;
-      const agentRunId = origin.kind === "run" ? origin.run.id : null;
-      const logFailure = (code: string, error: unknown) =>
-        recordError({ client, workspaceId, agentRunId, operation: "execution", code, message: `people.notify: ${code}`, detail: { personId: person.id }, error });
-      try {
-        const delivered = await deliverNotification(client, channels, person, {
-          subject: input.subject,
-          text,
-          html: input.html,
-          link: input.link,
-          idempotencyKey: input.idempotencyKey,
-          attribution: await attributionLine(client, caller),
-          requested: input.channels?.filter(isNotifyChannelId),
-          origin: {
-            senderUserId: origin.kind === "run" ? origin.run.onBehalfOf : origin.userId,
-            agentRunId,
-            scheduledTaskId: origin.kind === "run" ? await originTaskId(client, origin.run) : null,
-          },
-        });
-        if (!delivered.ok) return refuse("idempotency_conflict", "That idempotencyKey was already used with different content. Use a new key for a different message.");
-        const output: NotifyResult = { notificationId: delivered.notificationId, results: delivered.results };
-        return { status: "ok", output, summary: delivered.results.map((entry) => `${entry.channel}: ${entry.status}`).join(", ") };
-      } catch (error) {
-        await logFailure("notify_record_failed", error);
-        return refuse("notify_failed", "The message could not be saved, so nothing was sent. Try again.");
-      }
-    },
+    handler: async ({ input, caller }) => messageToolResult(await sendAgentMessage(client, channels, caller, input)),
   });
 
   const notificationStatus = defineTool({
@@ -282,68 +215,7 @@ export function createPeopleTools(
       "If refreshed is false, the latest status could not be fetched and the saved one is shown.",
     input: z.object({ notificationId: z.string().uuid().describe("The Draft notificationId returned by people.notify, not the provider's email id.") }),
     auditArguments: (input) => ({ notificationId: input.notificationId }),
-    handler: async ({ input, caller }) => {
-      const workspaceId = callerWorkspaceId(caller);
-      const origin = caller.origin;
-      const callerUserId = origin.kind === "run" ? origin.run.onBehalfOf : origin.userId;
-
-      const { data: found, error } = await client
-        .from("notifications")
-        .select("id, recipient_person_id, sender_user_id, visibility, agent_run_id, created_at")
-        .eq("id", input.notificationId)
-        .eq("workspace_id", workspaceId)
-        .maybeSingle();
-      if (error) throw error;
-      const notification = found as { id: string; recipient_person_id: string; sender_user_id: string | null; visibility: string; agent_run_id: string | null; created_at: string } | null;
-      const notFound = refuse("not_found", "No notification with that id that you can see.");
-      if (!notification) return notFound;
-
-      // A private notification is read by its sender, the run that made it, and its recipient. Anyone else gets the same answer as for a missing one.
-      let allowed = notification.visibility === "shared" || (callerUserId !== null && notification.sender_user_id === callerUserId) || (origin.kind === "run" && notification.agent_run_id === origin.run.id);
-      if (!allowed && callerUserId) {
-        const { data: recipient, error: recipientError } = await client.from("people").select("user_id").eq("id", notification.recipient_person_id).eq("workspace_id", workspaceId).maybeSingle();
-        if (recipientError) throw recipientError;
-        allowed = (recipient as { user_id: string | null } | null)?.user_id === callerUserId;
-      }
-      if (!allowed) return notFound;
-
-      const { data: rows, error: deliveriesError } = await client
-        .from("notification_deliveries")
-        .select("id, channel, status, provider_message_id, accepted_at, delivered_at, error_code")
-        .eq("notification_id", notification.id)
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: true });
-      if (deliveriesError) throw deliveriesError;
-      const deliveries = (rows ?? []) as Array<{ id: string; channel: string; status: EmailStatus; provider_message_id: string | null; accepted_at: string | null; delivered_at: string | null; error_code: string | null }>;
-
-      let refreshed = true;
-      const key = statusApiKey();
-      for (const delivery of deliveries) {
-        if (delivery.channel !== "email" || !delivery.provider_message_id || FINAL_EMAIL_STATUSES.includes(delivery.status)) continue;
-        if (!key) { refreshed = false; continue; }
-        try {
-          const latest = await getResendEmail(key, delivery.provider_message_id, deps.resend);
-          const next = mergeEmailStatus(delivery.status, emailStatusFromResend(latest.lastEvent));
-          if (next === delivery.status) continue;
-          const now = new Date().toISOString();
-          const { error: updateError } = await client.from("notification_deliveries").update({ status: next, last_event_at: now, ...(next === "delivered" ? { delivered_at: now } : {}) }).eq("id", delivery.id).eq("workspace_id", workspaceId);
-          if (updateError) throw updateError;
-          delivery.status = next;
-          if (next === "delivered") delivery.delivered_at = now;
-        } catch (refreshError) {
-          refreshed = false;
-          await recordError({ client, workspaceId, agentRunId: origin.kind === "run" ? origin.run.id : null, operation: "execution", code: "notify_status_refresh_failed", message: "people.notification_status could not refresh a delivery", detail: { channel: delivery.channel }, error: refreshError });
-        }
-      }
-
-      const output = {
-        notificationId: notification.id,
-        createdAt: notification.created_at,
-        refreshed,
-        deliveries: deliveries.map((delivery) => ({ channel: delivery.channel, status: delivery.status, acceptedAt: delivery.accepted_at, deliveredAt: delivery.delivered_at, errorCode: delivery.error_code })),
-      };
-      return { status: "ok", output, summary: deliveries.map((delivery) => `${delivery.channel}: ${delivery.status}`).join(", ") };
-    },
+    handler: async ({ input, caller }) => messageToolResult(await agentNotificationStatus(client, caller, input, { statusApiKey, resend: deps.resend })),
   });
 
   const approve = defineTool({
@@ -380,4 +252,8 @@ export function createPeopleTools(
   }
 
   return [find, create, addIdentityTool, notify, notificationStatus, approve, reject];
+}
+
+function messageToolResult<T>(result: MessageResult<T>): ToolHandlerResult {
+  return result.ok ? { status: "ok", output: result.output, summary: result.summary } : refuse(result.code, result.message);
 }

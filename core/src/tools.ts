@@ -120,6 +120,7 @@ export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   { tool: "people.create" },
   { tool: "people.update" },
   { tool: "people.notify", limits: { recipients: "members" } },
+  { tool: "people.notification_status" },
   { tool: "people.approve" },
   { tool: "people.reject" },
 ];
