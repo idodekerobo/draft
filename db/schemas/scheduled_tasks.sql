@@ -15,7 +15,8 @@ create table scheduled_tasks (
   interval_seconds         integer check (interval_seconds > 0),
   timezone                 text not null,
   enabled                  boolean not null default true,
-  -- agent_routine: prompt, harness, model, title and toolset.
+  -- Agent routines: prompt, harness, model, title and toolset.
+  -- Synthesis and summarization: prompt, harness, model and optional reasoningEffort.
   config_json              jsonb not null default '{}',
   next_due_at              timestamptz,
   -- Set when a person deletes the routine. The row stays for its past runs.
