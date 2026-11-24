@@ -1,4 +1,5 @@
 import type { ReasoningEffort, RunnerManifest } from "../run-manifest";
+import type { AdapterDefinition } from "./adapter-types";
 
 export { REASONING_EFFORTS, type ReasoningEffort } from "../run-manifest";
 
@@ -31,16 +32,15 @@ export interface HarnessDefinition {
   id: string;
   label: string;
   models: ReadonlyArray<HarnessModel>;
-  capabilities: { terminal: boolean; approvals: boolean; steer: boolean };
+  /** The ways Draft runs this harness. Capabilities and supported targets belong to each adapter. */
+  adapters: ReadonlyArray<AdapterDefinition>;
   modes: HarnessModes;
   /** The CLI release the host was tested with: this major and minor. */
   testedVersion: { major: number; minor: number };
   /** The built-in tools a cloud run starts with, before a person adds any. */
   cloudStartingTools: ReadonlyArray<string>;
   /** How a cloud routine runs this harness. Empty when routines do not support it yet. */
-  routineModes: ReadonlyArray<"print" | "exec">;
-  /** Where the agent loop runs: beside the harness CLI in the sandbox, or in the backend. */
-  loop: "in-sandbox" | "in-backend";
+  routineModes: ReadonlyArray<"print" | "exec">
   /** Where a person installs the harness's CLI. */
   installUrl?: string;
 }

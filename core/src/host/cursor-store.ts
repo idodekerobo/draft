@@ -20,7 +20,7 @@ export interface HostSessionState {
   hostId: string;
   nativeSessionId: string;
   folderPath: string;
-  /** Which harness runs the session. Files from before Codex have none and mean Claude. */
+  /** Which harness runs the session. A file with none, or an unknown one, is refused at load. */
   harness?: string;
   /** Claude only. */
   tmuxSession?: string;

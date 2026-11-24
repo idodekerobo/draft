@@ -8,6 +8,7 @@ const ALLOWED_MODULES = [
   /^src\/sandbox\/runner(\/.+)?\.ts$/,
   /^\.\.\/core\/src\/harnesses\/[^/]+\/runner\.ts$/,
   /^\.\.\/core\/src\/harnesses\/failure\.ts$/,
+  /^\.\.\/core\/src\/harnesses\/(?:[^/]+\/)?adapters\.ts$/,
   /^\.\.\/core\/src\/run-manifest\.ts$/,
   /^\.\.\/core\/src\/run-spec\.ts$/,
 ];

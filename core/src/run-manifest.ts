@@ -4,7 +4,7 @@
  * environment from nothing, so the signed upload links below never reach the agent.
  * This file has no dependencies, so the backend and the runner bundle can both use it.
  */
-import { CLOUD_NATIVE_TOOLS } from "./run-spec";
+import { cloudNativeToolsFor } from "./run-spec";
 
 /** Every reasoning effort any harness offers, lowest first. A model offers some of them. */
 export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
@@ -104,7 +104,7 @@ export function validateRunnerManifest(value: unknown, checks: ManifestChecks): 
   }
 
   const toolsValue = onlyKeys(top.tools, ["native", "draftMcpUrl"], "tools");
-  const allowedNative = CLOUD_NATIVE_TOOLS[harness] as ReadonlyArray<string>;
+  const allowedNative = cloudNativeToolsFor(harness);
   if (!Array.isArray(toolsValue.native) || !toolsValue.native.every((tool) => typeof tool === "string" && allowedNative.includes(tool))) {
     throw new Error("run manifest: tools.native has a tool this harness may not use");
   }

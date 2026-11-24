@@ -35,10 +35,14 @@ When you add a concept, add it here first.
 ## Agents
 
 - **Harness**: an agent program that does the work: Claude Code, Codex, later Pi or OpenCode. `HarnessId`.
-  Adapters live in `core/src/harnesses/<id>/`.
+  Harness definitions and their adapters live in `core/src/harnesses/<id>/`.
+- **Adapter**: one way Draft runs a harness, such as `claude-terminal`, `codex-app-server`, `claude-print` or
+  `codex-exec`. It names its supported targets, its capabilities, how its output becomes events, and the built-in tools
+  it knows. `AdapterId`; `AdapterDefinition` in `core/src/harnesses/adapters.ts`.
 - **Metaharness**: Draft's backend layer that starts, runs and governs any harness: runs, the tool gateway, context,
   sandbox launch. `backend/src/metaharness/`.
-- **Driver**: a harness's adapter for one session (`HarnessDriver`). Used by the desktop host and the sandbox host.
+- **Driver**: the per-session object an adapter uses on a host to drive a running harness (`HarnessDriver`). Used by the
+  desktop host and the sandbox host.
   Drivers live in `core/src/host/drivers/`.
 - **Runner**: the one-shot program inside a routine sandbox (`backend/src/sandbox/runner.ts`). Not a CLI binary.
 - **Toolset**: the native tools, MCP servers, skills and instructions a cloud run gets (`AgentRunToolset`).

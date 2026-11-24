@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
 import type { IncomingLine } from "draft-core/harnesses/claude/live-lines";
-import { routineEventsForHarness } from "../ingestion/harness-lines";
+import { routineAdapterFor } from "draft-core/harnesses";
+import { eventsForAdapter } from "../ingestion/harness-lines";
 import { parseLiveLine } from "draft-core/harnesses/claude/parse-live-line";
 import { saveRefreshedCodexLogin } from "../credentials/codex-credential";
 import { recordError } from "../errors/record-error";
@@ -60,7 +61,9 @@ async function promptEvent(client: SupabaseClient, session: RoutineSession) {
 }
 
 async function appendLines(client: SupabaseClient, session: RoutineSession, lines: IncomingLine[]): Promise<void> {
-  const parsed = lines.flatMap((line) => routineEventsForHarness(session.harness, line));
+  const adapterId = routineAdapterFor(session.harness)?.id;
+  if (!adapterId) throw new Error(`No routine adapter for harness: ${session.harness}`);
+  const parsed = lines.flatMap((line) => eventsForAdapter(adapterId, line));
   const events = [...(session.last_seq === 0 ? await promptEvent(client, session) : []), ...parsed]
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: event.payload }));
   if (events.length === 0) return;

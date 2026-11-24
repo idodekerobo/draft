@@ -8,11 +8,11 @@ import { beginCloudSession } from "../cloud-sessions/start";
 import { SLEEPABLE_STATUSES, sleepCloudSession } from "../cloud-sessions/sleep";
 import { discardSnapshot, snapshotKeyOf, storageSnapshotStore } from "../cloud-sessions/snapshot-seed";
 import { wakeCloudSession } from "../cloud-sessions/wake";
-import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
+import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
-import { eventsForHarness } from "../ingestion/harness-lines";
+import { eventsForAdapter } from "../ingestion/harness-lines";
 import { latestNativeTitle } from "draft-core/harnesses/claude/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
@@ -308,8 +308,13 @@ export const LINES = withHostAuth<LinesRequest>(async (req, caller) => {
       });
     }
   }
+  const adapter = interactiveAdapterFor(owned.session.harness);
+  if (!adapter) {
+    void recordError({ workspaceId, sessionId, operation: "session", message: "Session harness is not supported", code: "unsupported_agent", detail: { harness: owned.session.harness } });
+    return errorResponse("unsupported_agent", 409);
+  }
   const events = incoming
-    .flatMap((line) => eventsForHarness(owned.session.harness, line))
+    .flatMap((line) => eventsForAdapter(adapter.id, line))
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: stripNul(event.payload) }));
 
   const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);

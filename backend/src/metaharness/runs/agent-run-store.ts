@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
+import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, isNativeTool, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
 import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
-import { isHarnessId } from "draft-core/harnesses";
+import { isHarnessId, type HarnessId } from "draft-core/harnesses";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../../observability/record-query-log";
 import type { AgentRunRow } from "../../types/tables";
 import type { ToolCallRecord } from "../tools/invoke-tool";
@@ -16,10 +16,10 @@ const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("retry"), retryOf: z.string().transform(parseAgentRunId) }),
 ]);
 
-const nativeToolSchema = z.discriminatedUnion("harness", [
-  z.object({ harness: z.literal("claude"), tool: z.enum(CLAUDE_NATIVE_TOOLS) }),
-  z.object({ harness: z.literal("codex"), tool: z.enum(CODEX_NATIVE_TOOLS) }),
-]);
+const nativeToolSchema = z
+  .object({ harness: z.string().refine(isHarnessId), tool: z.string() })
+  .refine((permission) => isNativeTool(permission.harness, permission.tool), "unknown built-in tool for this harness")
+  .transform((permission) => permission as { harness: HarnessId; tool: string });
 
 const toolsetSchema = z.object({
   nativeTools: z.array(nativeToolSchema),

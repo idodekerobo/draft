@@ -2,6 +2,7 @@
  * The contract for one agent run. Draft builds one AgentRunSpec per run, saves it,
  * and every surface the run touches (launch, tool gateway, audit) reads it from here.
  */
+import { cloudNativeToolsFor, isNativeTool } from "./harnesses/adapters";
 import type { HarnessId } from "./harnesses";
 import type { AnyDraftToolPermission } from "./tools";
 
@@ -93,28 +94,22 @@ export function cronTrigger(scheduledTaskId: string, occurrenceAt: string): Agen
   return { type: "cron", scheduledTaskId: parseScheduledTaskId(scheduledTaskId), occurrenceAt: parseIsoTimestamp(occurrenceAt) };
 }
 
-/** Claude Code tools a run may be given. Which of them are safe in the cloud is decided by the cloud toolset. */
-export const CLAUDE_NATIVE_TOOLS = ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash", "Edit", "Write"] as const;
-export type ClaudeNativeTool = (typeof CLAUDE_NATIVE_TOOLS)[number];
+export { CLAUDE_NATIVE_TOOLS, type ClaudeNativeTool } from "./harnesses/claude/adapters";
+export { CODEX_NATIVE_TOOLS, type CodexNativeTool } from "./harnesses/codex/adapters";
+export { cloudNativeToolsFor, isNativeTool };
 
-export const CODEX_NATIVE_TOOLS = ["web_search", "shell", "apply_patch"] as const;
-export type CodexNativeTool = (typeof CODEX_NATIVE_TOOLS)[number];
-
-export type NativeToolPermission =
-  | { harness: "claude"; tool: ClaudeNativeTool }
-  | { harness: "codex"; tool: CodexNativeTool };
+/** A built-in tool of a harness. The adapter registry says which tool names each harness has. */
+export interface NativeToolPermission {
+  harness: HarnessId;
+  tool: string;
+}
 
 /**
- * The built-in tools a cloud run may be given. Tools that need a display are left out. The sandbox never
+ * True when a cloud run may be given the tool. Tools that need a display are left out. The sandbox never
  * holds a secret, so a tool that needs one is reached through Draft's gateway instead.
  */
-export const CLOUD_NATIVE_TOOLS = {
-  claude: ["Read", "Glob", "Grep", "WebSearch", "WebFetch", "Bash", "Edit", "Write"],
-  codex: ["shell", "web_search"],
-} as const satisfies { claude: ReadonlyArray<ClaudeNativeTool>; codex: ReadonlyArray<CodexNativeTool> };
-
 export function isCloudNativeTool(permission: NativeToolPermission): boolean {
-  return (CLOUD_NATIVE_TOOLS[permission.harness] as ReadonlyArray<string>).includes(permission.tool);
+  return cloudNativeToolsFor(permission.harness).includes(permission.tool);
 }
 
 /** An MCP server the person connected in Draft. Tool names come from the server at run time. */

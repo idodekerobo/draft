@@ -121,6 +121,7 @@ function session(overrides: Row = {}): Row {
     title: null,
     native_session_id: null,
     host_id: "host-1",
+    harness: "claude",
     last_seq: 0,
     ...overrides,
   };
@@ -223,6 +224,14 @@ describe("live session routes", () => {
     tables.session_events = [{ session_id: SESSION, workspace_id: WS, seq: 1, kind: "user_message", payload: { text: "[Maya via Draft] Fix the login bug" } }];
     await routes.LINES(post("/x", { hostId: "host-1", lines: [userLine("u1", "[Maya via Draft] Fix the login bug")] }));
     expect(rpcCalls.map((c) => c.fn)).toContain("transition_session_input");
+  });
+
+  it("refuses lines for a session whose harness this build does not know, and appends nothing", async () => {
+    tables.sessions = [session({ harness: "future" })];
+    const res = await routes.LINES(post("/x", { hostId: "host-1", lines: [userLine("u1", "hello")] }));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe("unsupported_agent");
+    expect(rpcCalls).toEqual([]);
   });
 
   it("leaves the author tag of a Draft message out of the title", async () => {

@@ -1,6 +1,6 @@
 // The session host of a cloud session. It runs in a sandbox on Bun, drives the harness, and sleeps the session when idle.
 import { join } from "node:path";
-import { DEFAULT_HARNESS_ID, isHarnessId, type HarnessId } from "draft-core/harnesses";
+import { DEFAULT_HARNESS_ID, isHarnessId, requireInteractiveAdapter, type HarnessId } from "draft-core/harnesses";
 import { registrationFor } from "draft-core/host/drivers/drivers";
 import { loadStates, type HostSessionState } from "draft-core/host/cursor-store";
 import { attachLiveSession, type AttachedSession } from "draft-core/host/live-session";
@@ -161,7 +161,7 @@ function freshState(config: HostConfig, row: SessionRow, harness: HarnessId): Ho
     sessionId: config.sessionId,
     workspaceId: config.workspaceId,
     hostId: cloudHostId(config.sessionId),
-    nativeSessionId: row.native_session_id || registrationFor(harness).launcher.newNativeSessionId(),
+    nativeSessionId: row.native_session_id || registrationFor(requireInteractiveAdapter(harness).id).launcher.newNativeSessionId(),
     folderPath: WORKSPACE_PATH,
     harness,
     cursors: {},

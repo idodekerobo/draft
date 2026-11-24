@@ -3,7 +3,7 @@ import { SESSION_FAILURES, type SessionFailureCode } from "../session-failure";
 import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
-import { DEFAULT_HARNESS_ID, isEffortFor, isHarnessId, isKnownModel } from "../harnesses";
+import { DEFAULT_HARNESS_ID, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel, requireInteractiveAdapter } from "../harnesses";
 import { SIGNAL_EVENTS, type LiveSession, type LiveSessionEventsPage } from "../live-sessions";
 import { hostServices, ServerError } from "./services";
 import type { HostEvent } from "./approvals";
@@ -83,7 +83,7 @@ class SessionHost {
     this.topics = new SessionTopics((topic, listener) => hostServices().realtime.watch(topic, listener), state.sessionId, (event) => {
       if (event === SIGNAL_EVENTS.inputs || event === SIGNAL_EVENTS.catchUp) this.wake();
     });
-    this.driver = registrationFor(state.harness).createDriver({
+    this.driver = registrationFor(requireInteractiveAdapter(state.harness).id).createDriver({
       base: this.base,
       state: () => this.state,
       persist: (patch) => this.persist(patch),
@@ -365,7 +365,7 @@ class SessionHost {
 
   private async createSuccessor(nativeSessionId: string): Promise<HostSessionState> {
     const { folderPath, hostId, workspaceId, model = null, reasoningEffort = null, harnessVersion = null } = this.state;
-    const harness = this.state.harness ?? DEFAULT_HARNESS_ID;
+    const harness = requireInteractiveAdapter(this.state.harness).harness;
     const created = await hostServices().fetchServerJSON<{ session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
       method: "POST",
       body: JSON.stringify({
@@ -488,7 +488,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
 
   const harness = input.harness ?? DEFAULT_HARNESS_ID;
   if (!isHarnessId(harness)) return { ok: false, error: "Choose an agent from the list." };
-  const { launcher } = registrationFor(harness);
+  const { launcher } = registrationFor(requireInteractiveAdapter(harness).id);
 
   const folderPath = resolve(input.folderPath);
   if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) return { ok: false, error: "Choose a valid folder." };
@@ -570,7 +570,9 @@ async function attachSession(state: HostSessionState, mode: "launch" | "resume")
   const existing = running.get(state.sessionId);
   if (existing && !existing.hasEnded()) return { ok: false, error: "This session is already running." };
   await existing?.retireForResume();
-  const { launcher } = registrationFor(state.harness);
+  const adapter = interactiveAdapterFor(state.harness);
+  if (!adapter) return { ok: false, error: SESSION_FAILURES.unsupported_agent.message };
+  const { launcher } = registrationFor(adapter.id);
   const checked = await launcher.check();
   if (!checked.ok) return { ok: false, error: checked.error };
   const model = state.model ?? null;
@@ -620,7 +622,7 @@ async function resumeSession(sessionId: string): Promise<ResumeSessionResult> {
       expectedRequestId: session.resume_request_id ?? null, code, phase: "resume", terminal: true, error });
     return { ok: false, error: message ?? recorded.message, code, requestId };
   };
-  const { launcher } = registrationFor(harness);
+  const { launcher } = registrationFor(requireInteractiveAdapter(harness).id);
   const checked = await launcher.check().catch(() => ({ ok: false as const, error: SESSION_FAILURES.resume_check_failed.message }));
   if (!checked.ok) return failure("resume_check_failed", undefined, checked.error);
 
@@ -688,6 +690,7 @@ export async function resumeLiveSessions(): Promise<void> {
     await serializeSession(state.sessionId, async () => {
       if (running.has(state.sessionId)) return;
       if (await isCloudSession(state.sessionId)) return;
+      if (!interactiveAdapterFor(state.harness)) return refuseUnsupportedState(state);
       const runner = new SessionHost(state);
       runner.start();
       if (!state.ended && (await runner.isAlive())) await runner.uploadIfChanged();
@@ -696,8 +699,16 @@ export async function resumeLiveSessions(): Promise<void> {
   for (const { id, state } of loadRetiredStates()) {
     if (retiredUploads.has(id)) continue;
     retiredUploads.add(id);
+    if (!interactiveAdapterFor(state.harness)) continue;
     new SessionHost({ ...state, ended: true }, id).start();
   }
+}
+
+/** A saved state with no known harness, such as a file from before harnesses were recorded. It ends with a recorded failure. */
+function refuseUnsupportedState(state: HostSessionState): void {
+  reportSessionFailure({ sessionId: state.sessionId, workspaceId: state.workspaceId, hostId: state.hostId,
+    harness: state.harness, requestId: state.resumeRequestId, code: "unsupported_agent", phase: "unsupported_agent", terminal: true });
+  saveState({ ...state, ended: true });
 }
 const retiredUploads = new Set<string>();
 

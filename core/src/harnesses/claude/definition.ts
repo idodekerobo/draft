@@ -1,4 +1,5 @@
 import type { HarnessDefinition, ReasoningEffort } from "../types";
+import { claudeAdapters } from "./adapters";
 
 /** Claude Code's `--effort` levels. Its own setting decides the default. */
 const CLAUDE_EFFORTS: ReadonlyArray<ReasoningEffort> = ["low", "medium", "high", "xhigh", "max"];
@@ -13,7 +14,7 @@ export const claudeDefinition = {
     { alias: "sonnet", label: "Sonnet", efforts: CLAUDE_EFFORTS, defaultEffort: null },
     { alias: "haiku", label: "Haiku", efforts: CLAUDE_EFFORTS, defaultEffort: null },
   ],
-  capabilities: { terminal: true, approvals: true, steer: false },
+  adapters: claudeAdapters,
   modes: {
     permission: [
       { value: "default", label: "Manual", description: "Asks before edits and commands" },
@@ -26,5 +27,4 @@ export const claudeDefinition = {
   testedVersion: { major: 2, minor: 1 },
   cloudStartingTools: ["Read", "Glob"],
   routineModes: ["print"],
-  loop: "in-sandbox",
 } as const satisfies HarnessDefinition;

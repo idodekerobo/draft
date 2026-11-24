@@ -1,4 +1,5 @@
 import type { HarnessDefinition, ReasoningEffort } from "../types";
+import { codexAdapters } from "./adapters";
 
 /** From Codex's `model/list` (`supportedReasoningEfforts`, codex-cli 0.169). The Luna models stop at max. */
 const UP_TO_MAX: ReadonlyArray<ReasoningEffort> = ["low", "medium", "high", "xhigh", "max"];
@@ -18,7 +19,7 @@ export const codexDefinition = {
     { alias: "gpt-5.6-terra", label: "GPT-5.6-Terra", efforts: UP_TO_ULTRA, defaultEffort: "medium" },
     { alias: "gpt-5.6-luna", label: "GPT-5.6-Luna", efforts: UP_TO_MAX, defaultEffort: "medium" },
   ],
-  capabilities: { terminal: true, approvals: true, steer: true },
+  adapters: codexAdapters,
   modes: {
     permission: [
       { value: "default", label: "Default", description: "Works on the task and asks when it needs to" },
@@ -33,6 +34,5 @@ export const codexDefinition = {
   testedVersion: { major: 0, minor: 169 },
   cloudStartingTools: ["shell"],
   routineModes: ["exec"],
-  loop: "in-sandbox",
   installUrl: "https://learn.chatgpt.com/docs/codex/cli#getting-started",
 } as const satisfies HarnessDefinition;

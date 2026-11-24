@@ -15,7 +15,7 @@ import { DisclosureState, revealPath, useSessionViewStates, viewStateKey } from 
 import { AgentTranscripts } from "./agent-transcript";
 import { SessionStream } from "./SessionStream";
 import { displayStatus } from "./display-status";
-import { getHarness, harnessModes, type HarnessId } from "draft-core/harnesses";
+import { getHarness, harnessModes, interactiveAdapterFor, type HarnessId } from "draft-core/harnesses";
 import { SectionedPicker } from "../controls/SectionedPicker";
 import { agentPickerSections, agentSummary } from "../controls/agent-picker";
 import { useAgentDefaults, type AgentDefaultsLoader } from "./useAgentDefaults";
@@ -671,7 +671,7 @@ function SessionContents({
               viewerName={viewer.name}
               viewerIsOwner={session.mine ?? false}
               harness={session.harness}
-              onSteer={getHarness(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
+              onSteer={interactiveAdapterFor(session.harness ?? "claude")?.capabilities.steer ? (inputId) => void inputs.act(inputId, "steer").catch(() => {}) : undefined}
               onCancel={(inputId) => void inputs.act(inputId, "cancel").catch(() => {})}
               onShowRequest={() => document.querySelector<HTMLElement>(".ui-approval button")?.focus()}
               onDismissPrompt={blockedByPrompt ? dismissPrompt : undefined}

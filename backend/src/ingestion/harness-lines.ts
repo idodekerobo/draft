@@ -1,24 +1,19 @@
+import { requireAdapter, type AdapterId } from "draft-core/harnesses";
 import { codexExecEventsFor } from "draft-core/harnesses/codex/parse-exec-line";
 import { codexEventsFor } from "draft-core/harnesses/codex/parse-live-line";
 import { eventsFor as claudeEventsFor, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
 import type { ParsedLiveEvent } from "draft-core/harnesses/claude/parse-live-line";
 
-const MAPPERS: Record<string, (line: IncomingLine) => ParsedLiveEvent[]> = {
-  claude: claudeEventsFor,
-  codex: codexEventsFor,
+type LineMapper = (line: IncomingLine) => ParsedLiveEvent[];
+
+const MAPPERS: Record<AdapterId, LineMapper> = {
+  "claude-terminal": claudeEventsFor,
+  "claude-print": claudeEventsFor,
+  "codex-app-server": codexEventsFor,
+  "codex-exec": codexExecEventsFor,
 };
 
-const ROUTINE_MAPPERS: Record<string, (line: IncomingLine) => ParsedLiveEvent[]> = {
-  claude: claudeEventsFor,
-  codex: codexExecEventsFor,
-};
-
-/** Like `eventsForHarness`, for a routine run, where Codex prints `codex exec --json` and not app-server notifications. */
-export function routineEventsForHarness(harness: string, line: IncomingLine): ParsedLiveEvent[] {
-  return (ROUTINE_MAPPERS[harness] ?? claudeEventsFor)(line);
-}
-
-/** Turns one forwarded line into session events with the parser of the harness that wrote it. */
-export function eventsForHarness(harness: string, line: IncomingLine): ParsedLiveEvent[] {
-  return (MAPPERS[harness] ?? claudeEventsFor)(line);
+/** Turns one forwarded line into session events with the parser of the adapter that wrote it. Throws for an unknown adapter. */
+export function eventsForAdapter(adapterId: string, line: IncomingLine): ParsedLiveEvent[] {
+  return MAPPERS[requireAdapter(adapterId).id as AdapterId](line);
 }
