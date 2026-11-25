@@ -66,8 +66,10 @@ import {
   deleteLiveSession,
   resumeLiveSession,
   resumeLiveSessions,
+  reviveLiveSessions,
   startLiveSession,
 } from "draft-core/host/live-session";
+import { startWakeDetector } from "./main/wake-detector";
 import { gitRemote } from "draft-core/host/git-remote";
 import { readAgentDefaults } from "draft-core/host/agent-defaults";
 import { connectPresence } from "./main/presence/connect-presence";
@@ -1250,6 +1252,9 @@ async function checkAndDownloadUpdate(silent: boolean) {
 // ── Main window ────────────────────────────────────────────────────────────────
 
 // Native close can't be intercepted (no preventDefault hook like beforeQuit),
+// A sleeping laptop leaves dead connections behind, so wake and window focus both re-report every hosted session.
+const wakeDetector = startWakeDetector({ onWake: reviveLiveSessions });
+
 // so on close we swap in a fresh hidden window rather than reuse the dead one.
 function createMainWindow(hidden: boolean) {
   const w = new BrowserWindow({
@@ -1260,6 +1265,7 @@ function createMainWindow(hidden: boolean) {
     hidden,
   });
   w.setFrame(180, 100, 1150, 820);
+  w.on("focus", () => wakeDetector.nudge());
   w.on("close", () => {
     realtime.clearWindow();
     win = createMainWindow(true);
