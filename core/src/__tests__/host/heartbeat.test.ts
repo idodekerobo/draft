@@ -15,6 +15,16 @@ describe("heartbeat", () => {
     expect(calls).toBe(seen);
   });
 
+  it("keeps beating after one beat hangs forever", async () => {
+    let calls = 0;
+    const stop = startHeartbeat(async () => {
+      if (++calls === 1) await new Promise<void>(() => {});
+    }, 10, 30);
+    await wait(150);
+    stop();
+    expect(calls).toBeGreaterThanOrEqual(3);
+  });
+
   it("does not start a beat while the last one is still running", async () => {
     let running = 0;
     let overlap = false;

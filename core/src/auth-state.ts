@@ -190,6 +190,7 @@ const DEAD_LOGIN_CODES = new Set([
   "user_not_found",
   "user_banned",
 ]);
+const REFRESH_REQUEST_TIMEOUT_MS = 15_000;
 const MAX_REJECTED_REFRESHES = 5;
 const REJECTED_REFRESH_BACKOFF_MS = 30_000;
 
@@ -226,6 +227,8 @@ export function createAccessTokenProvider(deps: AccessTokenProviderDeps) {
             method: "POST",
             headers: { apikey: options.publishableKey, "Content-Type": "application/json" },
             body: JSON.stringify({ refresh_token: current0.refresh_token }),
+            // A socket that died during sleep never answers; every caller shares this one refresh.
+            signal: AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS),
           });
         } catch {
           throw new AuthRefreshError("transient");

@@ -42,6 +42,8 @@ export interface SessionActivity {
 }
 
 const running = new Map<string, SessionHost>();
+/** A heartbeat or input poll that takes longer fails, so the next one starts on a fresh connection. */
+const HOST_REQUEST_TIMEOUT_MS = 15_000;
 const lifecycle = new Map<string, Promise<unknown>>();
 const finalizations = new Map<string, Promise<unknown>>();
 
@@ -120,7 +122,7 @@ class SessionHost {
   /** Teammate messages, Stops and permission decisions that wait for this host, in one call. */
   private async fetchInputs(): Promise<HostInput[]> {
     const query = `hostId=${encodeURIComponent(this.state.hostId)}&kinds=all`;
-    return (await hostServices().fetchServerJSON<{ inputs: HostInput[] }>(`${this.base}/inputs/pending?${query}`)).inputs;
+    return (await hostServices().fetchServerJSON<{ inputs: HostInput[] }>(`${this.base}/inputs/pending?${query}`, { signal: AbortSignal.timeout(HOST_REQUEST_TIMEOUT_MS) })).inputs;
   }
 
   /** Returns false when the input was no longer in one of the `from` states. */
@@ -196,6 +198,7 @@ class SessionHost {
     try {
       await hostServices().fetchServer(`${this.base}/heartbeat`, {
         method: "POST",
+        signal: AbortSignal.timeout(HOST_REQUEST_TIMEOUT_MS),
         body: JSON.stringify({ hostId: this.state.hostId, harnessVersion: this.state.harnessVersion ?? null, ...(ready && this.state.resumeRequestId ? { readyRequestId: this.state.resumeRequestId } : {}), ...this.modes, ...this.agent }),
       });
       this.topics.open();
@@ -206,6 +209,13 @@ class SessionHost {
       this.reportInputError("heartbeat", error);
       return false;
     }
+  }
+
+  /** The computer woke from sleep: report in and look for inputs now, instead of waiting for the next timer. */
+  revive(): void {
+    if (this.finished || !this.ownsSession()) return;
+    void this.sendHeartbeat();
+    this.wake();
   }
 
   private ownsSession(): boolean {
@@ -769,6 +779,11 @@ export function sessionBase(sessionId: string): string {
   const workspaceId = hostServices().workspaceId();
   if (!workspaceId) throw new ServerError("signed_out");
   return `workspaces/${workspaceId}/live-sessions/${sessionId}`;
+}
+
+/** Sends a heartbeat and checks inputs for every session on this computer. Called after the computer wakes. */
+export function reviveLiveSessions(): void {
+  for (const host of running.values()) host.revive();
 }
 
 /** Ids of the live sessions whose pane runs on this computer. */
