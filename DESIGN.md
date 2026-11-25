@@ -67,6 +67,5 @@ Web connects every hosted tool, including Slack and its channels. Desktop retain
 - Preserve Light / Dark / System and the `draft.theme` key.
 - Add opt-in shared `ToolList` search for Connections only.
 - Optimize web phone behavior without copying web navigation into the desktop shell.
-- Keep privacy defaults and consent promises unchanged; do not add a session replay setting.
 - Connect Slack on web as on desktop: Draft's backend lists channels, because Slack's API refuses browser calls.
 - Store provider artwork in `shared-ui/src/integrations/logos` and render it through shared `ProviderLogo`, with a fixed 28px slot and neutral icon fallback. The current preview assets have local provenance records, but upstream license terms remain unverified.
