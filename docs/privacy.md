@@ -15,6 +15,7 @@ Depending on the features you enable, the Draft deployment stores:
 - Coding-agent session metadata and captured transcript content.
 - Synthesis runs, statuses, bounded run bundles, and results.
 - Notifications: when Draft or an agent tells you something in the app, by email or in Slack, Draft stores the message (subject and text, and the HTML for an email) and the delivery status of each send, so you and the sender can look back at it. A private notification can be read only by its recipient and its sender. Draft does not track whether an email was opened. The message content stays stored with the notification.
+- A history of what happened in your workspace, such as source items added and notifications marked done or not yours. Some entries are private to one person, such as your own actions on your to-dos, and only that person can read them. The rest are visible to workspace members.
 - Encrypted provider credentials needed to connect integrations or run synthesis.
 
 The backend enforces workspace access in its authenticated routes and database policies. Do not connect a source unless you are comfortable with the resulting data being available to the workspace members authorized to access it.
