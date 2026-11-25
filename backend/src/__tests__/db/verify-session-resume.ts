@@ -18,7 +18,7 @@ try {
   user = checked(await db.auth.admin.createUser({ email: `verify-${suffix}@example.test`, password, email_confirm: true })).user!.id;
   checked(await db.from("users").update({ organization_id: org, primary_team_id: team.id, organization_role: "admin", status: "active" }).eq("id", user));
   const token = checked(await auth.auth.signInWithPassword({ email: `verify-${suffix}@example.test`, password })).session!.access_token;
-  const sessionId = checked(await db.from("sessions").insert({ workspace_id: workspace, owner_user_id: user, host_id: hostId, harness: "codex", status: "ended", end_reason: "exited", runtime: "local" }).select("id").single()).id;
+  const sessionId = checked(await db.from("sessions").insert({ workspace_id: workspace, owner_user_id: user, host_id: hostId, harness: "codex", status: "ended", end_reason: "exited", execution_target: "host", adapter_id: "codex-app-server" }).select("id").single()).id;
   const request = (input: any, bearer = token) => {
     const body = input.failure ? {
       id: input.failure.id, code: input.failure.code, message: input.failure.message ?? "Session failure",

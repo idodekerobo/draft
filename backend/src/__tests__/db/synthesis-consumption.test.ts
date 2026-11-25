@@ -67,11 +67,13 @@ async function createSynthesisRun(
   const { status = "succeeded", outcome = "changed" } = options;
   const [row] = await db()<[{ id: string }]>`
     insert into agent_runs (
-      workspace_id, kind, trigger, runtime, harness, idempotency_key, base_context_version_id,
+      workspace_id, kind, trigger, execution, toolset, computer, harness, idempotency_key, base_context_version_id,
       prompt_version, status, outcome
     ) values (
       ${workspaceId}, 'synthesis', '{"type": "system", "reason": "manual"}'::jsonb,
-      '{"type": "cloud", "toolset": {"nativeTools": [], "mcpServers": [], "skills": [], "instructions": []}}'::jsonb,
+      '{"target":{"type":"sandbox"},"adapterId":"claude-print"}'::jsonb,
+      '{"nativeTools":[],"mcpServers":[],"skills":[],"instructions":[]}'::jsonb,
+      '{"type":"sandbox","profileId":"default","workingDirectory":"/run","network":"restricted"}'::jsonb,
       'claude', ${randomUUID()}, ${baseContextVersionId},
       'v1', ${status}, ${outcome}
     )

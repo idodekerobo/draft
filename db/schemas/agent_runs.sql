@@ -9,14 +9,12 @@ create table agent_runs (
   trigger                  jsonb not null,
   -- The user whose connections and context the run may use. The actor is always the run itself.
   on_behalf_of_user_id     uuid references users(id) on delete set null,
-  -- Replaced by execution, toolset and computer. Nullable and unused by new code; the contract step drops it.
-  runtime                  jsonb,
   -- { target: { type: 'host', hostId } | { type: 'sandbox' } | { type: 'backend', packageVersion }, adapterId }
-  execution                jsonb,
+  execution                jsonb not null,
   -- Cloud: the allow-list of built-in tools, MCP servers, skills and instructions. Local: only what Draft adds.
-  toolset                  jsonb,
+  toolset                  jsonb not null,
   -- Which computer the run's tools act on: host_computer, sandbox (with its network) or none.
-  computer                 jsonb,
+  computer                 jsonb not null,
   -- What the run resumes earlier agent state from. Null on a fresh launch.
   continuation             jsonb,
   harness                 text not null,
