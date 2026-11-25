@@ -33,6 +33,8 @@ export type ActResult =
   | { ok: true; state: NotificationState; changed: boolean }
   | { ok: false; code: string; message: string };
 
+export type DecideResult = { ok: true } | { ok: false; code: string; message: string };
+
 /** What to tell the person for each way an action can be refused. */
 export const ACT_REFUSAL_MESSAGES: Record<string, string> = {
   not_found: "That item is gone.",
@@ -40,5 +42,8 @@ export const ACT_REFUSAL_MESSAGES: Record<string, string> = {
   not_actionable: "There is nothing to do on this one.",
   already_acted: "Already handled.",
   stale_undo: "Too late to undo: a later step was taken.",
+  not_admin: "Only an admin can decide this.",
+  already_decided: "Someone already decided this.",
+  person_not_found: "That person is gone.",
 };
 export const actRefusalMessage = (code: string) => ACT_REFUSAL_MESSAGES[code] ?? "Could not save that. Try again.";

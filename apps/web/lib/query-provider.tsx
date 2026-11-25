@@ -33,6 +33,15 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
         throw error;
       }
     },
+    decidePerson: async (personId, decision) => {
+      try {
+        await apiFetch(`/workspaces/${workspaceId}/tools/people.${decision}`, { method: "POST", body: JSON.stringify({ personId }) });
+        return { ok: true };
+      } catch (error) {
+        if (error instanceof ApiError && typeof error.detail?.message === "string") return { ok: false, code: typeof error.detail.code === "string" ? error.detail.code : error.code, message: error.detail.message };
+        throw error;
+      }
+    },
     getRoutines: () => apiFetch<RoutinesResponse>(`/workspaces/${workspaceId}/schedules`),
     updateRoutine: async (id, patch) => {
       try {

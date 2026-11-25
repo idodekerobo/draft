@@ -1132,6 +1132,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
+      decidePerson: async ({ personId, decision }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, code: "no_workspace", message: "Sign in to continue." };
+        try {
+          await callServerTool(workspaceId, `people.${decision}`, { personId });
+          return { ok: true };
+        } catch (err) {
+          if (err instanceof ServerError) return { ok: false, code: err.code, message: actRefusalMessage(err.code) };
+          throw err;
+        }
+      },
+
       startBrowserSignIn: async () => {
         browserSignInController?.abort();
         browserSignInController = new AbortController();

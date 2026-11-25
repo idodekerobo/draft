@@ -83,7 +83,29 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
     }
   }
 
+  async function decide(personId: string, rowId: string, decision: "approve" | "reject") {
+    setPending(rowId);
+    try {
+      const result = await api.decidePerson(personId, decision);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(decision === "approve" ? "Approved" : "Turned away");
+      setLeaving(rowId);
+      await new Promise((resolve) => setTimeout(resolve, window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : 200));
+      setFocusHeading(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save that. Try again.");
+    } finally {
+      setPending(null);
+      await refresh();
+      setLeaving(null);
+    }
+  }
+
   const handlers = (id: string): RowHandlers => ({
+    onDecide: (personId, rowId, decision) => void decide(personId, rowId, decision),
     busy: pending === id,
     onDone: (notificationId) => void act(notificationId, "done"),
     onNotMine: (notificationId) => void act(notificationId, "not_mine"),

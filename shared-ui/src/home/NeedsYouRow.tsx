@@ -6,6 +6,7 @@ import type { NeedsYouRow as Row } from "./types";
 export interface RowHandlers {
   busy: boolean;
   onDone: (notificationId: string) => void;
+  onDecide: (personId: string, rowId: string, decision: "approve" | "reject") => void;
   onNotMine: (notificationId: string) => void;
   onOpenSession: (sessionId: string) => void;
   onOpenRun: (runId: string) => void;
@@ -47,7 +48,13 @@ export function NeedsYouRow({ row, handlers, highlighted = false, leaving = fals
             <button type="button" className="ui-link" disabled={busy} aria-label={`Not mine: ${row.notification.subject}`} onClick={() => handlers.onNotMine(row.notification.id)}>Not mine</button>
           </>
         )}
-        {row.kind === "notification" && row.notification.kind !== "todo_routed" && (
+        {row.kind === "notification" && row.notification.kind === "identity_proposed" && row.notification.refType === "person" && row.notification.refId && (
+          <>
+            <button type="button" className="ui-btn" disabled={busy} aria-busy={busy} aria-label={`Approve: ${row.notification.subject}`} onClick={() => handlers.onDecide(row.notification.refId!, row.notification.id, "approve")}>{busy ? "Saving…" : "Approve"}</button>
+            <button type="button" className="ui-link" disabled={busy} aria-label={`Reject: ${row.notification.subject}`} onClick={() => handlers.onDecide(row.notification.refId!, row.notification.id, "reject")}>Reject</button>
+          </>
+        )}
+        {row.kind === "notification" && row.notification.kind !== "todo_routed" && !(row.notification.kind === "identity_proposed" && row.notification.refType === "person") && (
           <button type="button" className="ui-btn" disabled={busy} aria-busy={busy} aria-label={`Done: ${row.notification.subject}`} onClick={() => handlers.onDone(row.notification.id)}>{busy ? "Saving…" : "Done"}</button>
         )}
         {row.kind === "approval" && <button type="button" className="ui-btn" onClick={() => handlers.onOpenSession(row.sessionId)}>Review</button>}

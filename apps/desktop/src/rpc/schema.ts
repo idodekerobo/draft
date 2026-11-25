@@ -11,7 +11,7 @@ import type { SessionViewQuery, SessionViewResponse } from "draft-core/live-sess
 //   webview.requests  — bun calls → renderer responds
 //   webview.messages  — bun sends fire-and-forget → renderer handles
 
-import type { ActResult, IntegrationActions, NeedsYou, NotificationAction, RunDetail, StepRunTranscript, SynthesisRunsPage } from "draft-shared-ui";
+import type { ActResult, DecideResult, IntegrationActions, NeedsYou, NotificationAction, RunDetail, StepRunTranscript, SynthesisRunsPage } from "draft-shared-ui";
 import type { RPCSchema } from "electrobun/bun";
 
 export interface SessionMcpStatus {
@@ -539,6 +539,9 @@ export type AppRPCType = {
       getNeedsYou: { params: void; response: NeedsYou };
       /** Marks one notification done or not mine, or undoes that. A refusal comes back as `ok: false`. */
       actOnNotification: { params: { id: string; action: NotificationAction }; response: ActResult };
+
+      /** Approves or rejects a person Draft found. A refusal comes back as `ok: false`. */
+      decidePerson: { params: { personId: string; decision: "approve" | "reject" }; response: DecideResult };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };

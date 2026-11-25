@@ -99,3 +99,15 @@ test("an email link marks its row and keeps it visible past the cap", async () =
   const row = (await screen.findByText("Task 5")).closest("li")!;
   expect(row.getAttribute("aria-current")).toBe("true");
 });
+
+test("a proposed teammate can be approved or rejected from Home", async () => {
+  const decidePerson = mock(async () => ({ ok: true as const }));
+  const row: NeedsYouRow = {
+    kind: "notification", id: "p1", createdAt: "2026-11-25T10:00:00Z",
+    notification: { id: "p1", kind: "identity_proposed", subject: "A teammate needs approval", text: "", link: null, needsAction: true, state: "open", refType: "person", refId: "person-9", createdAt: "2026-11-25T10:00:00Z", actedAt: null },
+  };
+  renderHome({ count: 1, rows: [row] }, { decidePerson });
+  fireEvent.click(await screen.findByRole("button", { name: "Approve: A teammate needs approval" }));
+  await waitFor(() => expect(decidePerson).toHaveBeenCalledWith("person-9", "approve"));
+  expect(screen.queryByRole("button", { name: /Not mine/ })).toBeNull();
+});
