@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ChannelSendResult, NotifyChannelId, NotifyResult } from "draft-core/notify";
+import { appUrl } from "../../config";
+import { captureProductEvent } from "../../observability/product-analytics";
 import { recordError, redactString } from "../../errors/record-error";
 import { sendNotification, type DeliveryRecorder } from "./send";
 import { normalizeSubject } from "../channels/email/render";
@@ -15,6 +17,8 @@ export type DeliverInput = {
   link?: string;
   idempotencyKey?: string;
   attribution: string;
+  /** Set when the recipient must act. It names what the notification is about and, for a to-do, the identity match that routed it. */
+  action?: { kind: "todo_routed" | "identity_proposed"; refType: string; refId: string; matchedIdentityId?: string | null };
   requested?: ReadonlyArray<NotifyChannelId>;
   /** The human whose authority the send used, and where it came from. Both are set by the gateway, not the model. */
   origin: { senderUserId: string | null; agentRunId: string | null; scheduledTaskId: string | null };
@@ -35,6 +39,12 @@ function deliveryIdFor(notificationId: string, channel: NotifyChannelId): string
   // The primary key is the cross-process claim for this notification and channel.
   const hex = createHash("sha256").update(`${notificationId}:${channel}`).digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+/** A card that needs action links to it on Home for a person with an account, and to sign-in for one without. */
+function actionLink(person: ReachablePerson, input: DeliverInput, notificationId: string): string | undefined {
+  if (!input.action) return undefined;
+  return person.userId ? `${appUrl()}/home?n=${notificationId}` : appUrl();
 }
 
 type LogError = (code: string, error: unknown, detail?: Record<string, unknown>) => Promise<void>;
@@ -84,10 +94,11 @@ export async function deliverNotification(
 ): Promise<DeliverResult> {
   const wanted = [...new Set(input.requested?.length ? input.requested : person.notifyChannels)];
   const subject = normalizeSubject(input.subject);
-  const hash = contentHash([person.id, subject, input.text, input.html ?? null, input.link ?? null, [...wanted].sort()]);
+  // The action is hashed only when there is one, so a plain message keeps the hash it was saved with.
+  const hash = contentHash([person.id, subject, input.text, input.html ?? null, input.link ?? null, [...wanted].sort(), ...(input.action ? [[input.action.kind, input.action.refType, input.action.refId, input.action.matchedIdentityId ?? null]] : [])]);
   const key = input.idempotencyKey ?? (input.origin.agentRunId ? `run:${input.origin.agentRunId}:${hash}` : `person:${randomUUID()}`);
   const logError: LogError = (code, error, detail) =>
-    recordError({ client, workspaceId: person.workspaceId, agentRunId: input.origin.agentRunId, operation: "execution", code, message: `notification: ${code}`, detail: { personId: person.id, ...detail }, error });
+    recordError({ client, workspaceId: person.workspaceId, agentRunId: input.origin.agentRunId, operation: "delivery", code, message: `notification: ${code}`, detail: { personId: person.id, ...detail }, error });
 
   const find = async () => {
     const { data, error } = await client.from("notifications").select("id, content_hash, sender_user_id, agent_run_id").eq("workspace_id", person.workspaceId).eq("idempotency_key", key).maybeSingle();
@@ -104,7 +115,11 @@ export async function deliverNotification(
         workspace_id: person.workspaceId,
         recipient_person_id: person.id,
         sender_user_id: input.origin.senderUserId,
-        kind: "message",
+        kind: input.action?.kind ?? "message",
+        needs_action: Boolean(input.action),
+        ref_type: input.action?.refType ?? null,
+        ref_id: input.action?.refId ?? null,
+        matched_identity_id: input.action?.matchedIdentityId ?? null,
         subject,
         body_text: input.text,
         body_html: input.html ?? null,
@@ -124,6 +139,9 @@ export async function deliverNotification(
       throw error ?? new Error("notification_not_created");
     } else {
       notificationId = (data as { id: string }).id;
+      if (input.action && person.userId) {
+        await captureProductEvent(client, "notification_created", { userId: person.userId, workspaceId: person.workspaceId, key: notificationId, properties: { kind: input.action.kind } });
+      }
     }
   }
   if (!notificationId) throw new Error("notification_not_found");
@@ -140,7 +158,7 @@ export async function deliverNotification(
     ? await sendNotification(
         channels,
         person,
-        { text: input.text, html: input.html, link: input.link, subject, attribution: input.attribution },
+        { text: input.text, html: input.html, link: input.link ?? actionLink(person, input, notificationId), subject, attribution: input.attribution },
         remaining,
         (channel, error) => logError("notify_send_failed", error, { channel }),
         recorderFor(client, notificationId, person.workspaceId, logError),

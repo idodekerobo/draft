@@ -31,7 +31,7 @@ export async function loadDeliveryStatus(client: SupabaseClient, notification: {
       if (next === "delivered") delivery.delivered_at = now;
     } catch (refreshError) {
       refreshed = false;
-      await recordError({ client, workspaceId: notification.workspaceId, agentRunId: options.agentRunId ?? null, operation: "execution", code: "notify_status_refresh_failed", message: "people.notification_status could not refresh a delivery", detail: { channel: delivery.channel }, error: refreshError });
+      await recordError({ client, workspaceId: notification.workspaceId, agentRunId: options.agentRunId ?? null, operation: "delivery", code: "notify_status_refresh_failed", message: "people.notification_status could not refresh a delivery", detail: { channel: delivery.channel }, error: refreshError });
     }
   }
 

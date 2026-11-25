@@ -21,6 +21,10 @@ export const agentMessageSchema = z.object({
   link: z.string().url().optional().describe("A URL appended to the plain text message on each channel."),
   idempotencyKey: z.string().min(1).max(128).optional().describe("A stable key for this message, so a retry does not send twice."),
   channels: z.array(z.enum(NOTIFY_CHANNELS)).min(1).optional().describe("Where to send. Omit to use the person's own channels."),
+  kind: z.enum(["message", "todo"]).optional().describe("message (the default) just tells them. todo also puts a card on their Home that they mark Done, or Not mine if it is not theirs. A todo needs sourceItemId and quote."),
+  sourceItemId: z.string().uuid().optional().describe("todo only. The source the to-do came from, from sources.search. A private source is allowed only if it is yours."),
+  quote: z.string().min(1).max(500).optional().describe("todo only. The exact words from the source that assign the to-do to this person."),
+  matchedIdentityId: z.string().uuid().optional().describe("todo only. The id of the person's identity (from people.find) that matched the name in the source, so a wrong match can be traced."),
 });
 export type AgentMessageInput = z.infer<typeof agentMessageSchema>;
 
@@ -49,7 +53,11 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
     if (max !== undefined && (await countRunToolCalls(client, run.id, "people.notify")) >= max) return messageFailure("limit_reached", `This run has used people.notify ${max} times, which is its limit. Stop and report what is left.`);
   }
 
-  const text = input.text ?? (input.html ? htmlToText(input.html) : "");
+  const todo = await checkTodo(client, workspaceId, caller, person, input);
+  if (todo && "failure" in todo) return todo.failure;
+
+  const baseText = input.text ?? (input.html ? htmlToText(input.html) : "");
+  const text = todo && input.quote ? `${baseText}\n\nFrom the source: "${input.quote}"` : baseText;
   const content = renderEmail({ subject: input.subject, text, html: input.html });
   if (!content.ok) {
     const why = { empty_body: "Give text, html, or both.", subject_too_long: "The subject is too long.", text_too_long: "The text is too long.", html_too_long: "The html is too long." }[content.code];
@@ -59,7 +67,7 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
   const origin = caller.origin;
   const agentRunId = origin.kind === "run" ? origin.run.id : null;
   const logFailure = (code: string, error: unknown) =>
-    recordError({ client, workspaceId, agentRunId, operation: "execution", code, message: `people.notify: ${code}`, detail: { personId: person.id }, error });
+    recordError({ client, workspaceId, agentRunId, operation: "delivery", code, message: `people.notify: ${code}`, detail: { personId: person.id }, error });
   try {
     const delivered = await deliverNotification(client, channels, person, {
       subject: input.subject,
@@ -68,6 +76,7 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
       link: input.link,
       idempotencyKey: input.idempotencyKey,
       attribution: await attributionLine(client, caller),
+      action: todo ? { kind: "todo_routed", refType: "source_item", refId: todo.todo.sourceItemId, matchedIdentityId: todo.todo.matchedIdentityId } : undefined,
       requested: input.channels?.filter(isNotifyChannelId),
       origin: {
         senderUserId: origin.kind === "run" ? origin.run.onBehalfOf : origin.userId,
@@ -82,4 +91,35 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
     await logFailure("notify_record_failed", error);
     return messageFailure("notify_failed", "The notification could not be prepared or its saved deliveries could not be read. Check its status before retrying.");
   }
+}
+
+/** A to-do must name its source and quote. The caller may not route a private source that is someone else's. */
+async function checkTodo(
+  client: SupabaseClient,
+  workspaceId: string,
+  caller: ToolCaller,
+  person: { id: string },
+  input: AgentMessageInput,
+): Promise<{ todo: { sourceItemId: string; matchedIdentityId: string | null } } | { failure: MessageResult<NotifyResult> } | null> {
+  if (input.kind !== "todo") {
+    if (input.sourceItemId || input.quote || input.matchedIdentityId) return { failure: messageFailure("invalid_input", "sourceItemId, quote and matchedIdentityId are only for kind todo.") };
+    return null;
+  }
+  if (!input.sourceItemId || !input.quote) return { failure: messageFailure("invalid_input", "A to-do needs sourceItemId and quote.") };
+
+  const { data: source, error } = await client.from("source_items").select("visibility, owner_user_id").eq("id", input.sourceItemId).eq("workspace_id", workspaceId).maybeSingle();
+  if (error) throw error;
+  const row = source as { visibility: "private" | "shared"; owner_user_id: string | null } | null;
+  if (!row || (row.visibility === "private" && (!caller.onBehalfOf || row.owner_user_id !== caller.onBehalfOf))) {
+    return { failure: messageFailure("not_allowed", "No source with that id that you may route a to-do from.") };
+  }
+
+  let matchedIdentityId: string | null = null;
+  if (input.matchedIdentityId) {
+    const { data: identity, error: identityError } = await client.from("person_identities").select("id").eq("id", input.matchedIdentityId).eq("workspace_id", workspaceId).eq("person_id", person.id).maybeSingle();
+    if (identityError) throw identityError;
+    if (!identity) return { failure: messageFailure("invalid_input", "That identity does not belong to this person.") };
+    matchedIdentityId = input.matchedIdentityId;
+  }
+  return { todo: { sourceItemId: input.sourceItemId, matchedIdentityId } };
 }

@@ -74,6 +74,9 @@ export function resendSettings(): { apiKey: string | undefined; statusApiKey: st
   return { apiKey: process.env.RESEND_API_KEY, statusApiKey: process.env.RESEND_STATUS_API_KEY };
 }
 
+/** The web app origin, for links in messages. It needs no other setting, so it works where the full config does not load. */
+export const appUrl = (): string => process.env.APP_URL ?? "https://app.draftai.us";
+
 export function loadConfig(): BackendConfig {
   const port = Number(process.env.PORT ?? 8787);
   const githubAppPrivateKeyPreviousRaw = process.env.GITHUB_APP_PRIVATE_KEY_PREVIOUS;
@@ -83,7 +86,7 @@ export function loadConfig(): BackendConfig {
     supabasePublishableKey: requireEnv("SUPABASE_PUBLISHABLE_KEY"),
     supabaseSecretKey: requireEnv("SUPABASE_SECRET_KEY"),
     port,
-    appUrl: process.env.APP_URL ?? "https://app.draftai.us",
+    appUrl: appUrl(),
     apiBaseUrl,
     githubAppId: requireEnv("GITHUB_APP_ID"),
     githubAppSlug: requireEnv("GITHUB_APP_SLUG"),

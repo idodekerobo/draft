@@ -419,7 +419,7 @@ describe("notify error logging", () => {
     const out = await call(asUser(), "people.notify", { personId: IZA, text: "secret launch plan" });
     expect(out).toMatchObject({ status: "ok", output: { results: [{ channel: "slack", status: "failed", code: "provider_error" }] } });
     expect(db.tables.errors).toHaveLength(1);
-    expect(db.tables.errors![0]).toMatchObject({ workspace_id: WS, operation: "execution", agent_run_id: null });
+    expect(db.tables.errors![0]).toMatchObject({ workspace_id: WS, operation: "delivery", agent_run_id: null });
     expect(JSON.stringify(db.tables.errors![0])).not.toContain("secret launch plan");
     expect(db.tables.errors![0]!.detail_json).toMatchObject({ code: "notify_send_failed", channel: "slack", personId: IZA });
   });
@@ -581,4 +581,69 @@ it("deduplicates product notices independently of agent send permissions", async
   expect(sent).toHaveLength(1);
   expect(db.tables.notifications).toHaveLength(1);
   expect(db.tables.notifications![0]).toMatchObject({ sender_user_id: null, agent_run_id: null });
+});
+
+describe("people.notify kind todo", () => {
+  const SHARED = "99999999-9999-4999-8999-999999999991";
+  const PRIVATE_OWN = "99999999-9999-4999-8999-999999999992";
+  const PRIVATE_OTHER = "99999999-9999-4999-8999-999999999993";
+  const IDENTITY = "99999999-9999-4999-8999-999999999994";
+  const todo = (sourceItemId: string, extra: Record<string, unknown> = {}) => ({ personId: IZA, kind: "todo", text: "Send the revised quote", sourceItemId, quote: "Iza will send the revised quote", idempotencyKey: "t1", ...extra });
+
+  function withSources() {
+    const env = setup();
+    env.db.tables.source_items!.push(
+      { id: SHARED, workspace_id: WS, visibility: "shared", owner_user_id: null },
+      { id: PRIVATE_OWN, workspace_id: WS, visibility: "private", owner_user_id: OWNER },
+      { id: PRIVATE_OTHER, workspace_id: WS, visibility: "private", owner_user_id: ADMIN },
+    );
+    env.db.tables.person_identities!.push({ id: IDENTITY, workspace_id: WS, person_id: IZA, provider: "slack", external_id: "U1", status: "confirmed" });
+    return env;
+  }
+
+  it("saves a to-do that needs action, points at its source and carries the quote", async () => {
+    const { db, call, sent } = withSources();
+    const result = await call(personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" }), "people.notify", todo(SHARED, { matchedIdentityId: IDENTITY }));
+    expect(result).toMatchObject({ status: "ok" });
+    expect(db.tables.notifications![0]).toMatchObject({ kind: "todo_routed", needs_action: true, ref_type: "source_item", ref_id: SHARED, matched_identity_id: IDENTITY, visibility: "private" });
+    expect(sent[0]!.message.text).toContain('From the source: "Iza will send the revised quote"');
+  });
+
+  it("links a to-do to Home for a person with an account, and to the app for one without", async () => {
+    const { db, call, sent } = withSources();
+    const caller = personCaller({ userId: parseUserId(ADMIN), workspaceId: parseWorkspaceId(WS), via: "cli" });
+    await call(caller, "people.notify", todo(SHARED, { personId: UZO, idempotencyKey: "to-uzo" }));
+    await call(caller, "people.notify", todo(SHARED, { idempotencyKey: "to-iza" }));
+    const uzoCard = db.tables.notifications!.find((row) => row.recipient_person_id === UZO)!;
+    expect(sent[0]!.message.link).toBe(`https://app.draftai.us/home?n=${uzoCard.id}`);
+    expect(sent[1]!.message.link).toBe("https://app.draftai.us");
+  });
+
+  it("needs a source and a quote, and refuses them on a plain message", async () => {
+    const { call } = withSources();
+    const caller = personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" });
+    expect(await call(caller, "people.notify", { personId: IZA, kind: "todo", text: "x" })).toMatchObject({ status: "refused", code: "invalid_input" });
+    expect(await call(caller, "people.notify", { personId: IZA, text: "x", quote: "q" })).toMatchObject({ status: "refused", code: "invalid_input" });
+  });
+
+  it("allows your own private source and refuses someone else's", async () => {
+    const { call } = withSources();
+    const caller = personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" });
+    expect(await call(caller, "people.notify", todo(PRIVATE_OWN, { idempotencyKey: "own" }))).toMatchObject({ status: "ok" });
+    expect(await call(caller, "people.notify", todo(PRIVATE_OTHER, { idempotencyKey: "other" }))).toMatchObject({ status: "refused", code: "not_allowed" });
+  });
+
+  it("refuses an identity that belongs to someone else", async () => {
+    const { call } = withSources();
+    const caller = personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" });
+    const other = "99999999-9999-4999-8999-999999999995";
+    expect(await call(caller, "people.notify", todo(SHARED, { matchedIdentityId: other }))).toMatchObject({ status: "refused", code: "invalid_input" });
+  });
+
+  it("refuses the same key reused as a different kind", async () => {
+    const { call } = withSources();
+    const caller = personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" });
+    expect(await call(caller, "people.notify", { personId: IZA, text: "Send the revised quote", idempotencyKey: "t1" })).toMatchObject({ status: "ok" });
+    expect(await call(caller, "people.notify", todo(SHARED))).toMatchObject({ status: "refused", code: "idempotency_conflict" });
+  });
 });

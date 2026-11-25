@@ -53,12 +53,13 @@ export async function notifyAdminsOfPending(
         text,
         subject: "A teammate needs approval",
         attribution: "Sent by Draft · Workspace administration",
+        action: { kind: "identity_proposed", refType: "person", refId: pending.id },
         idempotencyKey: `person-pending:${pending.id}:${admin.id}`,
         origin: { senderUserId: null, agentRunId: null, scheduledTaskId: null },
       });
       if (!result.ok) throw new Error(result.code);
     } catch (error) {
-      await recordError({ client, workspaceId, operation: "execution", code: "product_notification_failed", message: "Pending-person notice could not be recorded", detail: { personId: pending.id, recipientPersonId: admin.id }, error });
+      await recordError({ client, workspaceId, operation: "delivery", code: "product_notification_failed", message: "Pending-person notice could not be recorded", detail: { personId: pending.id, recipientPersonId: admin.id }, error });
     }
   }
 }
