@@ -30,7 +30,7 @@ When you turn usage data off, the apps stop sending events and reset the PostHog
 
 ## Session replay
 
-While usage data is on, PostHog records how you move through the app to help the Draft team understand usage and fix bugs. Text masking is off, so a recording shows the text on screen, such as meeting quotes, names and session text, and the text you type in ordinary fields, including your messages to agents in a session. Password-type fields (API keys and tokens) and the repository and branch fields are excluded. Turn off **Share usage data** in Settings to stop recording.
+While usage data is on, PostHog records how you move through the app to help the Draft team understand usage and fix bugs. Text masking is off, so a recording shows the text on screen, such as meeting quotes, names, to-dos on Home and session text, and the text you type in ordinary fields, including your messages to agents in a session. Password-type fields (API keys and tokens) and the repository and branch fields are excluded. Turn off **Share usage data** in Settings to stop recording.
 
 ## Events
 
@@ -47,6 +47,10 @@ Shared by web and desktop (`shared-ui/src/analytics/events.ts`):
 | `analytics_consent_granted` | none (sent when you turn usage data back on in Settings) |
 | `first_tool_connected` | `source` (tool name) |
 | `integration_connected`, `integration_disconnected`, `integration_channels_updated` | `source` (tool name) |
+| `home_viewed` | `needs_you_count`: how many items needed you when Home opened |
+| `home_card_opened` | `kind`: `approval`, `input_request` or `connection_attention` |
+
+Draft's servers also send events about notifications, only for people who turned usage data on: `notification_created`, `notification_done`, `notification_not_mine` and `notification_undone`. Each carries only the kind of notification (for example `todo_routed`), never its subject or text.
 
 The desktop app also sends app events such as `app_launched`, `view_navigated`, `context_doc_viewed` and update and install results. The full list is the typed union in `apps/desktop/src/app/analytics/events.ts`. Properties follow the same rule: coded values only.
 
