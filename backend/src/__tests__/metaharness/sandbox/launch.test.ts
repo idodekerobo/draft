@@ -342,6 +342,7 @@ describe("the run manifest the launcher sends", () => {
     expect(manifest).toEqual({
       version: 1,
       harness: "claude",
+      adapterId: "claude-print",
       model: "haiku",
       prompt: { kind: "file", path: "/run/input/prompt.md" },
       tools: { native: ["Read", "Glob", "Grep", "Bash", "WebSearch"], draftMcpUrl: `https://api.example.test/runs/${RUN}/mcp` },

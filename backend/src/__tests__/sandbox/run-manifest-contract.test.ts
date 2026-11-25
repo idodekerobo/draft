@@ -36,6 +36,14 @@ describe("the manifest the backend builds, for every kind of run", () => {
       expect(validateRunnerManifest(JSON.parse(JSON.stringify(manifest)), { callbackUrl: CALLBACK })).toEqual(manifest);
     });
 
+    it(`${name}: names the spec's adapter, and the same manifest without it is still valid`, () => {
+      const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
+      expect(manifest.adapterId).toBe(spec.execution.adapterId);
+      const { adapterId, ...withoutAdapter } = manifest;
+      expect(adapterId).toBeString();
+      expect(validateRunnerManifest(withoutAdapter, { callbackUrl: CALLBACK })).toEqual(withoutAdapter);
+    });
+
     it(`${name}: the runner reads back the manifest the backend sent in its environment`, () => {
       const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
       expect(loadRunnerManifest({ DRAFT_RUN_MANIFEST: JSON.stringify(manifest) }, CALLBACK)).toEqual(manifest);

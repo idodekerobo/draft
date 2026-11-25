@@ -33,6 +33,7 @@ export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerMani
   const manifest: RunnerManifest = {
     version: 1,
     harness: spec.harness,
+    adapterId: spec.execution.adapterId,
     model: spec.model,
     ...(spec.reasoningEffort ? { reasoningEffort: spec.reasoningEffort as ReasoningEffort } : {}),
     prompt: input.prompt.kind === "text" ? { kind: "file", path: PROMPT_FILE } : { kind: "items", manifestPath: itemsPath },
