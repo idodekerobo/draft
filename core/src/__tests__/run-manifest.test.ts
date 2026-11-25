@@ -70,6 +70,22 @@ describe("the run manifest", () => {
   });
 });
 
+describe("the run manifest's adapter", () => {
+  it("is accepted with or without an adapter, and leaves the key out when none is sent", () => {
+    expect(parse({ ...good, adapterId: "claude-terminal" })).toEqual({ ...good, adapterId: "claude-terminal" });
+    expect(parse({ ...good, harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, adapterId: "codex-exec" })).toMatchObject({ harness: "codex", adapterId: "codex-exec" });
+    expect("adapterId" in parse(good)).toBe(false);
+    expect(JSON.stringify(parse(good))).toBe(JSON.stringify(good));
+  });
+
+  it("refuses an adapter that runs another harness, cannot run in a sandbox, or is not known", () => {
+    expect(() => parse({ ...good, adapterId: "codex-exec" })).toThrow("does not run this harness");
+    expect(() => parse({ ...good, harness: "codex", tools: { native: ["shell"], draftMcpUrl: null }, adapterId: "codex-app-server" })).toThrow("cannot run in a sandbox");
+    expect(() => parse({ ...good, adapterId: "future" })).toThrow("adapterId is unknown");
+    expect(() => parse({ ...good, adapterId: 7 })).toThrow("adapterId is unknown");
+  });
+});
+
 describe("the run manifest's reasoning effort", () => {
   it("keeps a known effort and leaves the key out when none is set", () => {
     expect(parse({ ...good, reasoningEffort: "xhigh" })).toEqual({ ...good, reasoningEffort: "xhigh" });

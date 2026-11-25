@@ -52,6 +52,9 @@ export function cloudNativeToolsFor(harness: string): ReadonlyArray<string> {
   return [...new Set<string>(tools)];
 }
 
+/** True when some adapter runs the harness in a sandbox. */
+export const harnessRunsInSandbox = (harness: string): boolean => ALL.some((adapter) => adapter.harness === harness && adapter.targets.includes("sandbox"));
+
 /** True when the harness has a built-in tool of this name. */
 export const isNativeTool = (harness: string, tool: string): boolean =>
   ALL.some((adapter) => adapter.harness === harness && adapter.nativeTools.includes(tool));
