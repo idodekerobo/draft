@@ -38,7 +38,7 @@ async function asUser<T>(userId: string, run: (tx: any) => Promise<T>): Promise<
 
 async function addSession(workspaceId: string, ownerUserId: string, isHome: boolean): Promise<string> {
   const [row] = await db()<[{ id: string }]>`
-    insert into sessions (workspace_id, owner_user_id, host_id, is_home) values (${workspaceId}, ${ownerUserId}, 'host-1', ${isHome}) returning id
+    insert into sessions (workspace_id, owner_user_id, host_id, is_home, execution_target, adapter_id) values (${workspaceId}, ${ownerUserId}, 'host-1', ${isHome}, 'host', 'claude-terminal') returning id
   `;
   return row.id;
 }
@@ -143,5 +143,34 @@ describeWithDatabase("act_on_notification", () => {
     const { reassignNotificationId } = await act(workspaceId, id, me.userId, "not_mine");
     expect(await act(workspaceId, reassignNotificationId as string, owner.userId, "done")).toMatchObject({ ok: true });
     expect(await act(workspaceId, id, me.userId, "undo")).toMatchObject({ ok: false, code: "stale_undo" });
+  });
+});
+
+describeWithDatabase("workspace event backfill", () => {
+  cleanUpUsers();
+
+  test("an event written from a private meeting becomes private to its owner; one from a shared item stays shared", async () => {
+    const { workspaceId } = await createWorkspace();
+    const owner = await addMember(workspaceId);
+    const [connection] = await db()<[{ id: string }]>`
+      insert into connections (workspace_id, provider, connection_key, status) values (${workspaceId}, 'fireflies', ${randomUUID()}, 'active') returning id
+    `;
+    await db()`
+      insert into source_items (workspace_id, connection_id, item_type, external_id, external_version, occurred_at, metadata_json, visibility, owner_user_id)
+      values (${workspaceId}, ${connection.id}, 'meeting_transcript', 'm1', 'v1', now(), '{"title":"Board prep"}'::jsonb, 'private', ${owner.userId})
+    `;
+    await db()`select append_workspace_event(${workspaceId}, 'source_items_added', 'Board prep', null, ${connection.id})`;
+    await db()`select append_workspace_event(${workspaceId}, 'source_items_added', 'Team lunch', null, ${connection.id})`;
+
+    // The backfill is the update statement of the migration, run again over the rows above.
+    const migration = await Bun.file(new URL("../../../../supabase/migrations/20261125001116_workspace_event_visibility.sql", import.meta.url)).text();
+    const backfill = migration.slice(migration.indexOf("update workspace_events e")).trim();
+    await db().unsafe(backfill);
+
+    const rows = await db()<{ summary: string; visibility: string; audience_person_id: string | null }[]>`
+      select summary, visibility, audience_person_id from workspace_events where workspace_id = ${workspaceId} order by sequence_number
+    `;
+    expect(rows[0]).toMatchObject({ summary: "Board prep", visibility: "private", audience_person_id: owner.personId });
+    expect(rows[1]).toMatchObject({ summary: "Team lunch", visibility: "shared", audience_person_id: null });
   });
 });
