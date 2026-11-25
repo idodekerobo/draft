@@ -164,7 +164,7 @@ export function App() {
                   loading={contextLoading}
                 />
               </div>
-              {activeView === "home" && <HomeScreen onOpenSessions={() => handleNavigate("sessions")} onOpenConnections={() => handleNavigate("connections")} />}
+              {activeView === "home" && <HomeScreen onOpenSessions={() => handleNavigate("sessions")} onOpenConnections={() => handleNavigate("connections")} onOpenRoutines={() => handleNavigate("routines")} />}
               {activeView === "connections" && <ConnectionsView />}
               {activeView === "activity" && <ActivityView onOpenRoutine={(id) => { handleNavigate("routines"); setActivityRoutineId(id); }} onFixInConnections={() => handleNavigate("connections")} />}
               {activeView === "routines" && <RoutinesView initialOpenId={activityRoutineId} onReconnect={() => handleNavigate("connections")} />}

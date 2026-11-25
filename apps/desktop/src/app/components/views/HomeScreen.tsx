@@ -5,7 +5,7 @@ import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 
 /** Desktop's Home. A routine run or question opens in place; an approval opens the Sessions list. */
-export function HomeScreen({ onOpenSessions, onOpenConnections }: { onOpenSessions: () => void; onOpenConnections: () => void }) {
+export function HomeScreen({ onOpenSessions, onOpenConnections, onOpenRoutines }: { onOpenSessions: () => void; onOpenConnections: () => void; onOpenRoutines: () => void }) {
   const workspaceId = useWorkspaceKey();
   const webAppUrl = useWebAppUrl();
   const [run, setRun] = useState<string | null>(null);
@@ -13,7 +13,7 @@ export function HomeScreen({ onOpenSessions, onOpenConnections }: { onOpenSessio
   return (
     <div className="activity">
       <div className="ui-page">
-        <HomeView workspaceId={workspaceId} onOpenSession={onOpenSessions} onOpenRun={setRun} onOpenConnections={onOpenConnections} />
+        <HomeView workspaceId={workspaceId} onOpenSession={onOpenSessions} onOpenRun={setRun} onOpenConnections={onOpenConnections} onOpenRoutines={onOpenRoutines} />
       </div>
     </div>
   );

@@ -8,7 +8,8 @@ export type NeedsYouRow =
   | { kind: "connection_attention"; id: string; provider: string; status: string; createdAt: string }
   | { kind: "failed_delivery"; id: string; notificationId: string; subject: string; channel: string; status: string; createdAt: string };
 
-export type NeedsYou = { count: number; rows: NeedsYouRow[]; partial?: boolean };
+export type GetStarted = { meetingSource: boolean; routine: boolean; firstTodo: boolean };
+export type NeedsYou = { count: number; rows: NeedsYouRow[]; partial?: boolean; getStarted?: GetStarted };
 
 const MAX_ROWS = 100;
 const FAILED_DELIVERY_DAYS = 7;
@@ -30,7 +31,8 @@ export async function getNeedsYou(client: SupabaseClient, workspaceId: string, u
   for (const result of failed) console.error(JSON.stringify({ source: "needs_you", event: "source_failed", error: String((result as PromiseRejectedResult).reason) }));
   if (failed.length === settled.length) throw (failed[0] as PromiseRejectedResult).reason;
   const rows = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : [])).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return { count: rows.length, rows: rows.slice(0, MAX_ROWS), ...(failed.length ? { partial: true } : {}) };
+  const getStarted = await readGetStarted(client, workspaceId, userId);
+  return { count: rows.length, rows: rows.slice(0, MAX_ROWS), ...(failed.length ? { partial: true } : {}), ...(getStarted ? { getStarted } : {}) };
 }
 
 async function openApprovals(client: SupabaseClient, workspaceId: string, userId: string): Promise<NeedsYouRow[]> {
@@ -116,4 +118,20 @@ async function failedDeliveries(client: SupabaseClient, workspaceId: string, use
     const joined = Array.isArray(row.notifications) ? row.notifications[0] : row.notifications;
     return { kind: "failed_delivery", id: row.id, notificationId: row.notification_id, subject: joined?.subject ?? "", channel: row.channel, status: row.status, createdAt: row.created_at };
   });
+}
+
+/** The first-run checklist facts. A failed lookup returns null, so Home shows no checklist instead of a wrong one. */
+async function readGetStarted(client: SupabaseClient, workspaceId: string, userId: string): Promise<GetStarted | null> {
+  try {
+    const personId = await personIdForUser(client, workspaceId, userId);
+    const [sources, routines, todos] = await Promise.all([
+      client.from("connections").select("id").eq("workspace_id", workspaceId).in("provider", ["fireflies", "granola"]).in("status", ["active", "degraded"]).limit(1),
+      client.from("scheduled_tasks").select("id").eq("workspace_id", workspaceId).eq("task_type", "agent_routine").eq("enabled", true).is("deleted_at", null).eq("created_by_user_id", userId).limit(1),
+      personId ? client.from("notifications").select("id").eq("workspace_id", workspaceId).eq("recipient_person_id", personId).eq("kind", "todo_routed").limit(1) : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (sources.error || routines.error || todos.error) return null;
+    return { meetingSource: (sources.data ?? []).length > 0, routine: (routines.data ?? []).length > 0, firstTodo: (todos.data ?? []).length > 0 };
+  } catch {
+    return null;
+  }
 }

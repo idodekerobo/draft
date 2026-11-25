@@ -16,6 +16,7 @@ export default function HomePage() {
         onOpenSession={(sessionId) => router.push(`/sessions/${sessionId}`)}
         onOpenRun={(runId) => router.push(`/routines/runs/${runId}`)}
         onOpenConnections={() => router.push("/connections")}
+        onOpenRoutines={() => router.push("/routines")}
       />
     </div>
   );

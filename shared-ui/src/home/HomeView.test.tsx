@@ -15,7 +15,7 @@ const todo = (n: number): NeedsYouRow => ({
 
 function renderHome(needsYou: NeedsYou, api: Partial<DraftApi> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const nav = { onOpenSession: mock(() => {}), onOpenRun: mock(() => {}), onOpenConnections: mock(() => {}) };
+  const nav = { onOpenSession: mock(() => {}), onOpenRun: mock(() => {}), onOpenConnections: mock(() => {}), onOpenRoutines: mock(() => {}) };
   render(
     <QueryClientProvider client={client}>
       <DraftApiProvider api={{ getNeedsYou: async () => needsYou, ...api } as DraftApi}>
@@ -92,7 +92,7 @@ test("an email link marks its row and keeps it visible past the cap", async () =
   render(
     <QueryClientProvider client={client}>
       <DraftApiProvider api={{ getNeedsYou: async () => ({ count: 5, rows: [1, 2, 3, 4, 5].map(todo) }) } as unknown as DraftApi}>
-        <HomeView workspaceId="ws-1" onOpenSession={() => {}} onOpenRun={() => {}} onOpenConnections={() => {}} highlightId="n5" />
+        <HomeView workspaceId="ws-1" onOpenSession={() => {}} onOpenRun={() => {}} onOpenConnections={() => {}} onOpenRoutines={() => {}} highlightId="n5" />
       </DraftApiProvider>
     </QueryClientProvider>,
   );
@@ -110,4 +110,19 @@ test("a proposed teammate can be approved or rejected from Home", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Approve: A teammate needs approval" }));
   await waitFor(() => expect(decidePerson).toHaveBeenCalledWith("person-9", "approve"));
   expect(screen.queryByRole("button", { name: /Not mine/ })).toBeNull();
+});
+
+test("until the first to-do, a Get started checklist shows progress and links to the next step", async () => {
+  const nav = renderHome({ count: 0, rows: [], getStarted: { meetingSource: true, routine: false, firstTodo: false } });
+  await screen.findByText("Get started");
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("1");
+  expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open routines" }));
+  expect(nav.onOpenRoutines).toHaveBeenCalled();
+});
+
+test("the checklist goes away once the first to-do has arrived", async () => {
+  renderHome({ count: 0, rows: [], getStarted: { meetingSource: true, routine: true, firstTodo: true } });
+  await screen.findByText("Nothing needs you right now.");
+  expect(screen.queryByText("Get started")).toBeNull();
 });

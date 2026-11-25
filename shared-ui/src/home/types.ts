@@ -27,6 +27,8 @@ export interface NeedsYou {
   rows: NeedsYouRow[];
   /** True when one source failed to load, so the list may be missing rows. */
   partial?: boolean;
+  /** First-run checklist facts. Absent when they could not be read. */
+  getStarted?: { meetingSource: boolean; routine: boolean; firstTodo: boolean };
 }
 
 export type ActResult =

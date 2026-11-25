@@ -1365,3 +1365,16 @@
 @media (pointer: coarse) { .ui-home-row__actions .ui-btn, .ui-home-row__actions .ui-link { min-height: 44px; touch-action: manipulation; } }
 @media (max-width: 720px) { .ui-home-row__actions { min-width: 0; flex-wrap: wrap; } }
 @media (prefers-reduced-motion: reduce) { .ui-home-row--leaving { transition: none; } }
+
+/* Home panel height caps: 30% of the window, 45% while the Get started checklist shows. */
+.ui-home-panel { max-height: 30vh; overflow-y: auto; }
+.ui-home-panel--first-run { max-height: 45vh; }
+.ui-home-checklist { margin-top: 12px; }
+.ui-home-checklist__title { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: var(--font-size-body); font-weight: 500; }
+.ui-home-checklist__title .ui-muted { font-size: var(--font-size-secondary); font-weight: 400; }
+.ui-home-checklist__bar { height: 4px; border-radius: 2px; background: var(--color-border); margin-bottom: 8px; overflow: hidden; }
+.ui-home-checklist__bar span { display: block; height: 100%; background: var(--color-accent-fill); transition: width 200ms var(--motion-ease); }
+.ui-home-checklist__label { display: flex; align-items: center; gap: 10px; color: var(--color-text-primary); font-size: var(--font-size-body); }
+.ui-home-checklist__circle { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--color-border-strong); font-size: 11px; line-height: 1; flex: none; }
+.ui-home-checklist__circle--done { background: var(--color-accent-fill); border-color: var(--color-accent-fill); color: var(--color-text-on-accent); }
+@media (prefers-reduced-motion: reduce) { .ui-home-checklist__bar span { transition: none; } }

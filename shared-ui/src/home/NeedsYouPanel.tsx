@@ -7,6 +7,7 @@ import { useDraftApi, useDraftTrack } from "../query/api";
 import { queryKeys } from "../query/keys";
 import { needsYouQueryOptions } from "../query/options";
 import { toast } from "../toast";
+import { GetStartedChecklist } from "./GetStartedChecklist";
 import { NeedsYouRow, type RowHandlers } from "./NeedsYouRow";
 import type { NotificationAction } from "./types";
 
@@ -26,6 +27,7 @@ export interface NeedsYouPanelProps {
   onOpenSession: (sessionId: string) => void;
   onOpenRun: (runId: string) => void;
   onOpenConnections: () => void;
+  onOpenRoutines: () => void;
   /** A notification id from an email link. Its row is marked and always visible. */
   highlightId?: string | null;
 }
@@ -114,6 +116,7 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
     onOpenConnections: () => { track("home_card_opened", { kind: "connection_attention" }); navigation.onOpenConnections(); },
   });
 
+  const showChecklist = Boolean(data.getStarted && !data.getStarted.firstTodo);
   const rowId = (row: (typeof data.rows)[number]) => (row.kind === "notification" ? row.notification.id : row.id);
   const shown = expanded ? data.rows : data.rows.slice(0, VISIBLE_ROWS);
   const linked = highlightId ? data.rows.find((row) => rowId(row) === highlightId) : undefined;
@@ -121,7 +124,7 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
   const hidden = data.rows.length - rows.length;
 
   return (
-    <section className="ui-activity-section" aria-labelledby="needs-you-title">
+    <section className={`ui-activity-section ui-home-panel${showChecklist ? " ui-home-panel--first-run" : ""}`} aria-labelledby="needs-you-title">
       <h2 id="needs-you-title" ref={heading} tabIndex={-1} className="ui-activity-section-title">
         Needs you{data.count > 0 ? ` (${data.count})` : ""}
         {data.count > 0 && (
@@ -140,6 +143,7 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
           {expanded && data.rows.length > VISIBLE_ROWS && <button type="button" className="ui-link" onClick={() => setExpanded(false)}>Show fewer</button>}
         </>
       )}
+      {showChecklist && data.getStarted && <GetStartedChecklist facts={data.getStarted} onOpenConnections={navigation.onOpenConnections} onOpenRoutines={navigation.onOpenRoutines} />}
     </section>
   );
 }
