@@ -1,14 +1,12 @@
--- Immutable feed: no updated_at. sequence_number is allocated by app code
--- while holding a lock on the workspace row, not by a DB sequence, so a gap
--- from a rolled-back transaction never appears.
+-- The workspace's history. Immutable: no updated_at. sequence_number is allocated by append_workspace_event
+-- while holding a lock on the workspace row, not by a DB sequence, so a gap from a rolled-back transaction never appears.
+-- A shared row is read by any member. A private row is read only by its audience person.
 create table workspace_events (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   sequence_number          bigint not null check (sequence_number > 0),
-  event_type               text not null
-                              check (event_type in ('source_items_added', 'context_updated', 'no_change',
-                                                     'needs_input', 'input_resolved', 'source_delayed',
-                                                     'context_restored', 'manual_edit')),
+  -- The code checks the values (WorkspaceEventType), so a new event needs no migration.
+  event_type               text not null,
   agent_run_id             uuid,
   connection_id            uuid,
   context_version_id       uuid,
@@ -16,8 +14,12 @@ create table workspace_events (
   payload_json             jsonb not null default '{}',
   occurred_at              timestamptz not null,
   created_at               timestamptz not null default now(),
+  visibility               text not null default 'shared' check (visibility in ('shared', 'private')),
+  audience_person_id       uuid,
 
   unique (workspace_id, sequence_number),
+  foreign key (audience_person_id, workspace_id)
+    references people(id, workspace_id) on delete set null (audience_person_id),
   foreign key (agent_run_id, workspace_id)
     references agent_runs(id, workspace_id) on delete restrict,
   foreign key (connection_id, workspace_id)
@@ -37,6 +39,10 @@ create policy workspace_events_select on workspace_events
         and w.organization_id = current_user_org_id()
         and w.team_id = current_user_team_id()
         and w.access_mode = 'team_default'
+    )
+    and (
+      workspace_events.visibility = 'shared'
+      or workspace_events.audience_person_id = current_user_person_id(workspace_events.workspace_id)
     )
   );
 

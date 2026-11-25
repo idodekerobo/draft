@@ -26,6 +26,12 @@ create policy session_events_select on session_events
         and w.team_id = current_user_team_id()
         and w.access_mode = 'team_default'
     )
+    and exists (
+      select 1 from sessions s
+      where s.id = session_events.session_id
+        and s.workspace_id = session_events.workspace_id
+        and (not s.is_home or s.owner_user_id = auth.uid())
+    )
   );
 
 grant select on table session_events to authenticated;

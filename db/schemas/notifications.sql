@@ -6,7 +6,8 @@ create table notifications (
   recipient_person_id uuid not null,
   -- The human whose authority the send used (routine owner or caller). Null for system rows.
   sender_user_id      uuid references users(id) on delete set null,
-  kind                text not null check (kind in ('message', 'todo_routed')),
+  kind                text not null
+                        check (kind in ('message', 'todo_routed', 'run_result', 'connection_attention', 'identity_proposed', 'todo_reassign')),
   subject             text not null check (char_length(subject) between 1 and 200),
   body_text           text not null,
   body_html           text,
@@ -18,6 +19,15 @@ create table notifications (
   -- The same key with the same content_hash returns this row. The same key with another hash is refused.
   idempotency_key     text not null,
   content_hash        text not null,
+  -- Home: a notification that needs the recipient to act stays open until done, not_mine or retracted (an undone Not mine's reassign card).
+  needs_action        boolean not null default false,
+  state               text not null default 'open' check (state in ('open', 'done', 'not_mine', 'retracted')),
+  -- What the notification is about, such as a notification or an approval, and the identity match that routed a to-do.
+  ref_type            text,
+  ref_id              text,
+  matched_identity_id uuid,
+  seen_at             timestamptz,
+  acted_at            timestamptz,
   created_at          timestamptz not null default now(),
 
   unique (id, workspace_id),
@@ -32,6 +42,8 @@ create table notifications (
 
 create index notifications_workspace_created_idx on notifications (workspace_id, created_at desc);
 create index notifications_recipient_created_idx on notifications (recipient_person_id, created_at desc);
+create index notifications_needs_action_idx on notifications (recipient_person_id)
+  where needs_action and state = 'open';
 
 alter table notifications enable row level security;
 
@@ -51,4 +63,4 @@ create policy notifications_select on notifications
   );
 
 grant select on table notifications to authenticated;
-grant select, insert on table notifications to service_role;
+grant select, insert, update on table notifications to service_role;

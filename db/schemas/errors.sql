@@ -12,7 +12,7 @@ create table errors (
   session_id               uuid,
   operation                text not null
                               check (operation in ('ingestion', 'scheduling', 'queue', 'execution',
-                                                    'validation', 'commit', 'projection', 'auth', 'read', 'session')),
+                                                    'validation', 'commit', 'projection', 'auth', 'read', 'session', 'audit', 'delivery')),
   message                  text not null,
   detail_json              jsonb not null default '{}',
   stack_trace              text,

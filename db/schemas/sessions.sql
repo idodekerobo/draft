@@ -51,6 +51,8 @@ create table sessions (
   deleted_at         timestamptz,
   -- Runs with the same key are serialized: one live run per (routine, key). Null for skipped runs.
   concurrency_key    text,
+  -- A person's Home conversation. Only its owner reads it, its events and its inputs.
+  is_home            boolean not null default false,
 
   unique (id, workspace_id),
   constraint sessions_scheduled_task_fkey
@@ -66,6 +68,8 @@ create index sessions_unfinished_last_seen_idx on sessions (last_seen)
 
 create unique index sessions_idempotency_key_idx on sessions (workspace_id, idempotency_key)
   where idempotency_key is not null;
+create unique index sessions_one_home_per_owner_idx on sessions (workspace_id, owner_user_id)
+  where is_home and ended_at is null;
 create unique index sessions_one_live_per_key_idx on sessions (scheduled_task_id, concurrency_key)
   where concurrency_key is not null and status in ('starting', 'live', 'host_offline');
 create index sessions_scheduled_task_idx on sessions (scheduled_task_id, started_at desc)
@@ -77,6 +81,7 @@ create policy sessions_select on sessions
   for select to authenticated
   using (
     deleted_at is null
+    and (not is_home or owner_user_id = auth.uid())
     and exists (
       select 1 from workspaces w
       where w.id = sessions.workspace_id
