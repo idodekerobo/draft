@@ -94,11 +94,17 @@ When you add a concept, add it here first.
 - **Stable context**: every context dimension except memory; the current-state business map.
 - **Summarization**: the run that summarizes captured sessions. UI: "Session summaries".
 - **Skill**: a saved company procedure. Table `skills`.
+- **Workspace event**: one immutable, ordered item in a workspace's history of what happened, such as source items
+  added, memory updated, a notification acted on (done, not mine, undo, reassign) or an identity changed. Table
+  `workspace_events`, ordered by `sequence_number`. Each has a visibility (`shared` or `private`); a private event is
+  readable only by its audience person. A record of what happened, never the current state (that stays on its own
+  table, such as `notifications.state`). Not an Event (`session_events`), a Notification, or an inbox event
+  (`agent_event_inbox`).
 
 ## Session traffic
 
 - **Input**: something sent to a session that the agent has not taken yet: a message or a control (`session_inputs`).
-- **Event**: one item in a session's feed (`session_events`). Not a workspace event (`workspace_events`) or an
+- **Event**: one item in a session's feed (`session_events`). Not a Workspace event (`workspace_events`) or an
   inbox event that can start a routine (`agent_event_inbox`).
 - **Approval**: a person allowing or denying a tool call the agent asked for. Not the Codex approval *mode* setting.
 

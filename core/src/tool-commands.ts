@@ -44,6 +44,11 @@ export const TOOL_COMMANDS: Record<DraftToolName, string | null> = {
   "people.notification_status": "people notification-status",
   "people.approve": "people approve",
   "people.reject": "people reject",
+  "home.needs_you": "home needs-you",
+  "notifications.list": "notifications list",
+  "notifications.done": "notifications done",
+  "notifications.not_mine": "notifications not-mine",
+  "notifications.undo": "notifications undo",
 };
 
 /**

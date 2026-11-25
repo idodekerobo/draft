@@ -40,5 +40,15 @@ export async function decidePerson(
     .eq("id", row.id)
     .eq("workspace_id", workspaceId);
   if (updateError) throw updateError;
+  // The admins' "approve this person" cards are settled by the decision, wherever it was made.
+  const { error: settleError } = await client
+    .from("notifications")
+    .update({ state: "done", acted_at: new Date().toISOString() })
+    .eq("workspace_id", workspaceId)
+    .eq("kind", "identity_proposed")
+    .eq("ref_type", "person")
+    .eq("ref_id", row.id)
+    .eq("state", "open");
+  if (settleError) throw settleError;
   return { ok: true, person: (await viewPeople(client, workspaceId, [{ ...row, status: decision.to }]))[0]! };
 }

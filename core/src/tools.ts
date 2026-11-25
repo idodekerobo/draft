@@ -43,6 +43,11 @@ export const DRAFT_TOOLS = [
   { name: "people.notification_status", access: "read" },
   { name: "people.approve", access: "write" },
   { name: "people.reject", access: "write" },
+  { name: "home.needs_you", access: "read" },
+  { name: "notifications.list", access: "read" },
+  { name: "notifications.done", access: "write" },
+  { name: "notifications.not_mine", access: "write" },
+  { name: "notifications.undo", access: "write" },
 ] as const;
 export type DraftToolName = (typeof DRAFT_TOOLS)[number]["name"];
 export type DraftToolAccess = (typeof DRAFT_TOOLS)[number]["access"];
@@ -92,6 +97,11 @@ export interface DraftToolLimits {
   "people.notification_status": Record<string, never>;
   "people.approve": Record<string, never>;
   "people.reject": Record<string, never>;
+  "home.needs_you": Record<string, never>;
+  "notifications.list": Record<string, never>;
+  "notifications.done": Record<string, never>;
+  "notifications.not_mine": Record<string, never>;
+  "notifications.undo": Record<string, never>;
 }
 
 export interface DraftToolPermission<T extends DraftToolName = DraftToolName> {

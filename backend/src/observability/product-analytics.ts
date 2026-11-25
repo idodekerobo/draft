@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 
 export type RoutineProductEvent = "routine_created" | "routine_updated" | "routine_deleted" | "routine_run_requested" | "routine_run_completed";
+export type NotificationProductEvent = "notification_created" | "notification_done" | "notification_not_mine" | "notification_undone";
+export type ProductEvent = RoutineProductEvent | NotificationProductEvent;
 export interface RoutineAttribution {
   via?: UserCallSurface | "run" | "system";
 }
@@ -15,7 +17,7 @@ export function eventUuid(key: string): string {
 /** Optional analytics must never fail a mutation or publish content from its arguments. */
 export async function captureProductEvent(
   client: SupabaseClient,
-  event: RoutineProductEvent,
+  event: ProductEvent,
   input: { userId: string | null; workspaceId: string; key: string; properties: Record<string, string | number | boolean | null | undefined>; timestamp?: string },
   options: { key?: string; host?: string; send?: typeof fetch } = {},
 ): Promise<void> {

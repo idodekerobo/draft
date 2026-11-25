@@ -61,11 +61,15 @@ function parseExtras(body: Record<string, unknown>): { ok: true; extras: Extras 
   return { ok: true, extras: { answers, message, scope, permissionMode } };
 }
 
-/** Any member can decide an open permission request. The first decision wins. */
+/** Any member can decide an open permission request on a team session. A Home session is its owner's alone. The first decision wins. */
 export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, requestId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  const { data: target, error: targetError } = await serviceClient.from("sessions").select("is_home, owner_user_id").eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle();
+  if (targetError) return errorResponse("decision_failed", 500, targetError, workspaceId, sessionId);
+  const home = target as { is_home: boolean; owner_user_id: string } | null;
+  if (home?.is_home && home.owner_user_id !== caller.userId) return errorResponse("session_not_found", 404);
   if (!REQUEST_ID.test(requestId)) return errorResponse("invalid_request_id", 400);
   const name = authorName(caller.userId);
 
