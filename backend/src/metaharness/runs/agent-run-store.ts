@@ -176,7 +176,7 @@ export async function loadActiveAgentRunSpec(client: SupabaseClient, runId: stri
  * Saves the audit row for a call. A run's calls go to agent_run_tool_calls. A person's calls go to the
  * agent query log, as before, but only when they came in through an agent surface.
  */
-export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord) => Promise<void> {
+export function auditToDatabase(client: SupabaseClient, sessionId?: string): (record: ToolCallRecord) => Promise<void> {
   return async (record) => {
     const { origin } = record.caller;
     if (origin.kind === "person") {
@@ -189,6 +189,7 @@ export function auditToDatabase(client: SupabaseClient): (record: ToolCallRecord
         argsJson: record.arguments,
         resultBytes: record.resultBytes,
         surface: origin.via,
+        sessionId,
         status: record.status,
         durationMs: record.durationMs,
         errorCode: record.errorCode,

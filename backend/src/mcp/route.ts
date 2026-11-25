@@ -3,6 +3,12 @@ import { requireMcpAuth } from "@better-auth/mcp";
 import { auth } from "../auth/better-auth";
 import { loadConfig } from "../config";
 import { buildMcpServer } from "./tools";
+import { verifyRequest } from "../auth/verify";
+import { authorizeOwned } from "../routes/sessions-live-shared";
+import { serviceClient } from "../db/client";
+import { createDraftToolRegistry } from "../metaharness/tools/definitions";
+import { userInvokeDeps } from "../metaharness/tools/user-gateway";
+import { createSessionMcpHandler, hasSessionContext, sessionTargetDenial } from "./session-auth";
 import { createLoggedMcpHandler } from "./request-logging";
 
 const config = loadConfig();
@@ -47,6 +53,22 @@ const loggedHandler = createLoggedMcpHandler(async (request, context) => require
   requiredScopes: ["read", "write"],
 });
 
-export const GET = loggedHandler;
-export const POST = loggedHandler;
-export const DELETE = loggedHandler;
+const sessionHandler = createSessionMcpHandler({
+  verify: verifyRequest,
+  async authorize(context, userId) {
+    const owned = await authorizeOwned(context.workspaceId, context.sessionId, userId);
+    if (!owned.ok) return owned.response;
+    return sessionTargetDenial(owned.session, context.hostId);
+  },
+  async handle(request, context, userId) {
+    const handler = createMcpHandler(() => buildMcpServer(userId, ["read", "write"], {
+      resolveWorkspaceId: async () => context.workspaceId,
+      deps: userInvokeDeps(serviceClient, createDraftToolRegistry(serviceClient), context.sessionId),
+    }));
+    return handler.fetch(request);
+  },
+});
+const dispatch = (request: Request) => hasSessionContext(request) ? sessionHandler(request) : loggedHandler(request);
+export const GET = dispatch;
+export const POST = dispatch;
+export const DELETE = dispatch;

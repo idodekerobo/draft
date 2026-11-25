@@ -67,6 +67,14 @@ export class LaunchError extends Error {}
 
 export type CheckResult = { ok: true; bin: string; version: string | null } | { ok: false; error: string };
 
+export interface SessionMcpConnection {
+  serverName: string;
+  url: string;
+  tokenEnvVar: string;
+  token: string;
+  tokenFile: string;
+}
+
 /** What starting a session needs from a harness, before the driver exists. */
 export interface HarnessLauncher {
   readonly id: HarnessId;
@@ -74,6 +82,7 @@ export interface HarnessLauncher {
   /** Starts the harness in the folder. Returns the state fields only this harness has. */
   launch(input: {
     sessionId: string;
+    mcp?: SessionMcpConnection;
     workspace: { path: string };
     model: string | null;
     effort: string | null;
@@ -84,7 +93,7 @@ export interface HarnessLauncher {
    * Starts an ended session again on this computer, in the same folder with the same conversation.
    * Returns the state fields only this harness has, and the folder.
    */
-  resume(input: { sessionId: string; nativeSessionId: string; model: string | null; effort: string | null; options: { bin: string } }): Promise<Partial<HostSessionState> & { folderPath: string }>;
+  resume(input: { mcp?: SessionMcpConnection; sessionId: string; nativeSessionId: string; model: string | null; effort: string | null; options: { bin: string } }): Promise<Partial<HostSessionState> & { folderPath: string }>;
   /** The native session id to send when the session is created. Empty when only the harness knows it. */
   newNativeSessionId(): string;
   /** Shown when `launch` throws. */

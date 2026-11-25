@@ -17,3 +17,14 @@ describe("buildClaudeCommand", () => {
     expect(buildClaudeCommand("/bin/claude", "abc", null, null, true, "high")).toContain("'--resume' 'abc' '--effort' 'high'");
   });
 });
+
+it("adds a session MCP server without putting its capability in command arguments", () => {
+  const connection = { serverName: "draft_session_one", url: "http://127.0.0.1:1234/mcp/one", token: "capability-secret", tokenEnvVar: "DRAFT_SESSION_MCP_TOKEN", tokenFile: "/tmp/private file.token" };
+  const command = buildClaudeCommand("/bin/claude", "abc", null, null, true, null, undefined, connection);
+  expect(command).toContain("--mcp-config");
+  expect(command).toContain("draft_session_one");
+  expect(command).toContain("${DRAFT_SESSION_MCP_TOKEN}");
+  expect(command).toContain("cat '/tmp/private file.token'");
+  expect(command).not.toContain("capability-secret");
+  expect(command).not.toContain("strict-mcp-config");
+});

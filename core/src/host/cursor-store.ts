@@ -49,6 +49,10 @@ export function hostSessionsDir(home = process.env.HOME, dev = process.env.DRAFT
   return `${home}/.draft/${dev ? "host-dev" : "host"}/sessions`;
 }
 
+export function hostMcpDir(home = process.env.HOME, dev = process.env.DRAFT_DESKTOP_DEV === "1"): string {
+  return `${home}/.draft/${dev ? "host-dev" : "host"}/mcp`;
+}
+
 export function saveState(state: HostSessionState, dir = hostSessionsDir()): void {
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `${state.sessionId}.json`);

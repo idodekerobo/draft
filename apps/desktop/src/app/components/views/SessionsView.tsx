@@ -10,7 +10,8 @@ import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 import { useConnectedApps } from "../../hooks/useConnectedApps";
 import { appVersionQueryOptions } from "../../queries";
-import { rpc } from "../../rpc";
+import { events, rpc } from "../../rpc";
+import type { SessionMcpStatusUpdate } from "../../../rpc/schema";
 
 const loadAgentDefaults = (harness: string) => rpc.request.getAgentDefaults({ harness });
 // Module-level so the start screen's effect does not run again on every render.
@@ -43,6 +44,20 @@ function SessionDetail({ sessionId, onOpenSession, justStarted, menuItems, notic
   notice: string | null;
   onDeleted: () => void;
 }) {
+  const [mcp, setMcp] = useState<SessionMcpStatusUpdate | null>(null);
+  const hosted = useHostedSessionIds();
+  useEffect(() => {
+    let active = true;
+    const accept = (update: SessionMcpStatusUpdate) => {
+      if (active && update.sessionId === sessionId) setMcp((current) => !current || update.revision >= current.revision ? update : current);
+    };
+    const unsubscribe = events.on("sessionMcpStatus", accept);
+    void rpc.request.getSessionMcpStatus({ sessionId }).then(accept).catch(() => {});
+    return () => { active = false; unsubscribe(); };
+  }, [sessionId]);
+  const toolsNotice = hosted.has(sessionId) && mcp?.status?.state === "unavailable"
+    ? mcp.status.reason === "sign_in_required" ? "Sign in to Draft to restore Draft tools." : "Draft tools are unavailable. Coding can continue while Draft reconnects."
+    : null;
   const { track } = useAnalytics();
   const webAppUrl = useWebAppUrl();
   const devOnlyVersionWarnings = useDevOnlyVersionWarnings();
@@ -54,6 +69,7 @@ function SessionDetail({ sessionId, onOpenSession, justStarted, menuItems, notic
       menuItems={menuItems}
       onDeleted={onDeleted}
       notice={notice}
+      toolsNotice={toolsNotice}
       onOpenSession={onOpenSession}
       autoFocusComposer={justStarted}
       track={track}

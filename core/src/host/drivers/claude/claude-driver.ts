@@ -1,3 +1,4 @@
+import { claudeMcpNameAvailable } from "../../session-mcp";
 import { liveTextTopic, LIVE_TEXT_EVENT, type LiveTextChunk } from "../../../live-sessions";
 import { ApprovalBroker } from "../../approvals";
 import { CLAUDE_MISSING_MESSAGE, CLAUDE_SIGNED_OUT_MESSAGE, readClaudeAuth } from "./claude-check";
@@ -319,7 +320,7 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version };
   },
   newNativeSessionId: () => crypto.randomUUID(),
-  async resume({ sessionId, nativeSessionId, model, effort, options: { bin } }) {
+  async resume({ mcp, sessionId, nativeSessionId, model, effort, options: { bin } }) {
     // The transcript says which folder the conversation ran in, and Claude finds it only from there.
     const transcript = findTranscript(nativeSessionId);
     const folderPath = transcript ? folderOfTranscript(transcript) : null;
@@ -327,15 +328,17 @@ const launcher: HarnessLauncher = {
     const tmuxSession = tmuxSessionName(sessionId);
     if (await paneIsAlive(tmuxSession)) throw new LaunchError("This session is already running.");
     preTrustFolder(folderPath);
+    if (mcp && !claudeMcpNameAvailable(mcp.serverName, folderPath)) { hostServices().mcpProblem?.(sessionId); mcp = undefined; }
     const settingsPath = writeSessionSettings(sessionId);
-    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, resume: true });
+    await launchClaudeInTmux({ mcp, tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, resume: true });
     return { folderPath, tmuxSession };
   },
-  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin, permissionMode }, nativeSessionId }) {
+  async launch({ mcp, sessionId, workspace: { path: folderPath }, model, effort, options: { bin, permissionMode }, nativeSessionId }) {
     const tmuxSession = tmuxSessionName(sessionId);
     preTrustFolder(folderPath);
+    if (mcp && !claudeMcpNameAvailable(mcp.serverName, folderPath)) { hostServices().mcpProblem?.(sessionId); mcp = undefined; }
     const settingsPath = writeSessionSettings(sessionId);
-    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, permissionMode });
+    await launchClaudeInTmux({ mcp, tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, permissionMode });
     return { tmuxSession };
   },
 };

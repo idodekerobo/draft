@@ -1,25 +1,34 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const ENTRY = join(import.meta.dir, "..", "..", "sandbox", "runner.ts");
 
 // The runner runs in the sandbox, a separate computer. Only runner-side files may be in its bundle.
 const ALLOWED_MODULES = [
-  /^src\/sandbox\/runner(\/.+)?\.ts$/,
-  /^\.\.\/core\/src\/harnesses\/[^/]+\/runner\.ts$/,
-  /^\.\.\/core\/src\/harnesses\/failure\.ts$/,
-  /^\.\.\/core\/src\/harnesses\/(?:[^/]+\/)?adapters\.ts$/,
-  /^\.\.\/core\/src\/run-manifest\.ts$/,
-  /^\.\.\/core\/src\/run-spec\.ts$/,
+  /^backend\/src\/sandbox\/runner(\/.+)?\.ts$/,
+  /^core\/src\/harnesses\/[^/]+\/runner\.ts$/,
+  /^core\/src\/harnesses\/failure\.ts$/,
+  /^core\/src\/harnesses\/(?:[^/]+\/)?adapters\.ts$/,
+  /^core\/src\/run-manifest\.ts$/,
+  /^core\/src\/run-spec\.ts$/,
 ];
 const FORBIDDEN_TEXT = ["@supabase", "serviceClient", "zod", "SUPABASE_SERVICE_ROLE_KEY"];
 
 let bundle = "";
 
 beforeAll(async () => {
-  const result = await Bun.build({ entrypoints: [ENTRY], target: "node", root: join(import.meta.dir, "..", "..", "..") });
-  expect(result.success).toBe(true);
-  bundle = await result.outputs[0]!.text();
+  const directory = mkdtempSync(join(tmpdir(), "draft-node-bundle-"));
+  try {
+    const output = join(directory, "bundle.mjs");
+    const process = Bun.spawn([Bun.which("bun")!, "build", ENTRY, "--target=node", "--outfile", output], {
+      cwd: join(import.meta.dir, "..", "..", "..", ".."), stdout: "pipe", stderr: "pipe",
+    });
+    const [exit, diagnostics] = await Promise.all([process.exited, new Response(process.stderr).text()]);
+    expect(exit, diagnostics).toBe(0);
+    bundle = readFileSync(output, "utf8");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 describe("the runner bundle", () => {

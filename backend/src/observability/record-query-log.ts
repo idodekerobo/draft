@@ -7,6 +7,7 @@ export type { AgentQueryLogCommand };
 export interface RecordAgentQueryLogInput {
   workspaceId: string;
   userId: string | null;
+  sessionId?: string;
   command: AgentQueryLogCommand;
   argsJson: Record<string, unknown>;
   resultBytes: number;
@@ -22,6 +23,7 @@ export async function recordAgentQueryLog(client: SupabaseClient, input: RecordA
     const { error } = await client.from("agent_query_log").insert({
       workspace_id: input.workspaceId,
       user_id: input.userId,
+      ...(input.sessionId ? { session_id: input.sessionId } : {}),
       command: input.command,
       args_json: input.argsJson,
       result_bytes: input.resultBytes,

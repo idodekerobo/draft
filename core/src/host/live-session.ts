@@ -328,6 +328,7 @@ class SessionHost {
         this.stopHeartbeat?.();
         this.stopWatching();
         this.persist({ ended: true });
+        hostServices().releaseMcp?.(this.state.sessionId);
       }
       if (await this.finalize()) this.abandon();
     } finally {
@@ -357,6 +358,7 @@ class SessionHost {
     this.stopHeartbeat?.();
     this.stopWatching();
     this.persist({ ended: true });
+    await hostServices().transferMcp?.(this.state.sessionId, this.successor.sessionId, this.successor.workspaceId, this.successor.hostId);
     saveState(this.successor);
     new SessionHost(this.successor).start();
     this.driver.clearRotation?.();
@@ -552,7 +554,8 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   };
 
   try {
-    state = { ...state, ...(await launcher.launch({ sessionId, workspace: { path: folderPath }, model, effort, nativeSessionId, options: { bin: checked.bin, permissionMode: input.permissionMode, approvalMode: input.approvalMode } })) };
+    const mcp = await hostServices().prepareMcp?.(sessionId, workspaceId, hostId);
+    state = { ...state, ...(await launcher.launch({ mcp, sessionId, workspace: { path: folderPath }, model, effort, nativeSessionId, options: { bin: checked.bin, permissionMode: input.permissionMode, approvalMode: input.approvalMode } })) };
   } catch (error) {
     console.error("[live-session] launch failed", error);
     await hostServices().fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
@@ -588,10 +591,11 @@ async function attachSession(state: HostSessionState, mode: "launch" | "resume")
   const model = state.model ?? null;
   const effort = state.reasoningEffort ?? null;
   const options = { bin: checked.bin, ...(mode === "launch" && state.initialPermissionMode ? { permissionMode: state.initialPermissionMode } : {}) };
+  const mcp = await hostServices().prepareMcp?.(state.sessionId, state.workspaceId, state.hostId, state.harness === "claude" ? state.hookId : undefined);
   const started =
     mode === "resume"
-      ? await launcher.resume({ sessionId: state.sessionId, nativeSessionId: state.nativeSessionId, model, effort, options })
-      : await launcher.launch({ sessionId: state.sessionId, workspace: { path: state.folderPath }, model, effort, nativeSessionId: state.nativeSessionId, options });
+      ? await launcher.resume({ mcp, sessionId: state.sessionId, nativeSessionId: state.nativeSessionId, model, effort, options })
+      : await launcher.launch({ mcp, sessionId: state.sessionId, workspace: { path: state.folderPath }, model, effort, nativeSessionId: state.nativeSessionId, options });
   const next: HostSessionState = { ...state, ...started, harnessVersion: checked.version };
   saveState(next);
   const session = new SessionHost(next);
@@ -794,6 +798,7 @@ export async function endLiveSession(sessionId: string): Promise<{ ok: true } | 
   if (!runner || runner.hasEnded()) return { ok: false, error: "This session does not run on this computer." };
   try {
     await runner.endByOwner();
+    hostServices().releaseMcp?.(sessionId);
     return { ok: true };
   } catch (error) {
     console.error("[live-session] end failed", sessionId, error);

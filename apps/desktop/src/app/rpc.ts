@@ -7,7 +7,7 @@
 // from this file for request calls.
 
 import { Electroview } from "electrobun/view";
-import type { AppRPCType } from "../rpc/schema";
+import type { SessionMcpStatusUpdate, AppRPCType } from "../rpc/schema";
 
 // ── Event bus for webview push messages ────────────────────────────────────────
 // Components subscribe to these events to react to bun-initiated pushes.
@@ -19,6 +19,7 @@ type EventMap = {
   identityRefreshNeeded: Record<string, never>;
   liveSignal: { topic: string; event: string; payload?: unknown };
   liveConnection: { connected: boolean };
+  sessionMcpStatus: SessionMcpStatusUpdate;
   captureComplete: { source: string };
   updateCheckStarted: Record<string, never>;
   updateAvailable: { version: string };
@@ -60,6 +61,7 @@ export const rpc = Electroview.defineRPC<AppRPCType>({
 
       liveSignal: (data) => events.emit("liveSignal", data),
       liveConnection: (data) => events.emit("liveConnection", data),
+      sessionMcpStatus: (data) => events.emit("sessionMcpStatus", data),
       captureComplete: (data) => events.emit("captureComplete", data),
 
       updateCheckStarted: (data) => events.emit("updateCheckStarted", data),

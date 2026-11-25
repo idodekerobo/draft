@@ -1,3 +1,4 @@
+import type { SessionMcpConnection } from "./drivers/harness-driver";
 import type { CaptureResult } from "../exec";
 
 /** API failure with the server's error code and, for validation errors, the offending field. */
@@ -30,6 +31,10 @@ export interface HostServices {
   /** Null until someone signs in. */
   workspaceId(): string | null;
   hostId(): string;
+  prepareMcp?(sessionId: string, workspaceId: string, hostId: string, endpointId?: string): Promise<SessionMcpConnection | undefined>;
+  transferMcp?(fromSessionId: string, sessionId: string, workspaceId: string, hostId: string): Promise<void>;
+  releaseMcp?(sessionId: string): void;
+  mcpProblem?(sessionId: string): void;
 }
 
 let installed: HostServices | null = null;

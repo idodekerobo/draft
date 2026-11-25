@@ -1,3 +1,5 @@
+import { watchMcpWake } from "./main/host/mcp-recovery";
+import { desktopMcp, restoreDesktopMcp, withDesktopMcp } from "./main/host/mcp-runtime";
 import { folderOptionsFromBody, syncedFoldersFromBody } from "draft-core/integrations/google-drive-folders";
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
@@ -80,6 +82,7 @@ installHostServices(desktopHostServices);
 const presenceHub = new PresenceHub(connectPresence);
 setSignalSender(
   (topic, event, payload) => {
+    if (event === "catch-up") void restoreDesktopMcp().catch(() => {});
     try { rpc.send.liveSignal({ topic, event, payload }); } catch {}
   },
   (connected) => {
@@ -302,6 +305,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
           // picker are needed before supporting teams with multiple workspaces.
           const auth = readAuthState();
           if (!auth) {
+            desktopMcp.disable();
             try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
             return [];
           }
@@ -909,7 +913,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startLiveSession: (params) => startLiveSessionRequest(params, (local) => startLiveSession(local)),
+      startLiveSession: (params) => startLiveSessionRequest(params, (local) => withDesktopMcp(() => startLiveSession(local))),
 
       listSessionEnvFiles: ({ folderPath }) => listLiveSessionEnvFiles(folderPath),
       snapshotFolderSize: ({ folderPath }) => liveSessionSnapshotSize(folderPath),
@@ -938,9 +942,11 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       endLiveSession: ({ sessionId }) => endLiveSession(sessionId),
 
-      resumeLiveSession: ({ sessionId }) => resumeLiveSession(sessionId),
+      resumeLiveSession: ({ sessionId }) => withDesktopMcp(() => resumeLiveSession(sessionId)),
 
       deleteLiveSession: ({ sessionId }) => deleteLiveSession(sessionId),
+
+      getSessionMcpStatus: ({ sessionId }) => desktopMcp.status.get(sessionId),
 
       getHostedLiveSessionIds: () => hostedLiveSessionIds(),
 
@@ -1110,7 +1116,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
               rpc.send.signInProgress(value);
             } catch {}
             // Sessions paused while signed out pick up again with the new login.
-            if (value.phase === "complete") void resumeLiveSessions().catch((err) => console.error("[live-session] resume failed", err));
+            if (value.phase === "complete") void withDesktopMcp(resumeLiveSessions).catch((err) => console.error("[live-session] resume failed", err));
           },
         }, client);
         return { ok: true };
@@ -1129,6 +1135,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         } catch {
           return { ok: false, error: "Could not sign out" };
         }
+        desktopMcp.disable();
         try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
         return { ok: true };
       },
@@ -1142,6 +1149,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const hadSession = readAuthState() !== null;
         const identity = await getUserIdentity().catch(() => null);
         if (hadSession && identity && !identity.signedIn) {
+          desktopMcp.disable();
           try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
         }
         return { ok: true };
@@ -1186,11 +1194,20 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
   },
 });
 
+desktopMcp.status.subscribe((update) => {
+  try { rpc.send.sessionMcpStatus(update); } catch { /* Renderer may be closed. */ }
+});
+const stopMcpWake = watchMcpWake(() => withDesktopMcp(resumeLiveSessions));
+process.once("exit", () => { stopMcpWake(); void desktopMcp.close(); });
+
 setSessionExpiredHandler(createSessionExpiredHandler({
   read: readAuthState,
   clear: clearAuthState,
   log: logLoginCleared,
-  notifySignedOut: () => { try { rpc.send.authStateChanged({ signedIn: false }); } catch {} },
+  notifySignedOut: () => {
+    desktopMcp.disable();
+    try { rpc.send.authStateChanged({ signedIn: false }); } catch {}
+  },
 }));
 
 // ── Bundled binary sync ────────────────────────────────────────────────────────
@@ -1270,7 +1287,7 @@ setTimeout(async () => {
   if (preference.migrated) writeDraftConfig({ ...globalConfig, notificationsEnabled: preference.enabled });
   setNotificationsEnabled(preference.enabled);
 
-  void resumeLiveSessions().catch((err) => console.error("[live-session] resume failed", err));
+  void withDesktopMcp(resumeLiveSessions).catch((err) => console.error("[live-session] resume failed", err));
 
   // Silent update check on launch — pushes updateAvailable if a new version is ready.
   void checkAndDownloadUpdate(true);

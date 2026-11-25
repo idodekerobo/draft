@@ -14,6 +14,16 @@ import type { SessionViewQuery, SessionViewResponse } from "draft-core/live-sess
 import type { IntegrationActions, SynthesisRunsPage } from "draft-shared-ui";
 import type { RPCSchema } from "electrobun/bun";
 
+export interface SessionMcpStatus {
+  state: "connecting" | "ready" | "unavailable";
+  reason?: "bridge_port_unavailable" | "sign_in_required" | "upstream_unavailable" | "connection_failed";
+}
+export interface SessionMcpStatusUpdate {
+  sessionId: string;
+  revision: number;
+  status: SessionMcpStatus | null;
+}
+
 export interface UserIdentity {
   signedIn: boolean;
   hydrated: boolean;
@@ -438,6 +448,8 @@ export type AppRPCType = {
       deleteLiveSession: { params: { sessionId: string }; response: { ok: true } | { ok: false; error: string } };
 
       /** Ids of the live sessions that run on this computer. */
+      getSessionMcpStatus: { params: { sessionId: string }; response: SessionMcpStatusUpdate };
+
       getHostedLiveSessionIds: { params: void; response: string[] };
 
       /** Open the user's terminal app on a live session's pane. */
@@ -561,6 +573,7 @@ export type AppRPCType = {
 
       /** Whether every signal topic is joined. Sent when that changes and after each topic list. */
       liveConnection: { connected: boolean };
+      sessionMcpStatus: SessionMcpStatusUpdate;
 
       /** Daemon completed a capture cycle. */
       captureComplete: { source: string };

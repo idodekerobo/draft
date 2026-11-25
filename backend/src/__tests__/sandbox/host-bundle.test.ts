@@ -1,18 +1,27 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const ENTRY = join(import.meta.dir, "..", "..", "sandbox", "host.ts");
 
 // The host runs in a sandbox. It holds the core host code and its own files, never the backend's database or the desktop app.
-const ALLOWED_MODULES = [/^\.\.\/core\/src\/.+\.ts$/, /^src\/sandbox\/host(\/.+)?\.ts$/];
+const ALLOWED_MODULES = [/^core\/src\/.+\.ts$/, /^backend\/src\/sandbox\/host(\/.+)?\.ts$/];
 const FORBIDDEN_TEXT = ["@supabase", "serviceClient", "SUPABASE_SERVICE_ROLE_KEY", "apps/desktop", "electrobun"];
 
 let bundle = "";
 
 beforeAll(async () => {
-  const result = await Bun.build({ entrypoints: [ENTRY], target: "bun", root: join(import.meta.dir, "..", "..", "..") });
-  expect(result.success).toBe(true);
-  bundle = await result.outputs[0]!.text();
+  const directory = mkdtempSync(join(tmpdir(), "draft-bun-bundle-"));
+  try {
+    const output = join(directory, "bundle.mjs");
+    const process = Bun.spawn([Bun.which("bun")!, "build", ENTRY, "--target=bun", "--outfile", output], {
+      cwd: join(import.meta.dir, "..", "..", "..", ".."), stdout: "pipe", stderr: "pipe",
+    });
+    const [exit, diagnostics] = await Promise.all([process.exited, new Response(process.stderr).text()]);
+    expect(exit, diagnostics).toBe(0);
+    bundle = readFileSync(output, "utf8");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 describe("the sandbox host bundle", () => {
