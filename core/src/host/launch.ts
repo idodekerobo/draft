@@ -1,3 +1,4 @@
+import type { SessionMcpConnection } from "./drivers/harness-driver";
 import { GUI_PATH } from "../exec";
 
 export const TMUX_SOCKET = "draft";
@@ -8,9 +9,15 @@ export const tmuxPath = () => `${process.env.HOME}/.draft/bin/tmux`;
 
 export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 
-export function buildClaudeCommand(claudeBin: string, nativeSessionId: string, model: string | null, settingsPath: string | null = null, resume = false, effort: string | null = null, permissionMode?: string): string {
+export function buildClaudeCommand(claudeBin: string, nativeSessionId: string, model: string | null, settingsPath: string | null = null, resume = false, effort: string | null = null, permissionMode?: string, mcp?: SessionMcpConnection): string {
   const args = [resume ? "--resume" : "--session-id", nativeSessionId, ...(model ? ["--model", model] : []), ...(effort ? ["--effort", effort] : []), ...(settingsPath ? ["--settings", settingsPath] : []), ...(permissionMode ? ["--permission-mode", permissionMode] : [])];
-  return [shellQuote(claudeBin), ...args.map(shellQuote)].join(" ");
+  if (mcp) args.push("--mcp-config", JSON.stringify({ mcpServers: { [mcp.serverName]: {
+    type: "http", url: mcp.url, headers: { Authorization: `Bearer ${"${" + mcp.tokenEnvVar + "}"}` },
+  } } }));
+  const command = [shellQuote(claudeBin), ...args.map(shellQuote)].join(" ");
+  if (!mcp) return command;
+  if (!/^[A-Z_][A-Z0-9_]*$/.test(mcp.tokenEnvVar)) throw new Error("invalid_mcp_token_env");
+  return `export ${mcp.tokenEnvVar}="$(cat ${shellQuote(mcp.tokenFile)})" && exec ${command}`;
 }
 
 export function tmuxSessionName(sessionId: string): string {
@@ -25,6 +32,7 @@ async function runTmux(args: string[]): Promise<{ ok: boolean; stdout: string; s
 
 export interface LaunchOptions {
   tmuxSession: string;
+  mcp?: SessionMcpConnection;
   folderPath: string;
   claudeBin: string;
   nativeSessionId: string;
@@ -44,7 +52,7 @@ export async function launchClaudeInTmux(options: LaunchOptions): Promise<void> 
     "-x", String(PANE_COLUMNS), "-y", String(PANE_ROWS),
     "-c", options.folderPath,
     "-e", `PATH=${GUI_PATH}:${process.env.HOME}/.local/bin`,
-    buildClaudeCommand(options.claudeBin, options.nativeSessionId, options.model, options.settingsPath ?? null, options.resume ?? false, options.effort ?? null, options.permissionMode),
+    buildClaudeCommand(options.claudeBin, options.nativeSessionId, options.model, options.settingsPath ?? null, options.resume ?? false, options.effort ?? null, options.permissionMode, options.mcp),
   ]);
   if (!result.ok) throw new Error(`tmux_launch_failed: ${result.stderr.trim()}`);
 }

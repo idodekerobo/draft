@@ -1,3 +1,4 @@
+import type { SessionMcpConnection } from "../harness-driver";
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { randomBytes } from "crypto";
 import { GUI_PATH } from "../../../exec";
@@ -26,7 +27,7 @@ async function freePort(): Promise<number> {
  * Starts `codex app-server` on a loopback WebSocket guarded by a random token. The terminal app and Draft both
  * connect to it, so they see the same thread. It is a child of this app and ends with it.
  */
-export async function startAppServer(codexBin: string, id: string): Promise<AppServer> {
+export async function startAppServer(codexBin: string, id: string, mcp?: SessionMcpConnection): Promise<AppServer> {
   const port = await freePort();
   const token = randomBytes(24).toString("hex");
   mkdirSync(TOKEN_DIR, { recursive: true, mode: 0o700 });
@@ -36,7 +37,7 @@ export async function startAppServer(codexBin: string, id: string): Promise<AppS
 
   const proc = Bun.spawn(
     [codexBin, "app-server", "--listen", `ws://127.0.0.1:${port}`, "--ws-auth", "capability-token", "--ws-token-file", tokenPath],
-    { stdin: "ignore", stdout: "ignore", stderr: "ignore", env: { ...process.env, PATH: GUI_PATH } },
+    { stdin: "ignore", stdout: "ignore", stderr: "ignore", env: { ...process.env, PATH: GUI_PATH, ...(mcp ? { [mcp.tokenEnvVar]: mcp.token } : {}) } },
   );
   const exited = proc.exited.finally(() => rmSync(tokenPath, { force: true }));
   return { url: `ws://127.0.0.1:${port}`, token, stop: () => proc.kill(), exited };

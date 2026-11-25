@@ -62,6 +62,7 @@ interface SessionViewProps {
   /** Called after the owner deletes this session, so the app can leave it. */
   onDeleted?: (sessionId: string) => void;
   notice?: string | null;
+  toolsNotice?: string | null;
   /** Opens a linked session, from the line under the header of a cleared session. */
   onOpenSession?: (sessionId: string) => void;
   /** Put the cursor in the message box when the session opens, for a session the person just started. */
@@ -204,6 +205,7 @@ function SessionContents({
   menuItems,
   onDeleted,
   notice,
+  toolsNotice,
   onOpenSession,
   autoFocusComposer,
   track,
@@ -655,6 +657,7 @@ function SessionContents({
       <SessionLinks session={session} onOpenSession={onOpenSession} />
       <CloudStartNoticeView session={session} />
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
+      {toolsNotice && (session.status === "live" || session.status === "starting") && <p className="ui-muted ui-session__notice" role="status">{toolsNotice}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
       <div className="ui-session__scroll" ref={scrollRef} onScroll={() => { onScroll(); if (history && scrollRef.current && scrollRef.current.scrollTop > 0 && scrollRef.current.scrollTop < 200) void older(); }}>
         <div className="ui-session__column" ref={contentRef}>

@@ -1,9 +1,10 @@
+import { codexSessionMcpConfig } from "../../session-mcp";
 import { liveTextTopic, LIVE_TEXT_EVENT, type LiveTextChunk } from "../../../live-sessions";
 import { ApprovalBroker } from "../../approvals";
 import type { ControlInput } from "../../controls";
 import type { ForwardedLine } from "../../forwarder";
 import { findHarnessBin } from "../../find-bin";
-import { LaunchError, type DriverHost, type HarnessDriver, type HarnessLauncher, type HarnessRegistration, type HostInput } from "../harness-driver";
+import { LaunchError, type DriverHost, type SessionMcpConnection, type HarnessDriver, type HarnessLauncher, type HarnessRegistration, type HostInput } from "../harness-driver";
 import type { PendingInput } from "../../input-delivery";
 import { LiveTextRelay } from "../../live-text-relay";
 import { hostServices } from "../../services";
@@ -98,8 +99,8 @@ async function connect(server: AppServer, handlers: RpcHandlers): Promise<RpcCli
 }
 
 /** Starts an app server and connects to it. Notifications reach the connection once the caller sets `route.connection`. */
-async function openServer(bin: string, sessionId: string) {
-  const server = await startAppServer(bin, sessionId);
+async function openServer(bin: string, sessionId: string, mcp?: SessionMcpConnection) {
+  const server = await startAppServer(bin, sessionId, mcp);
   const route: { connection: CodexConnection | null } = { connection: null };
   try {
     const rpc = await connect(server, {
@@ -114,12 +115,25 @@ async function openServer(bin: string, sessionId: string) {
   }
 }
 
+async function sessionMcpConfig(rpc: RpcClient, mcp: SessionMcpConnection, sessionId: string): Promise<Record<string, unknown>> {
+  try {
+    const effective = await rpc.request<{ config: { mcp_servers?: Record<string, unknown> } }>("config/read", { includeLayers: false });
+    const config = codexSessionMcpConfig(mcp, effective.config);
+    if (!config) hostServices().mcpProblem?.(sessionId);
+    return config ?? {};
+  } catch {
+    hostServices().mcpProblem?.(sessionId);
+    return {};
+  }
+}
+
 /** Starts a new app server and resumes a thread from disk on it. The thread keeps the folder it ran in. */
-async function resumeConnection(input: { bin: string; sessionId: string; threadId: string; folderPath: string; model: string | null; effort: string | null }): Promise<CodexConnection> {
-  const { server, rpc, route } = await openServer(input.bin, input.sessionId);
+async function resumeConnection(input: { mcp?: SessionMcpConnection; bin: string; sessionId: string; threadId: string; folderPath: string; model: string | null; effort: string | null }): Promise<CodexConnection> {
+  const { server, rpc, route } = await openServer(input.bin, input.sessionId, input.mcp);
   try {
     const resumed = await rpc.request<ThreadResumeResult>("thread/resume", {
       threadId: input.threadId,
+      ...(input.mcp ? { config: await sessionMcpConfig(rpc, input.mcp, input.sessionId) } : {}),
       ...(input.folderPath ? { cwd: input.folderPath } : {}),
       approvalPolicy: "on-request",
       sandbox: "workspace-write",
@@ -222,7 +236,8 @@ export class CodexDriver implements HarnessDriver {
       const state = this.host.state();
       const bin = findHarnessBin("codex");
       if (!bin) throw new Error("Codex is not installed");
-      const connection = await resumeConnection({ bin, sessionId: state.sessionId, threadId: state.nativeSessionId, folderPath: state.folderPath, model: state.model ?? null, effort: state.reasoningEffort ?? null });
+      const mcp = await hostServices().prepareMcp?.(state.sessionId, state.workspaceId, state.hostId);
+      const connection = await resumeConnection({ mcp, bin, sessionId: state.sessionId, threadId: state.nativeSessionId, folderPath: state.folderPath, model: state.model ?? null, effort: state.reasoningEffort ?? null });
       if (this.halted) { connection.stop(); return; }
       this.ownedConnection = connection;
       live.set(state.sessionId, connection);
@@ -598,19 +613,20 @@ const launcher: HarnessLauncher = {
     return { ok: true, bin, version: await readCodexVersion(bin) };
   },
   newNativeSessionId: () => "",
-  async resume({ sessionId, nativeSessionId, model, effort, options: { bin } }) {
+  async resume({ mcp, sessionId, nativeSessionId, model, effort, options: { bin } }) {
     try {
-      const connection = await resumeConnection({ bin, sessionId, threadId: nativeSessionId, folderPath: "", model, effort });
+      const connection = await resumeConnection({ mcp, bin, sessionId, threadId: nativeSessionId, folderPath: "", model, effort });
       live.set(sessionId, connection);
       return { folderPath: connection.folderPath };
     } catch (error) {
       throw new LaunchError(`Codex could not resume the session: ${error instanceof Error ? error.message : "unknown error"}`);
     }
   },
-  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin, permissionMode, approvalMode } }) {
-    const { server, rpc, route } = await openServer(bin, sessionId);
+  async launch({ mcp, sessionId, workspace: { path: folderPath }, model, effort, options: { bin, permissionMode, approvalMode } }) {
+    const { server, rpc, route } = await openServer(bin, sessionId, mcp);
     try {
       const started = await rpc.request<ThreadStartResult>("thread/start", {
+        ...(mcp ? { config: await sessionMcpConfig(rpc, mcp, sessionId) } : {}),
         ...(model ? { model } : {}),
         cwd: folderPath,
         approvalPolicy: "on-request",
