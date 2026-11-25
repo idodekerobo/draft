@@ -358,3 +358,47 @@ describe("upcoming routines", () => {
     expect(result).toMatchObject({ status: "ok", output: { upcoming: [expect.objectContaining({ id: "task-soon", runAt: "2026-11-20T09:00:00.000Z" })] } });
   });
 });
+
+describe("Home privacy and history", () => {
+  const MY_PERSON = "44444444-4444-4444-8444-444444444444";
+  const THEIR_PERSON = "55555555-5555-4555-8555-555555555555";
+  const event = (id: string, type: string, visibility: "shared" | "private", audience: string | null, minute: number): Row => ({
+    id, workspace_id: WS, event_type: type, summary: `Event ${id}`, occurred_at: at(minute), visibility, audience_person_id: audience,
+  });
+  const people = [
+    { id: MY_PERSON, workspace_id: WS, user_id: ME },
+    { id: THEIR_PERSON, workspace_id: WS, user_id: TEAMMATE },
+  ];
+
+  it("shows a private history entry only to its audience", async () => {
+    const tables = { agent_runs: [], people, workspace_events: [event("mine", "notification_done", "private", MY_PERSON, 5), event("theirs", "notification_not_mine", "private", THEIR_PERSON, 6), event("shared", "notification_undone", "shared", null, 7)] };
+    const forMe = await listActivity(activityClient(tables), WS, null, ME);
+    expect(forMe.events.map((entry) => entry.id).sort()).toEqual(["mine", "shared"]);
+    const forThem = await listActivity(activityClient(tables), WS, null, TEAMMATE);
+    expect(forThem.events.map((entry) => entry.id).sort()).toEqual(["shared", "theirs"]);
+  });
+
+  it("ignores events that are not notification history", async () => {
+    const tables = { agent_runs: [], people, workspace_events: [event("a", "source_items_added", "shared", null, 5), event("b", "notification_done", "shared", null, 6)] };
+    expect((await listActivity(activityClient(tables), WS, null, ME)).events.map((entry) => entry.id)).toEqual(["b"]);
+  });
+
+  it("hides runs of another person's Home session but keeps runs with no session", async () => {
+    const tables = {
+      people,
+      sessions: [{ id: "home-theirs", workspace_id: WS, is_home: true, owner_user_id: TEAMMATE }, { id: "home-mine", workspace_id: WS, is_home: true, owner_user_id: ME }],
+      agent_runs: [run("hidden", 1, { session_id: "home-theirs" }), run("own", 2, { session_id: "home-mine" }), run("synth", 3, { kind: "synthesis", session_id: null }), run("plain", 4, { session_id: "session-plain" })],
+      workspace_events: [],
+    };
+    const forMe = await listActivity(activityClient(tables), WS, null, ME);
+    expect(forMe.runs.map((entry) => entry.id).sort()).toEqual(["own", "plain", "synth"]);
+    const forThem = await listActivity(activityClient(tables), WS, null, TEAMMATE);
+    expect(forThem.runs.map((entry) => entry.id).sort()).toEqual(["hidden", "plain", "synth"]);
+  });
+
+  it("with mine, lists only runs started on the viewer's behalf", async () => {
+    const tables = { people, workspace_events: [], agent_runs: [run("a", 1, { on_behalf_of_user_id: ME }), run("b", 2, { on_behalf_of_user_id: TEAMMATE })] };
+    expect((await listActivity(activityClient(tables), WS, null, ME, { mine: true })).runs.map((entry) => entry.id)).toEqual(["a"]);
+    expect((await listActivity(activityClient(tables), WS, null, ME)).runs).toHaveLength(2);
+  });
+});

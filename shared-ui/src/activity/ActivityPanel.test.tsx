@@ -159,3 +159,21 @@ test("a run with steps offers View steps, opens them, and Back returns focus to 
   const back = await screen.findByRole("button", { name: /View steps/ });
   await waitFor(() => expect(document.activeElement).toBe(back));
 });
+
+test("shows the person's notification history above the runs", async () => {
+  renderPanel(async () => ({ runs: [run(0)], nextCursor: null, events: [{ id: "e1", type: "notification_done", summary: "Send the quote", occurredAt: "2026-11-24T10:00:00Z", visibility: "private" }] }));
+  await screen.findByText("Your history");
+  expect(screen.getByText("Send the quote")).toBeTruthy();
+  expect(screen.getByText(/Marked done/)).toBeTruthy();
+});
+
+test("Mine asks for only the person's runs, and All goes back", async () => {
+  const getRuns = mock(async (_before?: string, _options?: { mine?: boolean }) => ({ runs: [run(0)], nextCursor: null }));
+  renderPanel(getRuns);
+  await screen.findByText("Routine 0 · routine");
+  fireEvent.click(screen.getByRole("button", { name: "Mine" }));
+  await waitFor(() => expect(getRuns).toHaveBeenCalledWith(undefined, { mine: true }));
+  expect(screen.getByRole("button", { name: "Mine" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "All" }));
+  expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("true");
+});

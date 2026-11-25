@@ -34,10 +34,10 @@ export const RUNS_PAGE_SIZE = 50;
 export const runCursor = (run: Pick<SynthesisRunSummary, "createdAt" | "id">) => `${run.createdAt}|${run.id}`;
 
 /** Every run, a page at a time, for the Activity list. Under the runs key, so a run signal refreshes it too. */
-export const runHistoryQueryOptions = (api: DraftApi, workspaceId: string) =>
+export const runHistoryQueryOptions = (api: DraftApi, workspaceId: string, mine = false) =>
   infiniteQueryOptions({
-    queryKey: [...queryKeys.runs(workspaceId), "history"] as const,
-    queryFn: ({ pageParam }) => api.getRuns(pageParam),
+    queryKey: [...queryKeys.runs(workspaceId), "history", mine ? "mine" : "all"] as const,
+    queryFn: ({ pageParam }) => (mine ? api.getRuns(pageParam, { mine: true }) : api.getRuns(pageParam)),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: STALE_MS.runs,

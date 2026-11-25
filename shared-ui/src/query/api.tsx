@@ -10,7 +10,7 @@ import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutineRunO
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
 export interface DraftApi {
   /** The newest runs, a page at a time. `before` is a run's cursor (see runCursor); omit it for the first page, which also carries upcoming routines. */
-  getRuns(before?: string): Promise<SynthesisRunsPage>;
+  getRuns(before?: string, options?: { mine?: boolean }): Promise<SynthesisRunsPage>;
   /** What needs this person now: approvals, questions, their to-dos, broken connections, failed sends. */
   getNeedsYou(): Promise<NeedsYou>;
   /** Marks one of the person's notifications done or not mine, or undoes that. A refusal comes back as `ok: false`. */

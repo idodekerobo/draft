@@ -1098,8 +1098,8 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
       getWorkspaceRuns: async (params) => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) return { runs: [], nextCursor: null };
-        const before = params?.before;
-        return fetchServerJSON<SynthesisRunsPage>(`workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
+        const query = [params?.before ? `before=${encodeURIComponent(params.before)}` : "", params?.mine ? "mine=1" : ""].filter(Boolean).join("&");
+        return fetchServerJSON<SynthesisRunsPage>(`workspaces/${workspaceId}/synthesis-runs${query ? `?${query}` : ""}`);
       },
 
       getRunDetail: async ({ runId }) => {

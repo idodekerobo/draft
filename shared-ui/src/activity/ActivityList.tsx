@@ -32,8 +32,18 @@ export interface UpcomingRoutine {
 }
 
 /** Shape of GET /workspaces/:id/synthesis-runs. upcoming and upcomingError come on the first page only. */
+export interface ActivityHistoryEntry {
+  id: string;
+  type: string;
+  summary: string;
+  occurredAt: string;
+  visibility: "shared" | "private";
+}
+
 export interface SynthesisRunsPage {
   runs: SynthesisRunSummary[];
+  /** Notification history in this page's time window. Older servers omit it. */
+  events?: ActivityHistoryEntry[];
   nextCursor: string | null;
   upcoming?: UpcomingRoutine[];
   upcomingError?: true;

@@ -22,7 +22,10 @@ import { apiFetch, ApiError } from "@/lib/api";
 export function WebQueryProvider({ workspaceId, children }: { workspaceId: string; children: ReactNode }) {
   const { track } = useAnalytics();
   const api: DraftApi = {
-    getRuns: (before) => apiFetch<SynthesisRunsPage>(`/workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`),
+    getRuns: (before, options) => {
+      const query = [before ? `before=${encodeURIComponent(before)}` : "", options?.mine ? "mine=1" : ""].filter(Boolean).join("&");
+      return apiFetch<SynthesisRunsPage>(`/workspaces/${workspaceId}/synthesis-runs${query ? `?${query}` : ""}`);
+    },
     getNeedsYou: async () => (await apiFetch<{ output: NeedsYou }>(`/workspaces/${workspaceId}/tools/home.needs_you`, { method: "POST", body: "{}" })).output,
     actOnNotification: async (id, action) => {
       try {

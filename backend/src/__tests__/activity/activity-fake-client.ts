@@ -32,6 +32,10 @@ function splitClauses(expression: string): string[] {
 function clauseMatches(clause: string, row: Row): boolean {
   const group = /^and\((.*)\)$/.exec(clause);
   if (group) return splitClauses(group[1]!).every((inner) => clauseMatches(inner, row));
+  const isNull = /^(\w+)\.is\.null$/.exec(clause);
+  if (isNull) return row[isNull[1]!] == null;
+  const notIn = /^(\w+)\.not\.in\.\((.*)\)$/.exec(clause);
+  if (notIn) return !notIn[2]!.split(",").includes(String(row[notIn[1]!]));
   const match = /^(\w+)\.(eq|lt)\.(.*)$/.exec(clause);
   if (!match) throw new Error(`Unsupported filter in the activity fake: ${clause}`);
   const value = match[3]!.replace(/^"(.*)"$/, "$1");
@@ -54,12 +58,16 @@ export function activityClient(tables: Record<string, Row[]>, failRead: (table: 
         returns: () => unknown;
         or: (expression: string) => unknown;
         in: (column: string, values: unknown[]) => unknown;
+        gte: (column: string, value: string) => unknown;
+        lt: (column: string, value: string) => unknown;
       };
       const select = query.select.bind(query);
       query.select = (columns: string) => (failRead(table, columns) ? failedRead("read failed") : select(columns));
       query.returns = () => query;
       // Matches the rows now and filters on their ids, so a later limit still applies after the `or`.
       query.or = (expression: string) => query.in("id", (tables[table] ?? []).filter((row) => orMatches(expression, row)).map((row) => row.id));
+      query.gte = (column: string, value: string) => query.in("id", (tables[table] ?? []).filter((row) => String(row[column]) >= value).map((row) => row.id));
+      query.lt = (column: string, value: string) => query.in("id", (tables[table] ?? []).filter((row) => String(row[column]) < value).map((row) => row.id));
       return query;
     },
   } as unknown as SupabaseClient;

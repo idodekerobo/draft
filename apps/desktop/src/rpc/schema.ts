@@ -528,7 +528,7 @@ export type AppRPCType = {
       getAgentDefaults: { params: { harness: string }; response: { model: string | null; modelLabel: string | null; effort: string | null } };
 
       /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Includes upcoming routines on the first page; request failures reject. */
-      getWorkspaceRuns: { params: { before?: string } | void; response: SynthesisRunsPage };
+      getWorkspaceRuns: { params: { before?: string; mine?: boolean } | void; response: SynthesisRunsPage };
 
       /** One run of a routine or of synthesis, with its steps. Request failures reject. */
       getRunDetail: { params: { runId: string }; response: RunDetail };

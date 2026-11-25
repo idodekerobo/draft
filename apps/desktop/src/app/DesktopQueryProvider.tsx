@@ -6,7 +6,7 @@ import { useAnalytics } from "./analytics/AnalyticsContext";
 import { rpc } from "./rpc";
 
 const api: DraftApi = {
-  getRuns: (before) => rpc.request.getWorkspaceRuns(before ? { before } : undefined),
+  getRuns: (before, options) => rpc.request.getWorkspaceRuns(before || options?.mine ? { ...(before ? { before } : {}), ...(options?.mine ? { mine: true } : {}) } : undefined),
   getNeedsYou: () => rpc.request.getNeedsYou(),
   actOnNotification: (id, action) => rpc.request.actOnNotification({ id, action }),
   decidePerson: (personId, decision) => rpc.request.decidePerson({ personId, decision }),

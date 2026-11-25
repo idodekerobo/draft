@@ -60,8 +60,20 @@ export interface UpcomingRoutine {
   setBy: { type: "person"; name: string } | { type: "routine"; routineId: string; title: string };
 }
 
+/** One entry of workspace history that Activity shows: what was done with a notification. Private entries reach only their audience. */
+export interface ActivityEvent {
+  id: string;
+  type: string;
+  summary: string;
+  occurredAt: string;
+  visibility: "shared" | "private";
+}
+
 export interface ActivityPage {
   runs: ActivityRun[];
+  /** Workspace history that falls in this page's time window, newest first. */
+  events: ActivityEvent[];
+  mine?: boolean;
   nextCursor: string | null;
   /** First page only. */
   upcoming?: UpcomingRoutine[];
@@ -191,7 +203,7 @@ async function listUpcoming(client: SupabaseClient, workspaceId: string, viewerI
  * Everything the workspace's agents ran, newest first, a page at a time: routines, synthesis, summaries and sessions.
  * The first page also lists upcoming one-time routines.
  */
-export async function listActivity(client: SupabaseClient, workspaceId: string, before: Cursor | null, viewerId: string | null): Promise<ActivityPage> {
+export async function listActivity(client: SupabaseClient, workspaceId: string, before: Cursor | null, viewerId: string | null, options: { mine?: boolean } = {}): Promise<ActivityPage> {
   // A Home session is its owner's alone, so its runs never list for anyone else. This runs before paging so pages stay full.
   const { data: foreignHome, error: homeError } = await client.from("sessions").select("id").eq("workspace_id", workspaceId).eq("is_home", true).neq("owner_user_id", viewerId ?? "00000000-0000-0000-0000-000000000000");
   if (homeError) throw homeError;
@@ -203,7 +215,9 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
     .eq("workspace_id", workspaceId)
     // One row for each run of a routine. Its step runs are in its details, not in the list.
     .is("parent_run_id", null);
-  if (hiddenSessionIds.length) query = query.not("session_id", "in", `(${hiddenSessionIds.join(",")})`);
+  // NOT IN is NULL for a run with no session, which would drop synthesis and summary runs, so keep them explicitly.
+  if (hiddenSessionIds.length) query = query.or(`session_id.is.null,session_id.not.in.(${hiddenSessionIds.join(",")})`);
+  if (options.mine) query = query.eq("on_behalf_of_user_id", viewerId ?? "00000000-0000-0000-0000-000000000000");
   if (before) query = query.or(olderThan("created_at", before));
   const { data, error } = await query
     .order("created_at", { ascending: false })
@@ -249,8 +263,16 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
         stepCount: stepCounts.get(run.id) ?? 0,
       };
     }),
+    events: [],
+    ...(options.mine ? { mine: true } : {}),
     nextCursor: rows.length === ACTIVITY_PAGE_SIZE && last ? formatCursor(last.created_at, last.id) : null,
   };
+  // History fills the same time window as the runs, so paging by run cursor never repeats or skips it.
+  try {
+    page.events = await listHistory(client, workspaceId, viewerId, { newerThan: rows.length === ACTIVITY_PAGE_SIZE && last ? last.created_at : null, olderThan: before?.at ?? null });
+  } catch (error) {
+    recordRouteError({ workspaceId, operation: "read", errorCode: "activity_history_read_failed", error });
+  }
   if (before) return page;
   try {
     return { ...page, upcoming: await listUpcoming(client, workspaceId, viewerId) };
@@ -258,4 +280,33 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
     recordRouteError({ workspaceId, operation: "read", errorCode: "activity_upcoming_failed", error });
     return { ...page, upcoming: [], upcomingError: true };
   }
+}
+
+const HISTORY_TYPES = ["notification_done", "notification_not_mine", "notification_undone"];
+const HISTORY_LIMIT = 100;
+
+/**
+ * Notification history from workspace events. A private event is returned only when the viewer is its audience,
+ * so the filter lives here and not in the caller. Without a viewer person, only shared events are returned.
+ */
+async function listHistory(client: SupabaseClient, workspaceId: string, viewerId: string | null, window: { newerThan: string | null; olderThan: string | null }): Promise<ActivityEvent[]> {
+  let personId: string | null = null;
+  if (viewerId) {
+    const { data, error } = await client.from("people").select("id").eq("workspace_id", workspaceId).eq("user_id", viewerId).maybeSingle();
+    if (error) throw error;
+    personId = (data as { id: string } | null)?.id ?? null;
+  }
+  let query = client
+    .from("workspace_events")
+    .select("id, event_type, summary, occurred_at, visibility, audience_person_id")
+    .eq("workspace_id", workspaceId)
+    .in("event_type", HISTORY_TYPES);
+  query = personId ? query.or(`visibility.eq.shared,audience_person_id.eq.${personId}`) : query.eq("visibility", "shared");
+  if (window.newerThan) query = query.gte("occurred_at", window.newerThan);
+  if (window.olderThan) query = query.lt("occurred_at", window.olderThan);
+  const { data, error } = await query.order("occurred_at", { ascending: false }).limit(HISTORY_LIMIT);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ id: string; event_type: string; summary: string; occurred_at: string; visibility: "shared" | "private" }>).map((row) => ({
+    id: row.id, type: row.event_type, summary: row.summary, occurredAt: row.occurred_at, visibility: row.visibility,
+  }));
 }
