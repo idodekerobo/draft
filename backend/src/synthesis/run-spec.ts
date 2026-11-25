@@ -1,7 +1,7 @@
 import type { BuiltInRoutineConfig } from "../routines/built-in-config";
-import { AGENT_RUN_SYSTEM_REASONS, cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
+import { AGENT_RUN_SYSTEM_REASONS, SANDBOX_RUN_DIRECTORY, cronTrigger, sandboxComputer, sandboxExecution, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type AgentRunSystemReason, type AgentRunTrigger, type JsonSchema } from "draft-core/run-spec";
 import { type AnyDraftToolPermission } from "draft-core/tools";
-import { cloudToolsetFor } from "draft-core/harnesses";
+import { cloudToolsetFor, requireRoutineAdapter } from "draft-core/harnesses";
 import type { SynthesisRunTriggerType } from "../types/enums";
 
 export interface SynthesisRunSpecInput {
@@ -45,11 +45,12 @@ export function buildSynthesisRunSpec(input: SynthesisRunSpecInput): AgentRunSpe
   return {
     id: parseAgentRunId(input.runId),
     kind: "synthesis",
-    network: "restricted",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: synthesisTrigger(input),
     onBehalfOf: null,
-    runtime: { type: "cloud", toolset: cloudToolsetFor(input.settings?.harness ?? "claude") },
+    execution: sandboxExecution(requireRoutineAdapter(input.settings?.harness ?? "claude")),
+    toolset: cloudToolsetFor(input.settings?.harness ?? "claude"),
+    computer: sandboxComputer("restricted", SANDBOX_RUN_DIRECTORY),
     harness: input.settings?.harness ?? "claude",
     model: input.settings?.model ?? null,
     reasoningEffort: input.settings?.reasoningEffort ?? null,

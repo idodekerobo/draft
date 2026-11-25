@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, CLAUDE_NATIVE_TOOLS, CODEX_NATIVE_TOOLS, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
+import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, executionProblem, isNativeTool, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
 import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
-import { isHarnessId } from "draft-core/harnesses";
+import { isAdapterId, isHarnessId, type AdapterId, type HarnessId } from "draft-core/harnesses";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../../observability/record-query-log";
 import type { AgentRunRow } from "../../types/tables";
 import type { ToolCallRecord } from "../tools/invoke-tool";
@@ -16,10 +16,10 @@ const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("retry"), retryOf: z.string().transform(parseAgentRunId) }),
 ]);
 
-const nativeToolSchema = z.discriminatedUnion("harness", [
-  z.object({ harness: z.literal("claude"), tool: z.enum(CLAUDE_NATIVE_TOOLS) }),
-  z.object({ harness: z.literal("codex"), tool: z.enum(CODEX_NATIVE_TOOLS) }),
-]);
+const nativeToolSchema = z
+  .object({ harness: z.string().refine(isHarnessId), tool: z.string() })
+  .refine((permission) => isNativeTool(permission.harness, permission.tool), "unknown built-in tool for this harness")
+  .transform((permission) => permission as { harness: HarnessId; tool: string });
 
 const toolsetSchema = z.object({
   nativeTools: z.array(nativeToolSchema),
@@ -33,10 +33,31 @@ const toolsetSchema = z.object({
   instructions: z.array(z.string().transform(parseInstructionFileId)),
 });
 
-const runtimeSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("local"), hostId: z.string().transform(parseHostId) }),
-  z.object({ type: z.literal("cloud"), toolset: toolsetSchema, network: z.enum(["open", "restricted"]).optional() }),
+const executionSchema = z.object({
+  target: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("host"), hostId: z.string().transform(parseHostId) }),
+    z.object({ type: z.literal("sandbox") }),
+    z.object({ type: z.literal("backend"), packageVersion: z.string().min(1) }),
+  ]),
+  adapterId: z.string().refine(isAdapterId, "unknown adapter").transform((id) => id as AdapterId),
+});
+
+const computerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("host_computer"), computerId: z.string().min(1), workingDirectory: z.string() }),
+  z.object({ type: z.literal("sandbox"), profileId: z.string().min(1), workingDirectory: z.string().min(1), network: z.enum(["open", "restricted"]) }),
+  z.object({ type: z.literal("none") }),
 ]);
+
+const continuationSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("native"), nativeSessionId: z.string().min(1) }),
+  z.object({ type: z.literal("durable"), storageId: z.string().min(1), conversationId: z.number().int() }),
+]);
+
+/** Refuses a spec whose target, adapter and computer cannot go together, before it is saved. */
+function assertExecution(spec: AgentRunSpec): void {
+  const problem = executionProblem(spec);
+  if (problem) throw new Error(`Invalid run execution: ${problem}`);
+}
 
 const toolNames = DRAFT_TOOLS.map((tool) => tool.name) as [string, ...string[]];
 const permissionSchema = z.object({
@@ -64,13 +85,17 @@ export interface NewAgentRun {
 /** Saves the run and its spec. The spec is read back from this row by `loadActiveAgentRunSpec`. */
 export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): Promise<void> {
   const { spec } = run;
+  assertExecution(spec);
   const { error } = await client.from("agent_runs").insert({
     id: spec.id,
     workspace_id: spec.workspaceId,
     kind: spec.kind,
     trigger: spec.trigger,
     on_behalf_of_user_id: spec.onBehalfOf,
-    runtime: spec.runtime.type === "cloud" ? { ...spec.runtime, network: spec.network ?? "restricted" } : spec.runtime,
+    execution: spec.execution,
+    toolset: spec.toolset,
+    computer: spec.computer,
+    continuation: spec.continuation ?? null,
     harness: spec.harness,
     model: spec.model,
     reasoning_effort: spec.reasoningEffort ?? null,
@@ -94,10 +119,14 @@ export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): 
  * is prepared; the launcher then says what the run may use and what it must return.
  */
 export async function saveAgentRunSpec(client: SupabaseClient, spec: AgentRunSpec): Promise<void> {
+  assertExecution(spec);
   const { error } = await client
     .from("agent_runs")
     .update({
-      runtime: spec.runtime.type === "cloud" ? { ...spec.runtime, network: spec.network ?? "restricted" } : spec.runtime,
+      execution: spec.execution,
+      toolset: spec.toolset,
+      computer: spec.computer,
+      continuation: spec.continuation ?? null,
       harness: spec.harness,
       model: spec.model,
       reasoning_effort: spec.reasoningEffort ?? null,
@@ -113,15 +142,17 @@ export async function saveAgentRunSpec(client: SupabaseClient, spec: AgentRunSpe
 export function specFromRow(row: AgentRunRow): AgentRunSpec {
   if (!(AGENT_RUN_KINDS as ReadonlyArray<string>).includes(row.kind)) throw new Error(`Unknown run kind: ${row.kind}`);
   if (!isHarnessId(row.harness)) throw new Error(`Unknown harness: ${row.harness}`);
-  const storedRuntime = runtimeSchema.parse(row.runtime);
+  const continuation = row.continuation == null ? undefined : continuationSchema.parse(row.continuation);
   return {
     id: parseAgentRunId(row.id),
     kind: row.kind as AgentRunKind,
-    network: storedRuntime.type === "cloud" ? storedRuntime.network ?? "restricted" : "restricted",
     workspaceId: parseWorkspaceId(row.workspace_id),
     trigger: triggerSchema.parse(row.trigger),
     onBehalfOf: row.on_behalf_of_user_id ? parseUserId(row.on_behalf_of_user_id) : null,
-    runtime: storedRuntime.type === "cloud" ? { type: "cloud", toolset: storedRuntime.toolset } : storedRuntime,
+    execution: executionSchema.parse(row.execution),
+    toolset: toolsetSchema.parse(row.toolset),
+    computer: computerSchema.parse(row.computer),
+    ...(continuation ? { continuation } : {}),
     harness: row.harness,
     model: row.model,
     reasoningEffort: row.reasoning_effort ?? null,

@@ -4,7 +4,8 @@
  * environment from nothing, so the signed upload links below never reach the agent.
  * This file has no dependencies, so the backend and the runner bundle can both use it.
  */
-import { CLOUD_NATIVE_TOOLS } from "./run-spec";
+import { getAdapter, harnessRunsInSandbox } from "./harnesses/adapters";
+import { cloudNativeToolsFor } from "./run-spec";
 
 /** Every reasoning effort any harness offers, lowest first. A model offers some of them. */
 export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
@@ -19,6 +20,8 @@ export const MODEL_PATTERN = /^[A-Za-z0-9._:\-\[\]]{1,100}$/;
 export interface RunnerManifest {
   version: 1;
   harness: "claude" | "codex";
+  /** The adapter that runs the harness. Left out by a backend that predates it; an image built before it refuses a manifest that has this key. */
+  adapterId?: string;
   model: string | null;
   /** Left out when the harness decides. An image built before efforts existed refuses a manifest that has this key. */
   reasoningEffort?: ReasoningEffort;
@@ -81,10 +84,16 @@ export interface ManifestChecks {
 /** Checks a manifest strictly. Anything unknown is refused, because these values reach a command line. */
 export function validateRunnerManifest(value: unknown, checks: ManifestChecks): RunnerManifest {
   const inputRoot = checks.inputRoot ?? RUNNER_INPUT_ROOT;
-  const top = onlyKeys(value, ["version", "harness", "model", "reasoningEffort", "prompt", "tools", "output", "timeoutSeconds", "network", "sessionUpload"], "manifest");
+  const top = onlyKeys(value, ["version", "harness", "adapterId", "model", "reasoningEffort", "prompt", "tools", "output", "timeoutSeconds", "network", "sessionUpload"], "manifest");
   if (top.version !== 1) throw new Error("run manifest: version must be 1");
-  if (top.harness !== "claude" && top.harness !== "codex") throw new Error("run manifest: harness must be claude or codex");
+  if ((top.harness !== "claude" && top.harness !== "codex") || !harnessRunsInSandbox(top.harness)) throw new Error("run manifest: harness must be claude or codex");
   const harness = top.harness;
+  if (top.adapterId !== undefined) {
+    const adapter = typeof top.adapterId === "string" ? getAdapter(top.adapterId) : null;
+    if (!adapter) throw new Error("run manifest: adapterId is unknown");
+    if (adapter.harness !== harness) throw new Error("run manifest: adapterId does not run this harness");
+    if (!adapter.targets.includes("sandbox")) throw new Error("run manifest: adapterId cannot run in a sandbox");
+  }
   if (top.model !== null && (typeof top.model !== "string" || !MODEL_PATTERN.test(top.model))) throw new Error("run manifest: model is invalid");
   if (top.reasoningEffort !== undefined && !(REASONING_EFFORTS as ReadonlyArray<unknown>).includes(top.reasoningEffort)) throw new Error("run manifest: reasoningEffort is invalid");
   if (typeof top.timeoutSeconds !== "number" || !Number.isSafeInteger(top.timeoutSeconds) || top.timeoutSeconds < 1 || top.timeoutSeconds > 7200) {
@@ -104,7 +113,7 @@ export function validateRunnerManifest(value: unknown, checks: ManifestChecks): 
   }
 
   const toolsValue = onlyKeys(top.tools, ["native", "draftMcpUrl"], "tools");
-  const allowedNative = CLOUD_NATIVE_TOOLS[harness] as ReadonlyArray<string>;
+  const allowedNative = cloudNativeToolsFor(harness);
   if (!Array.isArray(toolsValue.native) || !toolsValue.native.every((tool) => typeof tool === "string" && allowedNative.includes(tool))) {
     throw new Error("run manifest: tools.native has a tool this harness may not use");
   }
@@ -135,6 +144,7 @@ export function validateRunnerManifest(value: unknown, checks: ManifestChecks): 
   return {
     version: 1,
     harness,
+    ...(top.adapterId !== undefined ? { adapterId: top.adapterId as string } : {}),
     model: top.model as string | null,
     ...(top.reasoningEffort !== undefined ? { reasoningEffort: top.reasoningEffort as ReasoningEffort } : {}),
     prompt,

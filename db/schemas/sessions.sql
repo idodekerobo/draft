@@ -34,9 +34,15 @@ create table sessions (
   -- Codex only.
   approval_mode      text
                        check (approval_mode in ('ask-for-approval', 'approve-for-me', 'full-access')),
-  -- Local: the owner's computer. Cloud: a Draft sandbox. Routine sessions are cloud.
-  runtime            text not null default 'local'
+  -- Replaced by execution_target. Nullable and unused by new code; the contract step drops it.
+  runtime            text
                        check (runtime in ('local', 'cloud')),
+  -- Where the session runs: host (an already-registered host, "This computer"), sandbox (a Draft sandbox, "Draft Cloud")
+  -- or backend. Checked in code. Nullable until the contract step.
+  execution_target   text,
+  -- The adapter that runs the harness, such as 'claude-terminal' or 'codex-exec' (core/src/harnesses). Checked in code.
+  -- Nullable until the contract step.
+  adapter_id         text,
   -- Cloud only: the sandbox volume's provider reference, and the seed the sandbox starts from.
   sandbox_volume     jsonb,
   seed               jsonb,

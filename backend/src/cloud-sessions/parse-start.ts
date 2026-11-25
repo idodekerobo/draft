@@ -1,7 +1,6 @@
-import { isEffortFor, isKnownModel } from "draft-core/harnesses";
+import { DEFAULT_HARNESS_ID, adapterSupportsTarget, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel, type HarnessId } from "draft-core/harnesses";
 import { sessionIdOfSnapshotKey } from "./snapshot-seed";
 
-const CLOUD_HARNESS = "claude";
 const MAX_REMOTE_CHARS = 500;
 const FOLDER_NAME_MAX_CHARS = 200;
 const DEFAULT_FOLDER_NAME = "snapshot";
@@ -19,7 +18,7 @@ export type CloudSeed =
 export interface CloudStartInput {
   workspaceId: string;
   ownerUserId: string;
-  harness: "claude";
+  harness: HarnessId;
   model: string | null;
   reasoningEffort: string | null;
   network: "restricted" | "open";
@@ -35,15 +34,18 @@ const refuse = (error: string): CloudStartParse => ({ ok: false, error });
  * and the session id is the key's session segment. A body sessionId is only a check that it matches.
  */
 export function parseCloudStart(body: Record<string, unknown>, owner: { workspaceId: string; ownerUserId: string }): CloudStartParse {
-  if ((body.harness ?? CLOUD_HARNESS) !== CLOUD_HARNESS) return refuse("harness_not_supported");
+  const harness = body.harness ?? DEFAULT_HARNESS_ID;
+  if (!isHarnessId(harness)) return refuse("harness_not_supported");
+  const adapter = interactiveAdapterFor(harness);
+  if (!adapter || !adapterSupportsTarget(adapter, "sandbox")) return refuse("harness_not_supported");
 
   const model = body.model ?? null;
   if (typeof model !== "string" && model !== null) return refuse("unknown_model");
-  if (!isKnownModel(CLOUD_HARNESS, model)) return refuse("unknown_model");
+  if (!isKnownModel(harness, model)) return refuse("unknown_model");
 
   const reasoningEffort = body.reasoningEffort ?? null;
   if (typeof reasoningEffort !== "string" && reasoningEffort !== null) return refuse("unknown_reasoning_effort");
-  if (!isEffortFor(CLOUD_HARNESS, model, reasoningEffort)) return refuse("unknown_reasoning_effort");
+  if (!isEffortFor(harness, model, reasoningEffort)) return refuse("unknown_reasoning_effort");
 
   const network = body.network ?? "restricted";
   if (network !== "restricted" && network !== "open") return refuse("invalid_network");
@@ -52,7 +54,7 @@ export function parseCloudStart(body: Record<string, unknown>, owner: { workspac
   if (!seed.ok) return seed;
   return {
     ok: true,
-    input: { workspaceId: owner.workspaceId, ownerUserId: owner.ownerUserId, harness: CLOUD_HARNESS, model, reasoningEffort, network, seed: seed.seed },
+    input: { workspaceId: owner.workspaceId, ownerUserId: owner.ownerUserId, harness, model, reasoningEffort, network, seed: seed.seed },
   };
 }
 

@@ -1,5 +1,4 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { CLOUD_NATIVE_TOOLS } from "draft-core/run-spec";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -680,7 +679,7 @@ describe("StreamLineReader", () => {
 });
 
 test("a routine failure is named by the first cause that applies", () => {
-  const base = { timedOut: false, resultIsError: false, exitCode: 0, signal: null };
+  const base = { timedOut: false, resultIsError: false, exitCode: 0, signal: null, harness: "claude" as const };
   expect(routineFailureCode({ ...base, timedOut: true, resultIsError: true })).toBe("timeout");
   expect(routineFailureCode({ ...base, resultIsError: true, exitCode: 1 })).toBe("claude_error");
   expect(routineFailureCode({ ...base, exitCode: 1 })).toBe("claude_exit");
@@ -718,7 +717,7 @@ describe("Codex routine run", () => {
   });
 
   test("a failure is named for Codex, and a Claude run keeps its names", () => {
-    const base = { timedOut: false, resultIsError: false, exitCode: 0, signal: null };
+    const base = { timedOut: false, resultIsError: false, exitCode: 0, signal: null, harness: "claude" as const };
     expect(routineFailureCode({ ...base, resultIsError: true, harness: "codex" })).toBe("codex_error");
     expect(routineFailureCode({ ...base, exitCode: 1, harness: "codex" })).toBe("codex_exit");
     expect(routineFailureCode({ ...base, timedOut: true, harness: "codex" })).toBe("timeout");

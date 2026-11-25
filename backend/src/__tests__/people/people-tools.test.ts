@@ -1,3 +1,4 @@
+import { SANDBOX_RUN_DIRECTORY, sandboxComputer, sandboxExecution } from "draft-core/run-spec";
 import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, DRAFT_TOOLS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
@@ -41,11 +42,10 @@ function setup(db = newDb()) {
 const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf: string | null = OWNER): AgentRunSpec => ({
   id: parseAgentRunId(RUN),
   kind: "routine",
-    network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "system", reason: "manual" },
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
-  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  execution: sandboxExecution("claude-print"), toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, computer: sandboxComputer("restricted", SANDBOX_RUN_DIRECTORY),
   harness: "claude",
   model: null,
   instructions: "",

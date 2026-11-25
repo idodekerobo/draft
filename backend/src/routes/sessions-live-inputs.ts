@@ -4,7 +4,7 @@ import { serviceClient } from "../db/client";
 import { recordError } from "../errors/record-error";
 import { productionStartDeps } from "../cloud-sessions/deps";
 import { wakeCloudSession } from "../cloud-sessions/wake";
-import { getHarness } from "draft-core/harnesses";
+import { interactiveAdapterFor } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
@@ -56,16 +56,16 @@ function publicInput(row: SessionInputRow): PublicInput {
 async function wakeIfSleeping(workspaceId: string, sessionId: string): Promise<boolean> {
   const { data, error } = await serviceClient
     .from("sessions")
-    .select("runtime, status")
+    .select("execution_target, status")
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
     .is("deleted_at", null)
-    .maybeSingle<{ runtime: string; status: string }>();
+    .maybeSingle<{ execution_target: string; status: string }>();
   if (error) {
     await recordError({ workspaceId, sessionId, operation: "session", code: "wake_lookup_failed", message: "Reading a session before a wake failed", error });
     return false;
   }
-  if (data?.runtime !== "cloud" || data.status !== "sleeping") return false;
+  if (data?.execution_target !== "sandbox" || data.status !== "sleeping") return false;
   try {
     await wakeCloudSession({ workspaceId, sessionId }, productionStartDeps());
   } catch (error) {
@@ -154,7 +154,7 @@ export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
 async function steerInput(workspaceId: string, sessionId: string, inputId: string, userId: string): Promise<Response> {
   const { data: session } = await serviceClient.from("sessions").select("harness").eq("id", sessionId).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<{ harness: string }>();
   if (!session) return errorResponse("session_not_found", 404);
-  if (!getHarness(session.harness)?.capabilities.steer) return errorResponse("steer_not_supported", 409);
+  if (!interactiveAdapterFor(session.harness)?.capabilities.steer) return errorResponse("steer_not_supported", 409);
 
   const { data, error } = await serviceClient
     .from("session_inputs")

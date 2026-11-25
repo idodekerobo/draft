@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
+import { isHarnessId } from "draft-core/harnesses";
+import { ACTIVE_AGENT_RUN_STATUSES, networkOf } from "draft-core/run-spec";
 import { CredentialError } from "../credentials/crypto";
 import { resolveCredential as resolveHarnessCredential } from "../credentials/harness-credential";
 import { recordError } from "../errors/record-error";
@@ -111,9 +112,11 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
   if (!seed) return abandon({ operation: "session", code: "session_seed_invalid", message: "The sleeping session has no seed to wake from" });
   const repo = seed.kind === "repo" ? (parseGitHubRemote(seed.gitRemote)?.repo ?? null) : null;
 
+  if (!isHarnessId(session.harness)) return abandon({ operation: "session", code: "session_harness_invalid", message: "The sleeping session's agent is not supported" });
+  const harness = session.harness;
   let network: "restricted" | "open";
   try {
-    network = specFromRow(latest).network;
+    network = networkOf(specFromRow(latest).computer);
   } catch (cause) {
     return abandon({ operation: "session", code: "run_spec_failed", message: "Reading the spec of the session's last run failed", cause });
   }
@@ -127,6 +130,7 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
       reasoningEffort: session.reasoning_effort,
       network,
       repo,
+      harness,
     });
     await createAgentRun(client, { spec, idempotencyKey: `cloud-session:${sessionId}:${runId}`, status: "preparing", sessionId });
     runCreated = true;

@@ -342,6 +342,7 @@ describe("the run manifest the launcher sends", () => {
     expect(manifest).toEqual({
       version: 1,
       harness: "claude",
+      adapterId: "claude-print",
       model: "haiku",
       prompt: { kind: "file", path: "/run/input/prompt.md" },
       tools: { native: ["Read", "Glob", "Grep", "Bash", "WebSearch"], draftMcpUrl: `https://api.example.test/runs/${RUN}/mcp` },
@@ -440,7 +441,9 @@ describe("launchSandboxRun routine runs", () => {
       launchSandboxRun({ spec, bundle: bundle(), prompt: prompt as never, credentials: { claudeCodeOAuthToken: "t", codexAuthJson: "{}" }, config }, { provider: flyProvider(client), bundleUploader: uploader });
     await expect(run({ ...routineSpec({ harness: "codex" }), output: { type: "structured", schema: jsonSchema } })).resolves.toMatchObject({ machineId: "machine-1" });
     await expect(run({ ...routineSpec({ harness: "codex" }) }, { kind: "items", manifestPath: "input/manifest.json" })).rejects.toThrow("items need structured output");
-    await expect(run({ ...routineSpec(), runtime: { type: "local", hostId: "mac" as never } })).rejects.toThrow("cloud runtime");
+    const onHost = { ...routineSpec(), execution: { target: { type: "host", hostId: "mac" as never }, adapterId: "claude-terminal" }, computer: { type: "host_computer", computerId: "mac", workingDirectory: "/work" } } as AgentRunSpec;
+    await expect(run(onHost)).rejects.toThrow("sandbox execution target");
+    await expect(run({ ...routineSpec(), execution: { target: { type: "backend", packageVersion: "1" }, adapterId: "claude-terminal" } })).rejects.toThrow("cannot run on a backend target");
     await expect(run({ ...routineSpec(), output: { type: "none" } })).rejects.toThrow("text or structured output");
   });
 });

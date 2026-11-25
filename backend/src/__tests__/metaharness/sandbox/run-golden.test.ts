@@ -233,7 +233,11 @@ const routineSpec = (routine: { harness: "claude" | "codex"; model: string | nul
   buildRoutineRunSpec({ id: RUN, workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: "2026-11-09T09:00:00.000Z", routine: { title: "t", prompt: "p", ...routine }, contextVersionId: VERSION });
 
 // The base variables plus the manifest, which holds everything else the runner needs.
-const withManifest = (env: Record<string, string>, manifest: RunnerManifest) => ({ ...env, DRAFT_RUN_MANIFEST: JSON.stringify(manifest) });
+// The backend writes the adapter right after the harness, so the JSON text has the same key order.
+const withManifest = (env: Record<string, string>, manifest: RunnerManifest, adapterId: string) => {
+  const { version, harness, ...rest } = manifest;
+  return { ...env, DRAFT_RUN_MANIFEST: JSON.stringify({ version, harness, adapterId, ...rest }) };
+};
 
 describe("environments the launcher gives the machine", () => {
   it("synthesis", async () => {
@@ -242,6 +246,7 @@ describe("environments the launcher gives the machine", () => {
       withManifest(
         { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login" },
         manifestOf({ timeoutSeconds: 1200, output: STRUCTURED }),
+        "claude-print",
       ),
     );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/output-schema.json", "input/prompt.md"]);
@@ -253,6 +258,7 @@ describe("environments the launcher gives the machine", () => {
       withManifest(
         { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "1200", CLAUDE_CODE_OAUTH_TOKEN: "login" },
         manifestOf({ timeoutSeconds: 1200, output: STRUCTURED, prompt: { kind: "items", manifestPath: "/run/input/manifest.json" } }),
+        "claude-print",
       ),
     );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/output-schema.json"]);
@@ -269,6 +275,7 @@ describe("environments the launcher gives the machine", () => {
       withManifest(
         { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_TOKEN: "<token>" },
         manifestOf({ model: "haiku", network: "open", tools: { native: ["Read", "Glob", "Grep", "Bash", "WebSearch"], draftMcpUrl: MCP_URL } }),
+        "claude-print",
       ),
     );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/prompt.md"]);
@@ -285,6 +292,7 @@ describe("environments the launcher gives the machine", () => {
       withManifest(
         { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CODEX_AUTH_JSON: "{}", DRAFT_RUN_TOKEN: "<token>" },
         manifestOf({ harness: "codex", network: "open", tools: { native: ["shell", "web_search"], draftMcpUrl: MCP_URL } }),
+        "codex-exec",
       ),
     );
   });
@@ -302,6 +310,7 @@ describe("environments the launcher gives the machine", () => {
       withManifest(
         { ...BASE_ENV, DRAFT_TIMEOUT_SECONDS: "900", CLAUDE_CODE_OAUTH_TOKEN: "login", DRAFT_RUN_TOKEN: "<token>" },
         manifestOf({ model: "haiku", network: "open", tools: { native: ["Read", "Glob", "Grep", "Bash", "WebSearch"], draftMcpUrl: MCP_URL }, sessionUpload }),
+        "claude-print",
       ),
     );
     expect(result.uploaded).toEqual(["input/context/a.md", "input/prompt.md"]);

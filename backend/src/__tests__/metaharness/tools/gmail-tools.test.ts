@@ -1,3 +1,4 @@
+import { SANDBOX_RUN_DIRECTORY, sandboxComputer, sandboxExecution } from "draft-core/run-spec";
 import { describe, expect, it } from "bun:test";
 
 process.env.SUPABASE_URL = process.env.SUPABASE_URL ?? "https://supabase.example.test";
@@ -26,11 +27,11 @@ const settings = { clientId: "c", clientSecret: "s", redirectUri: "https://api.t
 const GMAIL = ["connections.search", "connections.read"].map((tool) => ({ tool, provider: "gmail" })) as AnyDraftToolPermission[];
 
 const run = (permissions: AnyDraftToolPermission[], onBehalfOf: string | null = OWNER): AgentRunSpec => ({
-  id: parseAgentRunId(RUN), kind: "routine", network: "open",
+  id: parseAgentRunId(RUN), kind: "routine",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
-  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  execution: sandboxExecution("claude-print"), toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, computer: sandboxComputer("open", SANDBOX_RUN_DIRECTORY),
   harness: "claude", model: null, instructions: "", inputs: { contextVersionId: parseContextVersionId("77777777-7777-4777-8777-777777777777") },
   permissions, output: { type: "text" },
 });

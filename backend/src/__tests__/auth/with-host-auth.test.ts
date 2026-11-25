@@ -91,7 +91,7 @@ const cloudSession = (overrides: Row = {}): Row => ({
   id: SESSION,
   workspace_id: WS,
   owner_user_id: OWNER,
-  runtime: "cloud",
+  execution_target: "sandbox",
   host_id: `cloud:${SESSION}`,
   deleted_at: null,
   ...overrides,
@@ -206,7 +206,7 @@ describe("a cloud run token", () => {
   });
 
   it("refuses a run whose session is a local one", async () => {
-    tables.sessions = [cloudSession({ runtime: "local", host_id: "host-1" })];
+    tables.sessions = [cloudSession({ execution_target: "host", host_id: "host-1" })];
     const res = await call(mint());
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ ok: false, error: "session_not_cloud" });

@@ -189,7 +189,7 @@ describe("Stop", () => {
   });
 
   it("refuses a cloud session that is sleeping, and withdraws nothing", async () => {
-    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", runtime: "cloud", status: "sleeping" }];
+    tables.sessions = [{ id: SESSION, workspace_id: WS, owner_user_id: "user-2", execution_target: "sandbox", status: "sleeping" }];
     tables.session_inputs = [{ id: "a", session_id: SESSION, workspace_id: WS, author_user_id: "user-2", kind: "message", state: "queued", payload: { text: "one" } }];
     const res = await routes.STOP(request("/x", {}));
     expect(res.status).toBe(409);
@@ -257,7 +257,7 @@ describe("switching the mode", () => {
   });
 
   it("refuses a cloud session that is sleeping, since no run is there to switch", async () => {
-    setHarness("claude", { runtime: "cloud", status: "sleeping" });
+    setHarness("claude", { execution_target: "sandbox", status: "sleeping" });
     const res = await mode({ permissionMode: "plan" });
     expect(res.status).toBe(409);
     expect(await res.json()).toEqual({ ok: false, error: "session_sleeping" });
@@ -323,7 +323,7 @@ describe("cloud host requests", () => {
     ) as never;
 
   beforeEach(() => {
-    tables.sessions = [{ id: SESSION, workspace_id: CLOUD_WS, owner_user_id: "user-2", runtime: "cloud", host_id: CLOUD_HOST, status: "live", last_seq: 0 }];
+    tables.sessions = [{ id: SESSION, workspace_id: CLOUD_WS, owner_user_id: "user-2", execution_target: "sandbox", host_id: CLOUD_HOST, status: "live", last_seq: 0 }];
     tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
   });
 

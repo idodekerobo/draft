@@ -1,6 +1,6 @@
 -- One row per agent run: one agent process started by Draft with one fixed spec.
--- The spec columns (trigger, on_behalf_of_user_id, runtime, permissions, output) are the
--- AgentRunSpec in core/src/agent-run.ts, copied here when the run starts.
+-- The spec columns (trigger, on_behalf_of_user_id, execution, toolset, computer, continuation, permissions, output)
+-- are the AgentRunSpec in core/src/run-spec.ts, copied here when the run starts.
 create table agent_runs (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
@@ -9,8 +9,17 @@ create table agent_runs (
   trigger                  jsonb not null,
   -- The user whose connections and context the run may use. The actor is always the run itself.
   on_behalf_of_user_id     uuid references users(id) on delete set null,
-  runtime                  jsonb not null,
-  harness                  text not null,
+  -- Replaced by execution, toolset and computer. Nullable and unused by new code; the contract step drops it.
+  runtime                  jsonb,
+  -- { target: { type: 'host', hostId } | { type: 'sandbox' } | { type: 'backend', packageVersion }, adapterId }
+  execution                jsonb,
+  -- Cloud: the allow-list of built-in tools, MCP servers, skills and instructions. Local: only what Draft adds.
+  toolset                  jsonb,
+  -- Which computer the run's tools act on: host_computer, sandbox (with its network) or none.
+  computer                 jsonb,
+  -- What the run resumes earlier agent state from. Null on a fresh launch.
+  continuation             jsonb,
+  harness                 text not null,
   model                    text,
   -- Plain text such as 'low' or 'xhigh'; null means the harness's own setting. Allowed values depend on the model (core/src/harnesses).
   reasoning_effort         text,

@@ -1,5 +1,5 @@
 import { routineBuiltInTools } from "draft-core/routines";
-import { CLOUD_NATIVE_TOOLS } from "draft-core/run-spec";
+import { cloudNativeToolsFor } from "draft-core/run-spec";
 import { getHarness, isEffortFor, isKnownModel, type HarnessId } from "draft-core/harnesses";
 import { ROUTINE_EVENT_NAMES, type RoutineEventName } from "draft-core/routines";
 
@@ -70,7 +70,7 @@ export function validateRoutineToolset(value: unknown, harness: HarnessId): Rout
   const { nativeTools = [], mcpServers = [] } = value as Record<string, unknown>;
   if (!Array.isArray(nativeTools) || !Array.isArray(mcpServers) || mcpServers.length > MAX_MCP_SERVERS) return null;
 
-  const allowedNative = CLOUD_NATIVE_TOOLS[harness] as ReadonlyArray<string>;
+  const allowedNative = cloudNativeToolsFor(harness);
   if (!nativeTools.every((tool) => typeof tool === "string" && allowedNative.includes(tool))) return null;
 
   const servers: RoutineToolsetConfig["mcpServers"] = [];

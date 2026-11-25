@@ -62,8 +62,8 @@ export interface RoutineEnd {
 
 export type RoutinePost = (result: unknown) => Promise<void>;
 
-export function routineFailureCode(input: { timedOut: boolean; resultIsError: boolean; exitCode: number | null; signal: NodeJS.Signals | null; harness?: "claude" | "codex" }): RunnerFailureCode {
-  const codes = runnerSideFor(input.harness ?? "claude").failureCodes;
+export function routineFailureCode(input: { timedOut: boolean; resultIsError: boolean; exitCode: number | null; signal: NodeJS.Signals | null; harness: "claude" | "codex" }): RunnerFailureCode {
+  const codes = runnerSideFor(input.harness).failureCodes;
   if (input.timedOut) return "timeout";
   if (input.resultIsError) return codes.error;
   if (input.exitCode !== 0 || input.signal !== null) return codes.exit;

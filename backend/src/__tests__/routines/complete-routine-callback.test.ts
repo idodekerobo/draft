@@ -15,7 +15,7 @@ const BUNDLE_HASH = "b".repeat(64);
 function seed(overrides: Record<string, unknown> = {}): FakeDb {
   return fakeDb({
     sessions: [{
-      id: SESSION_ID, workspace_id: WORKSPACE_ID, session_type: "routine", status: "starting", last_seq: 0,
+      id: SESSION_ID, workspace_id: WORKSPACE_ID, session_type: "routine", status: "starting", last_seq: 0, harness: "claude",
       host_id: routineHostId(SESSION_ID), scheduled_task_id: "task-1", ...overrides,
     }],
     scheduled_tasks: [{ id: "task-1", workspace_id: WORKSPACE_ID, config_json: { title: "Weekly digest", prompt: "Summarize the week.", harness: "claude", model: null } }],

@@ -26,7 +26,8 @@ describe("buildRoutineRunSpec", () => {
       trigger: { type: "cron", scheduledTaskId: input.scheduledTaskId, occurrenceAt: input.occurrenceAt },
       inputs: { contextVersionId: input.contextVersionId },
     });
-    expect(spec.runtime.type).toBe("cloud");
+    expect(spec.execution).toEqual({ target: { type: "sandbox" }, adapterId: "claude-print" });
+    expect(spec.computer).toEqual({ type: "sandbox", profileId: "default", workingDirectory: "/run", network: "open" });
   });
 
   it("grants reading and writing the shared context, with no path limit", () => {

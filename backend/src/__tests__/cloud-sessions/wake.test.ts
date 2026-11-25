@@ -42,7 +42,9 @@ function sleepingSession(overrides: Row = {}): Row {
     id: SESSION,
     workspace_id: WS,
     owner_user_id: OWNER,
-    runtime: "cloud",
+    execution_target: "sandbox",
+    adapter_id: "claude-terminal",
+    harness: "claude",
     status: "sleeping",
     model: "haiku",
     reasoning_effort: null,
@@ -64,7 +66,7 @@ function run(overrides: Row = {}): Row {
     kind: "interactive",
     trigger: { type: "manual", requestedBy: OWNER },
     on_behalf_of_user_id: null,
-    runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, network: "restricted" },
+    execution: { target: { type: "sandbox" }, adapterId: "claude-terminal" }, toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, computer: { type: "sandbox", profileId: "default", workingDirectory: "/data/workspace", network: "restricted" }, continuation: null,
     harness: "claude",
     model: "haiku",
     reasoning_effort: null,
@@ -107,7 +109,7 @@ function newDb(tables: Record<string, Row[]> = {}): FakeDb {
   );
   db.rpcs.claim_cloud_session_wake = (args) => {
     const row = db.tables.sessions!.find(
-      (s) => s.id === args.p_session_id && s.workspace_id === args.p_workspace_id && s.runtime === "cloud" && s.status === "sleeping" && s.deleted_at == null,
+      (s) => s.id === args.p_session_id && s.workspace_id === args.p_workspace_id && s.execution_target === "sandbox" && s.status === "sleeping" && s.deleted_at == null,
     );
     if (!row) return { data: false };
     row.status = "starting";
@@ -236,12 +238,12 @@ describe("wakeCloudSession", () => {
   });
 
   it("keeps the network of the session's last run", async () => {
-    db.tables.agent_runs = [run({ runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, network: "open" } })];
+    db.tables.agent_runs = [run({ computer: { type: "sandbox", profileId: "default", workingDirectory: "/data/workspace", network: "open" } })];
     const fly = fakeProvider({ status: "missing" });
     await wakeCloudSession(INPUT, depsFor(fly.provider));
 
     expect(fly.created[0]!.env.DRAFT_NETWORK).toBe("open");
-    expect((runById(NEW_RUN)!.runtime as { network: string }).network).toBe("open");
+    expect((runById(NEW_RUN)!.computer as { network: string }).network).toBe("open");
   });
 
   it("starts one run when two wakes race for the same sleeping session", async () => {

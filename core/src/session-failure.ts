@@ -1,6 +1,7 @@
 import { harnessLabel } from "./harnesses";
 
 export const SESSION_FAILURES = {
+  unsupported_agent: { message: "This version of Draft does not support this session's agent.", retryable: false },
   launch_failed: { message: "The agent could not start this session. Try starting it again.", retryable: true },
   resume_check_failed: { message: "Could not prepare the agent. Check its installation and sign-in.", retryable: true },
   resume_folder_missing: { message: "The conversation or its folder is no longer on this computer. Restore the folder before resuming.", retryable: false },

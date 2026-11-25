@@ -3,7 +3,7 @@ import { SESSION_FAILURES, type SessionFailureCode } from "../session-failure";
 import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
-import { DEFAULT_HARNESS_ID, isEffortFor, isHarnessId, isKnownModel } from "../harnesses";
+import { DEFAULT_HARNESS_ID, getAdapter, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel, requireInteractiveAdapter, type AdapterDefinition } from "../harnesses";
 import { SIGNAL_EVENTS, type LiveSession, type LiveSessionEventsPage } from "../live-sessions";
 import { hostServices, ServerError } from "./services";
 import type { HostEvent } from "./approvals";
@@ -83,7 +83,7 @@ class SessionHost {
     this.topics = new SessionTopics((topic, listener) => hostServices().realtime.watch(topic, listener), state.sessionId, (event) => {
       if (event === SIGNAL_EVENTS.inputs || event === SIGNAL_EVENTS.catchUp) this.wake();
     });
-    this.driver = registrationFor(state.harness).createDriver({
+    this.driver = registrationFor(adapterOfState(state).id).createDriver({
       base: this.base,
       state: () => this.state,
       persist: (patch) => this.persist(patch),
@@ -365,7 +365,8 @@ class SessionHost {
 
   private async createSuccessor(nativeSessionId: string): Promise<HostSessionState> {
     const { folderPath, hostId, workspaceId, model = null, reasoningEffort = null, harnessVersion = null } = this.state;
-    const harness = this.state.harness ?? DEFAULT_HARNESS_ID;
+    const adapter = adapterOfState(this.state);
+    const harness = adapter.harness;
     const created = await hostServices().fetchServerJSON<{ session: { id: string } }>(`workspaces/${workspaceId}/live-sessions`, {
       method: "POST",
       body: JSON.stringify({
@@ -374,6 +375,7 @@ class SessionHost {
         folderName: basename(folderPath),
         gitRemote: await gitRemote(folderPath),
         harness,
+        adapterId: adapter.id,
         model,
         reasoningEffort,
         nativeSessionId,
@@ -388,6 +390,7 @@ class SessionHost {
       nativeSessionId,
       folderPath,
       harness,
+      adapterId: adapter.id,
       tmuxSession: this.state.tmuxSession,
       cursors: {},
       rawUploads: {},
@@ -457,7 +460,7 @@ class SessionHost {
     const finalized = await this.finalize().catch(() => false);
     this.driver.dispose();
     if (this.ownsSession()) running.delete(this.state.sessionId);
-    if (!finalized && this.state.harness !== "codex") {
+    if (!finalized && adapterOfStateOrNull(this.state)?.capabilities.rawUpload) {
       this.retiredId = crypto.randomUUID();
       this.state = { ...this.state, ended: true };
       saveRetiredState(this.state, this.retiredId);
@@ -488,7 +491,8 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
 
   const harness = input.harness ?? DEFAULT_HARNESS_ID;
   if (!isHarnessId(harness)) return { ok: false, error: "Choose an agent from the list." };
-  const { launcher } = registrationFor(harness);
+  const adapter = requireInteractiveAdapter(harness);
+  const { launcher } = registrationFor(adapter.id);
 
   const folderPath = resolve(input.folderPath);
   if (!existsSync(folderPath) || !statSync(folderPath).isDirectory()) return { ok: false, error: "Choose a valid folder." };
@@ -515,6 +519,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
         folderName: basename(folderPath),
         gitRemote: await remote,
         harness,
+        adapterId: adapter.id,
         model,
         reasoningEffort: effort,
         nativeSessionId,
@@ -533,6 +538,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
     nativeSessionId,
     folderPath,
     harness,
+    adapterId: adapter.id,
     cursors: {},
     rawUploads: {},
     ended: false,
@@ -570,7 +576,9 @@ async function attachSession(state: HostSessionState, mode: "launch" | "resume")
   const existing = running.get(state.sessionId);
   if (existing && !existing.hasEnded()) return { ok: false, error: "This session is already running." };
   await existing?.retireForResume();
-  const { launcher } = registrationFor(state.harness);
+  const adapter = adapterOfStateOrNull(state);
+  if (!adapter) return { ok: false, error: SESSION_FAILURES.unsupported_agent.message };
+  const { launcher } = registrationFor(adapter.id);
   const checked = await launcher.check();
   if (!checked.ok) return { ok: false, error: checked.error };
   const model = state.model ?? null;
@@ -606,7 +614,7 @@ async function resumeSession(sessionId: string): Promise<ResumeSessionResult> {
     return { ok: false, error: "Could not load the session." };
   }
   const hostId = hostServices().hostId();
-  if (session.runtime === "cloud") return { ok: false, error: "Cloud sessions run in Draft Cloud. Nothing on this computer can resume them." };
+  if (session.execution_target !== undefined && session.execution_target !== "host") return { ok: false, error: "Cloud sessions run in Draft Cloud. Nothing on this computer can resume them." };
   if (!session.mine) return { ok: false, error: "Only the person who started a session can resume it." };
   if (session.status !== "ended") return { ok: false, error: "This session is not ended." };
   if (session.end_reason === "cleared") return { ok: false, error: "This conversation was cleared. Open the session that continued it." };
@@ -620,7 +628,9 @@ async function resumeSession(sessionId: string): Promise<ResumeSessionResult> {
       expectedRequestId: session.resume_request_id ?? null, code, phase: "resume", terminal: true, error });
     return { ok: false, error: message ?? recorded.message, code, requestId };
   };
-  const { launcher } = registrationFor(harness);
+  const adapter = session.adapter_id ? getAdapter(session.adapter_id) : interactiveAdapterFor(harness);
+  if (!adapter || adapter.harness !== harness) return failure("unsupported_agent");
+  const { launcher } = registrationFor(adapter.id);
   const checked = await launcher.check().catch(() => ({ ok: false as const, error: SESSION_FAILURES.resume_check_failed.message }));
   if (!checked.ok) return failure("resume_check_failed", undefined, checked.error);
 
@@ -641,6 +651,7 @@ async function resumeSession(sessionId: string): Promise<ResumeSessionResult> {
     resumeRequestId: requestId,
     folderPath: "",
     harness,
+    adapterId: adapter.id,
     cursors: {},
     rawUploads: {},
     ended: false,
@@ -671,11 +682,12 @@ async function resumeSession(sessionId: string): Promise<ResumeSessionResult> {
   return { ok: true };
 }
 
-/** True when the server says the session runs in a Draft Cloud sandbox. If the server cannot say, it is treated as a computer session, as before. */
+/** True when the server says the session does not run on a host. If the server cannot say, it is treated as a computer session, as before. */
 async function isCloudSession(sessionId: string): Promise<boolean> {
   try {
     const page = await hostServices().fetchServerJSON<LiveSessionEventsPage>(`${sessionBase(sessionId)}/events?after=0&limit=1`);
-    return page.session.runtime === "cloud";
+    const target = page.session.execution_target;
+    return target !== undefined && target !== "host";
   } catch {
     return false;
   }
@@ -688,6 +700,7 @@ export async function resumeLiveSessions(): Promise<void> {
     await serializeSession(state.sessionId, async () => {
       if (running.has(state.sessionId)) return;
       if (await isCloudSession(state.sessionId)) return;
+      if (!adapterOfStateOrNull(state)) return refuseUnsupportedState(state);
       const runner = new SessionHost(state);
       runner.start();
       if (!state.ended && (await runner.isAlive())) await runner.uploadIfChanged();
@@ -696,8 +709,35 @@ export async function resumeLiveSessions(): Promise<void> {
   for (const { id, state } of loadRetiredStates()) {
     if (retiredUploads.has(id)) continue;
     retiredUploads.add(id);
+    if (!adapterOfStateOrNull(state)) continue;
     new SessionHost({ ...state, ended: true }, id).start();
   }
+}
+
+/**
+ * The adapter a saved session runs on: the one it recorded, else the harness's live-session adapter. Throws when neither
+ * is known, or when the recorded adapter runs another harness.
+ */
+function adapterOfState(state: HostSessionState): AdapterDefinition {
+  const adapter = state.adapterId ? getAdapter(state.adapterId) : interactiveAdapterFor(state.harness);
+  if (!adapter) throw new Error(`No adapter for session: ${state.adapterId ?? state.harness ?? "(none)"}`);
+  if (adapter.harness !== state.harness) throw new Error(`Adapter ${adapter.id} does not run harness ${state.harness ?? "(none)"}`);
+  return adapter;
+}
+
+const adapterOfStateOrNull = (state: HostSessionState): AdapterDefinition | null => {
+  try {
+    return adapterOfState(state);
+  } catch {
+    return null;
+  }
+};
+
+/** A saved state with no known harness, such as a file from before harnesses were recorded. It ends with a recorded failure. */
+function refuseUnsupportedState(state: HostSessionState): void {
+  reportSessionFailure({ sessionId: state.sessionId, workspaceId: state.workspaceId, hostId: state.hostId,
+    harness: state.harness, requestId: state.resumeRequestId, code: "unsupported_agent", phase: "unsupported_agent", terminal: true });
+  saveState({ ...state, ended: true });
 }
 const retiredUploads = new Set<string>();
 

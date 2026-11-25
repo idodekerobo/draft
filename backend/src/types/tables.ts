@@ -318,7 +318,8 @@ export interface SessionRow {
   concurrency_key: string | null;
   permission_mode: string | null;
   approval_mode: string | null;
-  runtime: "local" | "cloud";
+  execution_target: "host" | "sandbox" | "backend";
+  adapter_id: string;
   sandbox_volume: unknown | null;
   seed: unknown | null;
 }
@@ -358,7 +359,10 @@ export interface AgentRunRow {
   kind: AgentRunKind;
   trigger: unknown;
   on_behalf_of_user_id: string | null;
-  runtime: unknown;
+  execution: unknown;
+  toolset: unknown;
+  computer: unknown;
+  continuation: unknown;
   harness: string;
   model: string | null;
   reasoning_effort: string | null;

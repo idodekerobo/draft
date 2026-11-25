@@ -141,7 +141,9 @@ describe("a message to a sleeping cloud session", () => {
           id: WAKE_SESSION,
           workspace_id: WAKE_WS,
           owner_user_id: WAKE_OWNER,
-          runtime: "cloud",
+          execution_target: "sandbox",
+          adapter_id: "claude-terminal",
+          harness: "claude",
           status: "sleeping",
           model: "haiku",
           reasoning_effort: null,
@@ -160,7 +162,7 @@ describe("a message to a sleeping cloud session", () => {
           kind: "interactive",
           trigger: { type: "manual", requestedBy: WAKE_OWNER },
           on_behalf_of_user_id: null,
-          runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, network: "restricted" },
+          execution: { target: { type: "sandbox" }, adapterId: "claude-terminal" }, toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, computer: { type: "sandbox", profileId: "default", workingDirectory: "/data/workspace", network: "restricted" }, continuation: null,
           harness: "claude",
           model: "haiku",
           reasoning_effort: null,
@@ -217,7 +219,7 @@ describe("a message to a sleeping cloud session", () => {
     wake = wakeDb();
     startError = null;
     makeWakeDeps = wakeDeps;
-    tables.sessions = [{ id: WAKE_SESSION, workspace_id: WAKE_WS, owner_user_id: WAKE_OWNER, status: "sleeping", runtime: "cloud", host_id: `cloud:${WAKE_SESSION}`, last_seq: 0 }];
+    tables.sessions = [{ id: WAKE_SESSION, workspace_id: WAKE_WS, owner_user_id: WAKE_OWNER, status: "sleeping", execution_target: "sandbox", harness: "claude", host_id: `cloud:${WAKE_SESSION}`, last_seq: 0 }];
   });
   afterEach(() => {
     makeWakeDeps = null;
@@ -608,7 +610,7 @@ describe("cloud host requests", () => {
     ) as never;
 
   beforeEach(() => {
-    tables.sessions = [{ id: SESSION, workspace_id: CLOUD_WS, owner_user_id: "user-2", runtime: "cloud", status: "live", host_id: CLOUD_HOST, last_seq: 0 }];
+    tables.sessions = [{ id: SESSION, workspace_id: CLOUD_WS, owner_user_id: "user-2", execution_target: "sandbox", status: "live", host_id: CLOUD_HOST, last_seq: 0 }];
     tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
     tables.session_inputs = [
       { id: "i1", session_id: SESSION, workspace_id: CLOUD_WS, kind: "message", state: "queued", author_user_id: "user-2", author_name: "Priya", payload: { text: "run tests" }, created_at: "t", updated_at: "t" },

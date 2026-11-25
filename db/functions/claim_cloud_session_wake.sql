@@ -14,7 +14,8 @@ begin
   set status = 'starting',
       last_seen = now()
   where id = p_session_id and workspace_id = p_workspace_id
-    and runtime = 'cloud' and status = 'sleeping' and deleted_at is null;
+    and (execution_target = 'sandbox' or (execution_target is null and runtime = 'cloud'))
+    and status = 'sleeping' and deleted_at is null;
 
   get diagnostics v_count = row_count;
   return v_count > 0;

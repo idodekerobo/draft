@@ -1,14 +1,22 @@
 import { describe, expect, it } from "bun:test";
-import { HARNESSES } from "../../../harnesses";
+import { ADAPTERS, interactiveAdapterFor } from "../../../harnesses";
 import { registrationFor } from "../../../host/drivers/drivers";
 
 describe("registrationFor", () => {
-  it("has a launcher for every harness in the registry", () => {
-    for (const harness of HARNESSES) expect(registrationFor(harness.id).launcher.id).toBe(harness.id);
+  it("has a launcher for every adapter that runs on a host", () => {
+    for (const adapter of ADAPTERS.filter((entry) => (entry.targets as ReadonlyArray<string>).includes("host"))) {
+      expect(String(registrationFor(adapter.id).launcher.id)).toBe(adapter.harness);
+    }
   });
 
-  it("treats a state file with no harness, or an unknown one, as Claude", () => {
-    expect(registrationFor(undefined).launcher.id).toBe("claude");
-    expect(registrationFor("future").launcher.id).toBe("claude");
+  it("finds the live-session adapter of each harness", () => {
+    expect(registrationFor(interactiveAdapterFor("claude")!.id).launcher.id).toBe("claude");
+    expect(registrationFor(interactiveAdapterFor("codex")!.id).launcher.id).toBe("codex");
+  });
+
+  it("fails for a missing or unknown adapter, and for one that has no host driver", () => {
+    expect(() => registrationFor(undefined)).toThrow("Unknown adapter");
+    expect(() => registrationFor("future")).toThrow("Unknown adapter");
+    expect(() => registrationFor("claude-print")).toThrow("no host driver");
   });
 });

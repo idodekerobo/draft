@@ -1,7 +1,8 @@
 import type { HostWait } from "./input-status";
+import { isSandboxSession } from "./place";
 import type { LiveSession } from "./types";
 
-type NoticeSession = Pick<LiveSession, "status" | "started_at" | "folder_name"> & Partial<Pick<LiveSession, "runtime" | "last_seq" | "end_reason">>;
+type NoticeSession = Pick<LiveSession, "status" | "started_at" | "folder_name"> & Partial<Pick<LiveSession, "execution_target" | "last_seq" | "end_reason">>;
 
 export interface CloudStartNotice {
   tone: "progress" | "error";
@@ -22,7 +23,7 @@ const isWaking = (session: NoticeSession) => (session.last_seq ?? 0) > 0;
 
 /** Why messages wait for the host right now, if they do. */
 export function hostWaitOf(session: NoticeSession): HostWait {
-  const cloud = session.runtime === "cloud";
+  const cloud = isSandboxSession(session);
   if (session.status === "host_offline") return cloud ? "cloud" : "local";
   if (cloud && session.status === "starting") return isWaking(session) ? "cloud_waking" : "cloud_starting";
   return false;
@@ -36,7 +37,7 @@ export function elapsedLabel(since: string, now: number): string {
 
 /** What to show while a cloud session's machine starts or wakes, or why it never started. Null for anything else. */
 export function cloudStartNotice(session: NoticeSession): CloudStartNotice | null {
-  if (session.runtime !== "cloud") return null;
+  if (!isSandboxSession(session)) return null;
   if (session.status === "starting") {
     if (isWaking(session)) return { tone: "progress", title: "Waking this session", detail: "Its machine is starting again with your files as you left them. Messages send when it is ready." };
     const what = session.folder_name ? `copying in ${session.folder_name}` : "getting ready";

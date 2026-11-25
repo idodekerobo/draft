@@ -36,9 +36,24 @@ describe("the manifest the backend builds, for every kind of run", () => {
       expect(validateRunnerManifest(JSON.parse(JSON.stringify(manifest)), { callbackUrl: CALLBACK })).toEqual(manifest);
     });
 
+    it(`${name}: names the spec's adapter, and the same manifest without it is still valid`, () => {
+      const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
+      expect(manifest.adapterId).toBe(spec.execution.adapterId);
+      const { adapterId, ...withoutAdapter } = manifest;
+      expect(adapterId).toBeString();
+      expect(validateRunnerManifest(withoutAdapter, { callbackUrl: CALLBACK })).toEqual(withoutAdapter);
+    });
+
     it(`${name}: the runner reads back the manifest the backend sent in its environment`, () => {
       const manifest = buildRunnerManifest({ spec, callbackUrl: CALLBACK, prompt, timeoutSeconds: 900, draftMcpUrl: needsDraftToolServer(spec) ? MCP_URL : null });
       expect(loadRunnerManifest({ DRAFT_RUN_MANIFEST: JSON.stringify(manifest) }, CALLBACK)).toEqual(manifest);
     });
   }
+});
+
+describe("a run that is registered but cannot launch yet", () => {
+  it("is refused with a clear message, before any manifest is built", () => {
+    const home = { ...routine("claude"), harness: "pi" as never, execution: { target: { type: "backend", packageVersion: "1.0.0" }, adapterId: "pi-durable-sdk" } } as ReturnType<typeof routine>;
+    expect(() => buildRunnerManifest({ spec: home, callbackUrl: CALLBACK, prompt: { kind: "text", text: "p" }, timeoutSeconds: 900, draftMcpUrl: null })).toThrow("Adapter pi-durable-sdk cannot be launched yet");
+  });
 });

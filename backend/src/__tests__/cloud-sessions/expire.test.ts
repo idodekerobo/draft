@@ -27,7 +27,7 @@ function session(id: string, overrides: Row = {}): Row {
   return {
     id,
     workspace_id: WS,
-    runtime: "cloud",
+    execution_target: "sandbox",
     status: "sleeping",
     last_event_at: IDLE,
     deleted_at: null,
@@ -200,7 +200,7 @@ describe("expireIdleCloudSessions", () => {
         session("fresh", { last_event_at: FRESH }),
         session("boundary", { last_event_at: CUTOFF }),
         session("live", { status: "live" }),
-        session("local", { runtime: "local", sandbox_volume: null }),
+        session("local", { execution_target: "host", sandbox_volume: null }),
         session("deleted", { deleted_at: "2026-10-02T00:00:00.000Z" }),
       ],
       ["idle", "fresh", "boundary", "live", "local", "deleted"].map((id) => run(id, `machine-${id}`)),

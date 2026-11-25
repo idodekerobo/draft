@@ -121,6 +121,7 @@ function session(overrides: Row = {}): Row {
     title: null,
     native_session_id: null,
     host_id: "host-1",
+    harness: "claude",
     last_seq: 0,
     ...overrides,
   };
@@ -223,6 +224,14 @@ describe("live session routes", () => {
     tables.session_events = [{ session_id: SESSION, workspace_id: WS, seq: 1, kind: "user_message", payload: { text: "[Maya via Draft] Fix the login bug" } }];
     await routes.LINES(post("/x", { hostId: "host-1", lines: [userLine("u1", "[Maya via Draft] Fix the login bug")] }));
     expect(rpcCalls.map((c) => c.fn)).toContain("transition_session_input");
+  });
+
+  it("refuses lines for a session whose harness this build does not know, and appends nothing", async () => {
+    tables.sessions = [session({ harness: "future" })];
+    const res = await routes.LINES(post("/x", { hostId: "host-1", lines: [userLine("u1", "hello")] }));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe("unsupported_agent");
+    expect(rpcCalls).toEqual([]);
   });
 
   it("leaves the author tag of a Draft message out of the title", async () => {
@@ -411,6 +420,27 @@ describe("live session routes", () => {
     expect(await res.json()).toEqual({ error: "forbidden" });
   });
 
+  it("stores the host target and the adapter of a new local session", async () => {
+    expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "codex", adapterId: "codex-app-server" }, { id: WS }))).status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ harness: "codex", execution_target: "host", adapter_id: "codex-app-server" });
+  });
+
+  it("gives a desktop that sends no adapter the live-session adapter of its harness", async () => {
+    expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "claude" }, { id: WS }))).status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ execution_target: "host", adapter_id: "claude-terminal" });
+  });
+
+  it("refuses an adapter that is unknown, runs another harness, is one-shot, or cannot run on a host", async () => {
+    const count = inserted.length;
+    for (const adapterId of ["future", "claude-terminal", "claude-print", 7]) {
+      const res = await routes.CREATE(post("/x", { hostId: "host-1", harness: "codex", adapterId }, { id: WS }));
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe("unknown_adapter");
+    }
+    expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "claude", adapterId: "codex-exec" }, { id: WS }))).status).toBe(400);
+    expect(inserted).toHaveLength(count);
+  });
+
   it("stores the harness and model of a new session and rejects unknown ones", async () => {
     expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "claude", model: "haiku" }, { id: WS }))).status).toBe(201);
     expect(inserted.at(-1)).toMatchObject({ harness: "claude", model: "haiku" });
@@ -502,13 +532,13 @@ describe("live session routes", () => {
 
     it("deletes the folder snapshot a cloud session started from, and no other object", async () => {
       const key = `${WS}/${SESSION}/seed.tar.gz`;
-      tables.sessions = [session({ session_type: "interactive", status: "sleeping", runtime: "cloud", seed: { kind: "snapshot", storageKey: key } })];
+      tables.sessions = [session({ session_type: "interactive", status: "sleeping", execution_target: "sandbox", seed: { kind: "snapshot", storageKey: key } })];
       expect((await del()).status).toBe(200);
       expect(removedObjects).toEqual([key]);
     });
 
     it("leaves the snapshot alone for a session that started from a repository", async () => {
-      tables.sessions = [session({ session_type: "interactive", status: "sleeping", runtime: "cloud", seed: { kind: "repo", branch: "main" } })];
+      tables.sessions = [session({ session_type: "interactive", status: "sleeping", execution_target: "sandbox", seed: { kind: "repo", branch: "main" } })];
       expect((await del()).status).toBe(200);
       expect(removedObjects).toEqual([]);
     });
@@ -557,7 +587,7 @@ describe("live session routes", () => {
   });
 
   it("does not reopen an ended cloud session", async () => {
-    tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "start_failed", runtime: "cloud", host_id: "cloud:s1" })];
+    tables.sessions = [session({ session_type: "interactive", status: "ended", end_reason: "start_failed", execution_target: "sandbox", host_id: "cloud:s1" })];
     updates = [];
     const res = await routes.REOPEN(post("/x", { hostId: "cloud:s1" }));
     expect(res.status).toBe(409);
@@ -722,7 +752,7 @@ describe("cloud host requests", () => {
     ) as never;
 
   beforeEach(() => {
-    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST })];
+    tables.sessions = [session({ workspace_id: CLOUD_WS, execution_target: "sandbox", host_id: CLOUD_HOST })];
     tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
   });
 
@@ -772,7 +802,7 @@ describe("cloud host requests", () => {
     expect(updates.find((u) => u.table === "agent_runs")?.payload).toMatchObject({ status: "succeeded" });
 
     updates = [];
-    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST })];
+    tables.sessions = [session({ workspace_id: CLOUD_WS, execution_target: "sandbox", host_id: CLOUD_HOST })];
     expect((await routes.END(cloudPost({ reason: "host_failed" }))).status).toBe(200);
     expect(updates.find((u) => u.table === "agent_runs")?.payload).toMatchObject({ status: "failed", failure_code: "host_failed" });
   });
@@ -795,7 +825,7 @@ describe("cloud host requests", () => {
   });
 
   it("refuses a run that names another session", async () => {
-    tables.sessions.push(session({ id: "session-2", workspace_id: CLOUD_WS, runtime: "cloud", host_id: "cloud:session-2" }));
+    tables.sessions.push(session({ id: "session-2", workspace_id: CLOUD_WS, execution_target: "sandbox", host_id: "cloud:session-2" }));
     const res = await routes.LINES(cloudPost({ lines: [userLine("u1", "hi")] }, "session-2"));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ ok: false, error: "run_not_for_session" });
@@ -809,7 +839,7 @@ describe("cloud host requests", () => {
     expect(await finished.json()).toEqual({ ok: false, error: "run_not_active" });
 
     tables.agent_runs = [{ id: RUN, workspace_id: CLOUD_WS, kind: "interactive", status: "running", session_id: SESSION }];
-    tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "local", host_id: "host-1" })];
+    tables.sessions = [session({ workspace_id: CLOUD_WS, execution_target: "host", host_id: "host-1" })];
     const local = await routes.HEARTBEAT(cloudPost({}));
     expect(local.status).toBe(403);
     expect(await local.json()).toEqual({ ok: false, error: "session_not_cloud" });
@@ -833,7 +863,7 @@ describe("cloud host requests", () => {
 
     it("sleeps a session that is starting, live or offline", async () => {
       for (const status of ["starting", "live", "host_offline"]) {
-        tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status })];
+        tables.sessions = [session({ workspace_id: CLOUD_WS, execution_target: "sandbox", host_id: CLOUD_HOST, status })];
         updates = [];
         expect((await routes.HOST_SLEEP(cloudPost({}))).status).toBe(200);
       }
@@ -850,12 +880,12 @@ describe("cloud host requests", () => {
       expect((await routes.HOST_SLEEP(cloudPost({ hostId: "host-1" }))).status).toBe(403);
       expect(updates).toEqual([]);
 
-      tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status: "ended" })];
+      tables.sessions = [session({ workspace_id: CLOUD_WS, execution_target: "sandbox", host_id: CLOUD_HOST, status: "ended" })];
       const ended = await routes.HOST_SLEEP(cloudPost({}));
       expect(ended.status).toBe(409);
       expect(await ended.json()).toEqual({ ok: false, error: "session_ended" });
 
-      tables.sessions = [session({ workspace_id: CLOUD_WS, runtime: "cloud", host_id: CLOUD_HOST, status: "sleeping" })];
+      tables.sessions = [session({ workspace_id: CLOUD_WS, execution_target: "sandbox", host_id: CLOUD_HOST, status: "sleeping" })];
       const sleeping = await routes.HOST_SLEEP(cloudPost({}));
       expect(sleeping.status).toBe(409);
       expect(await sleeping.json()).toEqual({ ok: false, error: "session_sleeping" });
