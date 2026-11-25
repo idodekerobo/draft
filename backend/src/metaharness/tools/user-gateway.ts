@@ -15,8 +15,8 @@ async function authorizeWorkspaceMember(caller: PersonCaller): Promise<Authoriza
 }
 
 /** What an edge needs to call tools for a person: the registry, the audit, and the access rule. */
-export function userInvokeDeps(client: SupabaseClient, registry: ToolRegistry): InvokeToolDeps {
-  return { registry, audit: auditToDatabase(client), authorizeUser: authorizeWorkspaceMember };
+export function userInvokeDeps(client: SupabaseClient, registry: ToolRegistry, sessionId?: string): InvokeToolDeps {
+  return { registry, audit: auditToDatabase(client, sessionId), authorizeUser: authorizeWorkspaceMember };
 }
 
 /** The tools a person may call, with the JSON schema of each input. Provider verbs are advertised by connections.list. */

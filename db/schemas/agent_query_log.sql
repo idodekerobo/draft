@@ -2,6 +2,7 @@ create table agent_query_log (
   id            uuid primary key default gen_random_uuid(),
   workspace_id  uuid not null references workspaces(id) on delete cascade,
   user_id       uuid references users(id),
+  session_id    uuid references sessions(id) on delete set null,
   command       text not null,
   surface       text check (surface in ('cli', 'mcp')),
   status        text check (status in ('ok', 'conflict', 'refused', 'denied', 'invalid', 'error')),
@@ -14,6 +15,9 @@ create table agent_query_log (
 
 create index agent_query_log_workspace_occurred_idx
   on agent_query_log (workspace_id, occurred_at);
+
+create index agent_query_log_session_occurred_idx
+  on agent_query_log (session_id, occurred_at) where session_id is not null;
 
 -- Backend-internal telemetry, written by the service role only. No select
 -- policy for `authenticated` yet -- queried directly via SQL/dashboard.
