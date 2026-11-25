@@ -1,4 +1,4 @@
-export type MainNavId = "context" | "sessions" | "activity" | "routines" | "connections" | "settings";
+export type MainNavId = "home" | "context" | "sessions" | "activity" | "routines" | "connections" | "settings";
 
 export interface MainNavItem {
   id: MainNavId;
@@ -6,6 +6,7 @@ export interface MainNavItem {
 }
 
 const MAIN_NAV: MainNavItem[] = [
+  { id: "home", label: "Home" },
   { id: "sessions", label: "Sessions" },
   { id: "routines", label: "Routines" },
   { id: "context", label: "Context" },

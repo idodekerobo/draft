@@ -16,6 +16,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ContextViewer } from "./components/views/ContextViewer";
 import { SettingsView } from "./components/views/SettingsView";
 import { ActivityView } from "./components/views/ActivityView";
+import { HomeScreen } from "./components/views/HomeScreen";
 import { ConnectionsView } from "./components/views/ConnectionsView";
 import { RoutinesView } from "./components/views/RoutinesView";
 import { SessionsView } from "./components/views/SessionsView";
@@ -34,7 +35,7 @@ const STATUS_POLL_MS = 5_000;
 
 export function App() {
   const [activityRoutineId, setActivityRoutineId] = useState<string | undefined>();
-  const [activeView, setActiveView]     = useState<View>("sessions");
+  const [activeView, setActiveView]     = useState<View>("home");
   // Latch: set true the instant onboarding's "Let's go" fires, so the main
   // app renders immediately instead of waiting on identityRefreshNeeded's
   // async round trip to land before identity.onboardingCompletedAt updates.
@@ -143,7 +144,7 @@ export function App() {
               onComplete={async (destination) => {
                 setJustCompletedOnboarding(true);
                 await reloadContextFiles();
-                setActiveView(destination === "connections" ? "connections" : "sessions");
+                setActiveView(destination === "connections" ? "connections" : "home");
               }}
             />
           )}
@@ -163,6 +164,7 @@ export function App() {
                   loading={contextLoading}
                 />
               </div>
+              {activeView === "home" && <HomeScreen onOpenSessions={() => handleNavigate("sessions")} onOpenConnections={() => handleNavigate("connections")} />}
               {activeView === "connections" && <ConnectionsView />}
               {activeView === "activity" && <ActivityView onOpenRoutine={(id) => { handleNavigate("routines"); setActivityRoutineId(id); }} onFixInConnections={() => handleNavigate("connections")} />}
               {activeView === "routines" && <RoutinesView initialOpenId={activityRoutineId} onReconnect={() => handleNavigate("connections")} />}

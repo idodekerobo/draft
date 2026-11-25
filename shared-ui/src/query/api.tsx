@@ -4,12 +4,17 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { TrackFn } from "../analytics/events";
 import type { SynthesisRunsPage } from "../activity/ActivityList";
 import type { RunDetail, StepRunTranscript } from "../activity/run-detail-types";
+import type { ActResult, NeedsYou, NotificationAction } from "../home/types";
 import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "../routines/types";
 
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
 export interface DraftApi {
   /** The newest runs, a page at a time. `before` is a run's cursor (see runCursor); omit it for the first page, which also carries upcoming routines. */
   getRuns(before?: string): Promise<SynthesisRunsPage>;
+  /** What needs this person now: approvals, questions, their to-dos, broken connections, failed sends. */
+  getNeedsYou(): Promise<NeedsYou>;
+  /** Marks one of the person's notifications done or not mine, or undoes that. A refusal comes back as `ok: false`. */
+  actOnNotification(id: string, action: NotificationAction): Promise<ActResult>;
   getRoutines(): Promise<RoutinesResponse>;
   updateRoutine(id: string, patch: RoutinePatch): Promise<Routine>;
   createRoutine(input: CreateRoutineInput): Promise<Routine>;

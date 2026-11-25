@@ -3,7 +3,7 @@ import { desktopMcp, restoreDesktopMcp, withDesktopMcp } from "./main/host/mcp-r
 import { folderOptionsFromBody, syncedFoldersFromBody } from "draft-core/integrations/google-drive-folders";
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
-import type { RunDetail, StepRunTranscript, SynthesisRunsPage } from "draft-shared-ui";
+import { actRefusalMessage, type NeedsYou, type RunDetail, type StepRunTranscript, type SynthesisRunsPage } from "draft-shared-ui";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getWorkspacePath, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, type AnalyticsConfig } from "draft-core/config";
@@ -1112,6 +1112,24 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("No workspace yet");
         return fetchServerJSON<StepRunTranscript>(`workspaces/${workspaceId}/runs/${encodeURIComponent(runId)}/transcript`);
+      },
+
+      getNeedsYou: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { count: 0, rows: [] };
+        return callServerTool<NeedsYou>(workspaceId, "home.needs_you");
+      },
+
+      actOnNotification: async ({ id, action }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) return { ok: false, code: "no_workspace", message: "Sign in to continue." };
+        try {
+          const output = await callServerTool<{ state: "open" | "done" | "not_mine" | "retracted"; changed: boolean }>(workspaceId, `notifications.${action}`, { notificationId: id });
+          return { ok: true, state: output.state, changed: output.changed };
+        } catch (err) {
+          if (err instanceof ServerError) return { ok: false, code: err.code, message: actRefusalMessage(err.code) };
+          throw err;
+        }
       },
 
       startBrowserSignIn: async () => {

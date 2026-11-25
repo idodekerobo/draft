@@ -6,6 +6,7 @@ import {
   toRoutineError,
   type ConnectionsListAnswer,
   type DraftApi,
+  type NeedsYou,
   type Routine,
   type RoutineRun,
   type RoutineRunOutcome,
@@ -22,6 +23,16 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
   const { track } = useAnalytics();
   const api: DraftApi = {
     getRuns: (before) => apiFetch<SynthesisRunsPage>(`/workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`),
+    getNeedsYou: async () => (await apiFetch<{ output: NeedsYou }>(`/workspaces/${workspaceId}/tools/home.needs_you`, { method: "POST", body: "{}" })).output,
+    actOnNotification: async (id, action) => {
+      try {
+        const answer = await apiFetch<{ output: { state: "open" | "done" | "not_mine" | "retracted"; changed: boolean } }>(`/workspaces/${workspaceId}/tools/notifications.${action}`, { method: "POST", body: JSON.stringify({ notificationId: id }) });
+        return { ok: true, state: answer.output.state, changed: answer.output.changed };
+      } catch (error) {
+        if (error instanceof ApiError && typeof error.detail?.message === "string") return { ok: false, code: typeof error.detail.code === "string" ? error.detail.code : error.code, message: error.detail.message };
+        throw error;
+      }
+    },
     getRoutines: () => apiFetch<RoutinesResponse>(`/workspaces/${workspaceId}/schedules`),
     updateRoutine: async (id, patch) => {
       try {

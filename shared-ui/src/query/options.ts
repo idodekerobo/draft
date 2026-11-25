@@ -90,3 +90,13 @@ export const runTranscriptQueryOptions = (api: Pick<DraftApi, "getRunTranscript"
     },
     staleTime: Infinity,
   });
+
+/** What needs the person. Polled every 30 s and refetched on window focus. */
+export const needsYouQueryOptions = (api: Pick<DraftApi, "getNeedsYou">, workspaceId: string) =>
+  queryOptions({
+    queryKey: queryKeys.needsYou(workspaceId),
+    queryFn: () => api.getNeedsYou(),
+    staleTime: POLL_MS,
+    refetchInterval: POLL_MS,
+    refetchOnWindowFocus: true,
+  });

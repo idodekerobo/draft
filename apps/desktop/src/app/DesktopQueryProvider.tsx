@@ -7,6 +7,8 @@ import { rpc } from "./rpc";
 
 const api: DraftApi = {
   getRuns: (before) => rpc.request.getWorkspaceRuns(before ? { before } : undefined),
+  getNeedsYou: () => rpc.request.getNeedsYou(),
+  actOnNotification: (id, action) => rpc.request.actOnNotification({ id, action }),
   getRoutines: () => rpc.request.listRoutines(),
   getRunDetail: (runId) => rpc.request.getRunDetail({ runId }),
   getRunTranscript: (runId) => rpc.request.getRunTranscript({ runId }),

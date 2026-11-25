@@ -11,7 +11,7 @@ import type { SessionViewQuery, SessionViewResponse } from "draft-core/live-sess
 //   webview.requests  — bun calls → renderer responds
 //   webview.messages  — bun sends fire-and-forget → renderer handles
 
-import type { IntegrationActions, RunDetail, StepRunTranscript, SynthesisRunsPage } from "draft-shared-ui";
+import type { ActResult, IntegrationActions, NeedsYou, NotificationAction, RunDetail, StepRunTranscript, SynthesisRunsPage } from "draft-shared-ui";
 import type { RPCSchema } from "electrobun/bun";
 
 export interface SessionMcpStatus {
@@ -534,6 +534,11 @@ export type AppRPCType = {
       getRunDetail: { params: { runId: string }; response: RunDetail };
       /** What one step run did, as plain lines. Request failures reject. */
       getRunTranscript: { params: { runId: string }; response: StepRunTranscript };
+
+      /** What needs the signed-in person now. Request failures reject. */
+      getNeedsYou: { params: void; response: NeedsYou };
+      /** Marks one notification done or not mine, or undoes that. A refusal comes back as `ok: false`. */
+      actOnNotification: { params: { id: string; action: NotificationAction }; response: ActResult };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };

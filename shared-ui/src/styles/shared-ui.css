@@ -1356,3 +1356,12 @@
 .ui-routines__builtins-list { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-1); padding-left: 32px; }
 .ui-routines__builtins-list p { margin: var(--space-1) 0 0; }
 @media (prefers-reduced-motion: reduce) { .ui-routines__builtins-chevron { transition: none; } }
+
+/* Home: Needs you rows keep their actions in one fixed column so rows line up whatever they offer. */
+.ui-home-row__actions { grid-column: 2; grid-row: 1; align-self: center; display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 168px; }
+.ui-home-row__actions .ui-link { font-size: var(--font-size-secondary); white-space: nowrap; }
+.ui-home-row--leaving { opacity: 0; transition: opacity 200ms var(--motion-ease); }
+.ui-home-row[aria-current="true"] { background: var(--color-selected-bg); }
+@media (pointer: coarse) { .ui-home-row__actions .ui-btn, .ui-home-row__actions .ui-link { min-height: 44px; touch-action: manipulation; } }
+@media (max-width: 720px) { .ui-home-row__actions { min-width: 0; flex-wrap: wrap; } }
+@media (prefers-reduced-motion: reduce) { .ui-home-row--leaving { transition: none; } }

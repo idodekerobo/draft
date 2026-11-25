@@ -64,7 +64,7 @@ function setup(options: { connectedProviders?: RoutinesResponse["connectedProvid
   const getRoutineSlackChannels = mock(async () => [{ id: "C1", name: "general" }, { id: "C2", name: "eng" }]);
   const getRoutineGithubRepos = mock(async () => ["acme/app", "acme/site"]);
   const onOpenRun = mock((_id: string, _routine: { id: string; title: string }) => {});
-  const api: DraftApi = { getRuns: async () => ({ runs: [], nextCursor: null }), getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels, getRoutineGithubRepos };
+  const api: DraftApi = { getRuns: async () => ({ runs: [], nextCursor: null }), getNeedsYou: async () => ({ count: 0, rows: [] }), actOnNotification: async () => ({ ok: true, state: "done", changed: true }), getRoutines: async () => ({ ...response }), updateRoutine, createRoutine, deleteRoutine, getRoutineRuns, runRoutine, getRoutineSlackChannels, getRoutineGithubRepos };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>

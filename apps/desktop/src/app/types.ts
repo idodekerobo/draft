@@ -2,4 +2,4 @@
 //
 // These are domain types that multiple parts of the app reference.
 
-export type View = "context" | "connections" | "activity" | "routines" | "sessions" | "settings";
+export type View = "home" | "context" | "connections" | "activity" | "routines" | "sessions" | "settings";
