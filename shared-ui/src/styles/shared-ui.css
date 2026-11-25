@@ -1374,9 +1374,6 @@
 .ui-home-row__actions { display: flex; align-items: center; justify-content: flex-end; gap: 16px; min-width: 150px; }
 .ui-home-row__actions .ui-link { font-size: var(--font-size-secondary); white-space: nowrap; }
 .ui-home-more { display: block; padding: 12px 0 8px; border-top: 1px solid var(--color-border); width: 100%; text-align: left; font-size: var(--font-size-secondary); }
-.ui-home-welcome { margin-top: 32px; }
-.ui-home-welcome__title { margin: 0 0 8px; font-size: var(--font-size-body); font-weight: 600; }
-.ui-home-welcome__text { margin: 0; max-width: 60ch; color: var(--color-text-secondary); line-height: 1.5; }
 .ui-home-row { overflow: hidden; }
 /* A finished row fades, lifts 3px and closes its height, so the rows below move up instead of jumping. */
 .ui-home-row--leaving { opacity: 0; transform: translateY(-3px); padding-block: 0; transition: opacity 200ms var(--motion-ease), transform 200ms var(--motion-ease), height 200ms var(--motion-ease), padding 200ms var(--motion-ease); }
