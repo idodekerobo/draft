@@ -135,22 +135,9 @@ function createFakeClient(options: FakeClientOptions = {}) {
       };
     }
 
-    if (table === "workspace_events") {
-      return {
-        select: () => ({
-          eq: () => ({
-            order: () => ({
-              limit: () => ({
-                maybeSingle: async () => ({ data: null, error: null }),
-              }),
-            }),
-          }),
-        }),
-        insert: async (payload: Record<string, unknown>) => {
-          state.eventInsertPayload = payload;
-          return { error: null };
-        },
-      };
+    // The connecting teammate's person row, which a private event is addressed to.
+    if (table === "people") {
+      return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "person-1" }, error: null }) }) }) }) };
     }
 
     throw new Error(`Unexpected table in fake client: ${table}`);
@@ -159,6 +146,16 @@ function createFakeClient(options: FakeClientOptions = {}) {
   // Reimplements just enough of upsert_source_item (db/functions/upsert_source_item.sql)
   // against priorReadyRevisions to keep these ingestion-level assertions meaningful.
   function rpc(fnName: string, params: Record<string, unknown>) {
+    if (fnName === "append_workspace_event") {
+      state.eventInsertPayload = {
+        event_type: params.p_event_type,
+        connection_id: params.p_connection_id,
+        summary: params.p_summary,
+        visibility: params.p_visibility,
+        audience_person_id: params.p_audience_person_id,
+      };
+      return Promise.resolve({ data: 1, error: null });
+    }
     if (fnName !== "upsert_source_item") {
       throw new Error(`Unexpected rpc in fake client: ${fnName}`);
     }
@@ -216,7 +213,7 @@ describe("ingestFirefliesMeeting", () => {
     const { ingestFirefliesMeeting } = await import("../../../ingestion/fireflies/normalize");
 
     const result = await ingestFirefliesMeeting(
-      { id: ids.connection, workspace_id: ids.workspace },
+      { id: ids.connection, workspace_id: ids.workspace, connected_by_user_id: "user-1" },
       ids.credential,
       "meeting-123",
       client,
@@ -265,6 +262,7 @@ describe("ingestFirefliesMeeting", () => {
     expect(state.eventInsertPayload?.event_type).toBe("source_items_added");
     expect(state.eventInsertPayload?.connection_id).toBe(ids.connection);
     expect(state.eventInsertPayload?.summary).toBe("Weekly Sync");
+    expect(state.eventInsertPayload).toMatchObject({ visibility: "private", audience_person_id: "person-1" });
   });
 
   it("throws instead of silently producing empty content when Fireflies returns a GraphQL error", async () => {

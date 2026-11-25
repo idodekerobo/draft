@@ -125,21 +125,25 @@ function createFakeClient(options: FakeClientOptions = {}) {
         }),
       };
     }
-    if (table === "workspace_events") {
-      return {
-        select: () => ({
-          eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
-        }),
-        insert: async (payload: Record<string, unknown>) => {
-          state.eventInsertPayload = payload;
-          return { error: null };
-        },
-      };
+    // The connecting teammate's person row, which a private event is addressed to.
+    if (table === "people") {
+      return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "person-1" }, error: null }) }) }) }) };
     }
+
     throw new Error(`Unexpected table in fake client: ${table}`);
   }
 
   function rpc(fnName: string, params: Record<string, unknown>) {
+    if (fnName === "append_workspace_event") {
+      state.eventInsertPayload = {
+        event_type: params.p_event_type,
+        connection_id: params.p_connection_id,
+        summary: params.p_summary,
+        visibility: params.p_visibility,
+        audience_person_id: params.p_audience_person_id,
+      };
+      return Promise.resolve({ data: 1, error: null });
+    }
     if (fnName !== "upsert_source_item") throw new Error(`Unexpected rpc in fake client: ${fnName}`);
     const priorIds = state.priorReadyRevisions.map((r) => r.id);
     state.upsertedItem = {

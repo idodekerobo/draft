@@ -116,7 +116,12 @@ export type WorkspaceEventType =
   | "input_resolved"
   | "source_delayed"
   | "context_restored"
-  | "manual_edit";
+  | "manual_edit"
+  | "notification_done"
+  | "notification_not_mine"
+  | "notification_undone";
+
+export type WorkspaceEventVisibility = "shared" | "private";
 
 export type AgentSessionSummaryStatus =
   | "pending"
@@ -135,4 +140,6 @@ export type ErrorOperation =
   | "projection"
   | "auth"
   | "read"
-  | "session";
+  | "session"
+  | "audit"
+  | "delivery";

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchFirefliesMeeting, type FirefliesMeetingData } from "./fetch-meeting";
 import { upsertSourceItem } from "../upsert-source-item";
-import { insertEvent } from "../../events/insert-event";
+import { eventAudienceForSource, insertEvent } from "../../events/insert-event";
 import { resolveProviderCredentialById } from "../../credentials/resolve-provider-credential";
 import type { SourceItemVisibility } from "../../types/enums";
 
@@ -164,11 +164,15 @@ export async function ingestFirefliesMeeting(
     owner_user_id: connection.connected_by_user_id ?? null,
   });
 
-  await insertEvent(db, connection.workspace_id, {
-    event_type: "source_items_added",
-    connection_id: connection.id,
-    summary: meeting.title,
-  });
+  const audience = await eventAudienceForSource(db, connection.workspace_id, { visibility: "private", owner_user_id: connection.connected_by_user_id ?? null });
+  if (audience) {
+    await insertEvent(db, connection.workspace_id, {
+      event_type: "source_items_added",
+      connection_id: connection.id,
+      summary: meeting.title,
+      ...audience,
+    });
+  }
 
   return { sourceItemId: result.item.id };
 }
