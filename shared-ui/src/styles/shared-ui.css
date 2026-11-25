@@ -1377,7 +1377,9 @@
 .ui-home-welcome { margin-top: 32px; }
 .ui-home-welcome__title { margin: 0 0 8px; font-size: var(--font-size-body); font-weight: 600; }
 .ui-home-welcome__text { margin: 0; max-width: 60ch; color: var(--color-text-secondary); line-height: 1.5; }
-.ui-home-row--leaving { opacity: 0; transition: opacity 200ms var(--motion-ease); }
+.ui-home-row { overflow: hidden; }
+/* A finished row fades, lifts 3px and closes its height, so the rows below move up instead of jumping. */
+.ui-home-row--leaving { opacity: 0; transform: translateY(-3px); padding-block: 0; transition: opacity 200ms var(--motion-ease), transform 200ms var(--motion-ease), height 200ms var(--motion-ease), padding 200ms var(--motion-ease); }
 .ui-home-row[aria-current="true"] { background: var(--color-selected-bg); }
 @media (pointer: coarse) { .ui-home-row__actions .ui-btn, .ui-home-row__actions .ui-link { min-height: 44px; touch-action: manipulation; } }
 @media (max-width: 720px) {
@@ -1386,7 +1388,7 @@
   .ui-home-row__tag { grid-column: 1 / -1; padding-top: 0; }
   .ui-home-row__actions { min-width: 0; flex-wrap: wrap; }
 }
-@media (prefers-reduced-motion: reduce) { .ui-home-row--leaving { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .ui-home-row--leaving { transition: none; transform: none; } }
 
 /* Home panel height caps: 30% of the window, 45% while the Get started checklist shows. */
 .ui-home-panel .ui-home-rows { max-height: 30vh; overflow-y: auto; }

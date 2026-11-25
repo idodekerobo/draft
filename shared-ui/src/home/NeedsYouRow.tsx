@@ -35,6 +35,14 @@ export function NeedsYouRow({ row, handlers, highlighted = false, leaving = fals
   useEffect(() => {
     if (highlighted) element.current?.scrollIntoView?.({ block: "nearest" });
   }, [highlighted]);
+  // CSS cannot animate to height auto, so the row's height is pinned and then set to 0.
+  useEffect(() => {
+    const el = element.current;
+    if (!leaving || !el) return;
+    el.style.height = `${el.offsetHeight}px`;
+    const frame = requestAnimationFrame(() => { el.style.height = "0px"; });
+    return () => cancelAnimationFrame(frame);
+  }, [leaving]);
   return (
     <li ref={element} className={`ui-home-row${leaving ? " ui-home-row--leaving" : ""}`} data-kind={row.kind} aria-current={highlighted ? "true" : undefined} data-highlighted={highlighted ? "true" : undefined}>
       <span className="ui-home-row__tag">{tag}</span>
