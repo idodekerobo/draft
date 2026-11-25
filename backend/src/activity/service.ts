@@ -192,12 +192,18 @@ async function listUpcoming(client: SupabaseClient, workspaceId: string, viewerI
  * The first page also lists upcoming one-time routines.
  */
 export async function listActivity(client: SupabaseClient, workspaceId: string, before: Cursor | null, viewerId: string | null): Promise<ActivityPage> {
+  // A Home session is its owner's alone, so its runs never list for anyone else. This runs before paging so pages stay full.
+  const { data: foreignHome, error: homeError } = await client.from("sessions").select("id").eq("workspace_id", workspaceId).eq("is_home", true).neq("owner_user_id", viewerId ?? "00000000-0000-0000-0000-000000000000");
+  if (homeError) throw homeError;
+  const hiddenSessionIds = ((foreignHome ?? []) as Array<{ id: string }>).map((row) => row.id);
+
   let query = client
     .from("agent_runs")
     .select("id, kind, session_id, scheduled_task_id, status, outcome, trigger, summary, started_at, completed_at, created_at")
     .eq("workspace_id", workspaceId)
     // One row for each run of a routine. Its step runs are in its details, not in the list.
     .is("parent_run_id", null);
+  if (hiddenSessionIds.length) query = query.not("session_id", "in", `(${hiddenSessionIds.join(",")})`);
   if (before) query = query.or(olderThan("created_at", before));
   const { data, error } = await query
     .order("created_at", { ascending: false })
