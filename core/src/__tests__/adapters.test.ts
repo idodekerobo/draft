@@ -3,8 +3,8 @@ import { ADAPTERS, HARNESSES, adapterSupportsTarget, getAdapter, interactiveAdap
 import { cloudNativeToolsFor, isCloudNativeTool, isNativeTool } from "../run-spec";
 
 describe("adapter registry", () => {
-  it("lists the four adapters, each under its harness", () => {
-    expect(ADAPTERS.map((adapter) => adapter.id)).toEqual(["claude-terminal", "claude-print", "codex-app-server", "codex-exec"]);
+  it("lists the adapters, each under its harness", () => {
+    expect(ADAPTERS.map((adapter) => adapter.id)).toEqual(["claude-terminal", "claude-print", "codex-app-server", "codex-exec", "pi-durable-sdk"]);
     for (const harness of HARNESSES) expect(harness.adapters.every((adapter) => adapter.harness === harness.id)).toBe(true);
   });
 
@@ -31,6 +31,14 @@ describe("adapter registry", () => {
     expect(adapterSupportsTarget(requireAdapter("claude-terminal"), "sandbox")).toBe(true);
     expect(adapterSupportsTarget(requireAdapter("codex-app-server"), "sandbox")).toBe(false);
     expect(adapterSupportsTarget(requireAdapter("claude-terminal"), "backend")).toBe(false);
+  });
+
+  it("registers the Home adapter for the backend target, without a launcher", () => {
+    const pi = requireAdapter("pi-durable-sdk");
+    expect(pi.targets).toEqual(["backend"]);
+    expect(pi.eventPath).toBe("events");
+    expect(pi.launchable).toBe(false);
+    expect(ADAPTERS.filter((adapter) => adapter.id !== "pi-durable-sdk").every((adapter) => adapter.launchable && adapter.eventPath === "lines")).toBe(true);
   });
 
   it("gives steer to Codex live sessions only", () => {

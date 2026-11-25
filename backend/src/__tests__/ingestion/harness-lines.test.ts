@@ -16,8 +16,9 @@ describe("eventsForAdapter", () => {
     expect(() => eventsForAdapter("future", line)).toThrow("Unknown adapter");
   });
 
-  it("maps every adapter in the registry", () => {
-    for (const adapter of ADAPTERS) expect(() => eventsForAdapter(adapter.id, { stream: "x", position: 0, oversizeBytes: 1 })).not.toThrow();
+  it("maps every adapter that sends lines, and refuses one that sends events", () => {
+    for (const adapter of ADAPTERS.filter((entry) => entry.eventPath === "lines")) expect(() => eventsForAdapter(adapter.id, { stream: "x", position: 0, oversizeBytes: 1 })).not.toThrow();
+    expect(() => eventsForAdapter("pi-durable-sdk", line)).toThrow("has no line mapper");
   });
 
   it("notes a line that was too large to forward", () => {

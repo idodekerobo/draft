@@ -176,7 +176,16 @@ export function executionProblem(spec: Pick<AgentRunSpec, "harness" | "execution
   if (!adapter.targets.includes(target)) return `Adapter ${adapter.id} cannot run on a ${target} target`;
   if (target === "host" && spec.computer.type === "sandbox") return "A host target cannot use a sandbox computer";
   if (target === "sandbox" && spec.computer.type === "host_computer") return "A sandbox target cannot use a host computer";
+  if (target === "backend" && spec.computer.type === "host_computer") return "A backend target cannot use a host computer";
   return null;
+}
+
+/** Why a run cannot be launched now, or null. A spec may name an adapter that is registered but has no launcher yet. */
+export function launchProblem(spec: Pick<AgentRunSpec, "harness" | "execution" | "computer">): string | null {
+  const problem = executionProblem(spec);
+  if (problem) return problem;
+  const adapter = getAdapter(spec.execution.adapterId);
+  return adapter && !adapter.launchable ? `Adapter ${adapter.id} cannot be launched yet` : null;
 }
 
 export type JsonSchema = Readonly<Record<string, unknown>>;

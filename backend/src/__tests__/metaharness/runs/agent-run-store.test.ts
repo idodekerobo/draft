@@ -80,6 +80,13 @@ describe("agent run store", () => {
     expect("continuation" in specFromRow(rowFrom(inserts[1].row))).toBe(false);
   });
 
+  it("accepts a Home spec for the backend target with a sandbox computer, and records it as it is", async () => {
+    const { client, inserts } = fakeClient();
+    const home = { ...spec, harness: "pi" as never, execution: { target: { type: "backend", packageVersion: "1.0.0" }, adapterId: "pi-durable-sdk" }, toolset: { ...spec.toolset, nativeTools: [] } } as AgentRunSpec;
+    await createAgentRun(client, { spec: home, idempotencyKey: "k-home" });
+    expect(inserts[0].row).toMatchObject({ execution: { target: { type: "backend", packageVersion: "1.0.0" }, adapterId: "pi-durable-sdk" }, computer: { type: "sandbox" } });
+  });
+
   it("refuses to save a spec whose adapter cannot run on its target", async () => {
     const { client, inserts } = fakeClient();
     await expect(createAgentRun(client, { spec: { ...spec, execution: { target: { type: "sandbox" }, adapterId: "codex-app-server" } }, idempotencyKey: "k-bad" })).rejects.toThrow("cannot run on a sandbox target");

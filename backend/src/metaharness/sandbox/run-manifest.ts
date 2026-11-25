@@ -1,4 +1,4 @@
-import { networkOf, type AgentRunSpec } from "draft-core/run-spec";
+import { launchProblem, networkOf, type AgentRunSpec } from "draft-core/run-spec";
 import type { ReasoningEffort } from "draft-core/harnesses";
 import { OUTPUT_SCHEMA_FILE, PROMPT_FILE, validateRunnerManifest, type RunnerManifest } from "draft-core/run-manifest";
 
@@ -24,6 +24,8 @@ export function needsDraftToolServer(spec: AgentRunSpec): boolean {
 /** The one place a spec becomes what the sandbox does. Identity, tools and permissions reach every run through here. */
 export function buildRunnerManifest(input: BuildRunnerManifestInput): RunnerManifest {
   const { spec } = input;
+  const problem = launchProblem(spec);
+  if (problem) throw new Error(problem);
   if (spec.execution.target.type !== "sandbox") throw new Error("A sandbox run needs a sandbox execution target");
   if (spec.output.type === "none") throw new Error("A sandbox run needs a text or structured output");
   const native = spec.toolset.nativeTools.filter((tool) => tool.harness === spec.harness).map((tool) => tool.tool as string);

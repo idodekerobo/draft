@@ -50,3 +50,10 @@ describe("the manifest the backend builds, for every kind of run", () => {
     });
   }
 });
+
+describe("a run that is registered but cannot launch yet", () => {
+  it("is refused with a clear message, before any manifest is built", () => {
+    const home = { ...routine("claude"), harness: "pi" as never, execution: { target: { type: "backend", packageVersion: "1.0.0" }, adapterId: "pi-durable-sdk" } } as ReturnType<typeof routine>;
+    expect(() => buildRunnerManifest({ spec: home, callbackUrl: CALLBACK, prompt: { kind: "text", text: "p" }, timeoutSeconds: 900, draftMcpUrl: null })).toThrow("Adapter pi-durable-sdk cannot be launched yet");
+  });
+});

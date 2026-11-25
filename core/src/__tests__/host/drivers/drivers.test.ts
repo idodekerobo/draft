@@ -5,7 +5,7 @@ import { registrationFor } from "../../../host/drivers/drivers";
 describe("registrationFor", () => {
   it("has a launcher for every adapter that runs on a host", () => {
     for (const adapter of ADAPTERS.filter((entry) => (entry.targets as ReadonlyArray<string>).includes("host"))) {
-      expect(registrationFor(adapter.id).launcher.id).toBe(adapter.harness);
+      expect(String(registrationFor(adapter.id).launcher.id)).toBe(adapter.harness);
     }
   });
 

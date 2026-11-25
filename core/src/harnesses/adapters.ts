@@ -2,10 +2,11 @@
 import type { AdapterDefinition, ExecutionTargetType } from "./adapter-types";
 import { claudeAdapters } from "./claude/adapters";
 import { codexAdapters } from "./codex/adapters";
+import { piAdapters } from "./pi/adapters";
 
 export type { AdapterCapabilities, AdapterDefinition, ExecutionTargetType } from "./adapter-types";
 
-export const ADAPTERS = [...claudeAdapters, ...codexAdapters] as const;
+export const ADAPTERS = [...claudeAdapters, ...codexAdapters, ...piAdapters] as const;
 
 export type AdapterId = (typeof ADAPTERS)[number]["id"];
 

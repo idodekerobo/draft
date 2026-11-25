@@ -16,8 +16,10 @@ export interface AdapterDefinition {
   kind: "interactive" | "routine";
   targets: ReadonlyArray<ExecutionTargetType>;
   capabilities: AdapterCapabilities;
-  /** How the backend gets events: it parses the harness's CLI output lines. */
-  eventPath: "lines";
+  /** How the backend gets events: it parses the harness's CLI output lines, or the adapter emits events itself. */
+  eventPath: "lines" | "events";
+  /** False for an adapter that is registered so a spec can name it, but has no launcher yet. */
+  launchable: boolean;
   /** Every built-in tool name the harness knows. */
   nativeTools: ReadonlyArray<string>;
   /** The built-in tools a sandbox run may be given. Empty when the adapter does not run in a sandbox. */
