@@ -42,6 +42,8 @@ export function printHelp(): void {
     ["people notification-status <id>", "Check whether a message was delivered"],
     ["routines list|options|create|update|delete|run|runs", "Routines: work Draft runs once, on a schedule, or when something happens"],
     ["activity list",              "What the workspace's agents have run, newest first"],
+    ["home needs-you",             "What needs you now: approvals, questions, to-dos, failed sends"],
+    ["notifications list|done|not-mine|undo", "Your notifications: list them, mark one done or not yours, or undo"],
     ["sources list",              "Browse ingested source evidence"],
     ["sources search \"<query>\"", "Search cross-provider source evidence"],
     ["sources capture enable claude-code", "Capture this repo's Claude Code sessions"],

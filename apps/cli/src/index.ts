@@ -5,6 +5,7 @@ import { printHelp, red } from "./utils/output.ts";
 import { reportUnexpectedIntegrationFailure } from "./integrations/safe-output.ts";
 
 import { runActivity } from "./commands/activity.ts";
+import { runHome, runNotifications } from "./commands/home.ts";
 import { runAdd } from "./commands/add.ts";
 import { runAuth } from "./commands/auth.ts";
 import { runContext } from "./commands/context.ts";
@@ -55,6 +56,12 @@ if (command === "--version" || command === "-v") {
       break;
     case "activity":
       process.exitCode = await runActivity(rest);
+      break;
+    case "home":
+      process.exitCode = await runHome(rest);
+      break;
+    case "notifications":
+      process.exitCode = await runNotifications(rest);
       break;
     case "sessions":
       process.exitCode = await runSessions(rest);

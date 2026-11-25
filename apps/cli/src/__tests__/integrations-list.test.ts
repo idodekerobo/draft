@@ -356,7 +356,7 @@ describe("connections help and completion", () => {
   it("includes current top-level commands and integrations choices in bash and zsh completion", async () => {
     const bash = await runCli(["completion"], { home, apiUrl: backend.url });
     expect(bash.exitCode).toBe(0);
-    expect(bash.stdout).toContain('commands="add auth context people routines activity sources sessions skills connections update uninstall completion"');
+    expect(bash.stdout).toContain('commands="add auth context people routines activity home notifications sources sessions skills connections update uninstall completion"');
     expect(bash.stdout).toContain('compgen -W "list connect disconnect join leave read search post"');
     expect(bash.stdout).toContain('compgen -W "github slack linear fireflies granola claude-code google gmail google-drive"');
     expect(bash.stdout).toContain('compgen -W "list options create update delete run runs"');

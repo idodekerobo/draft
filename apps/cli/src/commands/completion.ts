@@ -34,7 +34,7 @@ _draft_completion() {
   local cur prev commands flags
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="add auth context people routines activity sources sessions skills connections update uninstall completion"
+  commands="add auth context people routines activity home notifications sources sessions skills connections update uninstall completion"
 
   if [[ "\$cur" == -* ]]; then
     case "\${COMP_WORDS[1]}:\${COMP_WORDS[2]}" in
