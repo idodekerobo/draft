@@ -3,6 +3,8 @@ import { z } from "zod";
 import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, executionProblem, isNativeTool, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
 import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
 import { isAdapterId, isHarnessId, type AdapterId, type HarnessId } from "draft-core/harnesses";
+import { recordError } from "../../errors/record-error";
+import { allowOncePer } from "../../errors/throttle";
 import { recordAgentQueryLog, type AgentQueryLogCommand } from "../../observability/record-query-log";
 import type { AgentRunRow } from "../../types/tables";
 import type { ToolCallRecord } from "../tools/invoke-tool";
@@ -188,6 +190,23 @@ export async function loadActiveAgentRunSpec(client: SupabaseClient, runId: stri
  * agent query log, as before, but only when they came in through an agent surface.
  */
 export function auditToDatabase(client: SupabaseClient, sessionId?: string): (record: ToolCallRecord) => Promise<void> {
+  const write = writeAudit(client, sessionId);
+  return async (record) => {
+    try {
+      await write(record);
+    } catch (error) {
+      // The caller still logs and ignores this, so the failure is recorded here, once a minute per tool.
+      if (allowOncePer(`audit:${record.toolName}`, AUDIT_ERROR_WINDOW_MS)) {
+        await recordError({ client, workspaceId: record.caller.workspaceId, agentRunId: record.caller.origin.kind === "run" ? record.caller.origin.run.id : null, operation: "audit", code: "tool_audit_failed", message: "A tool call's audit row could not be saved", detail: { tool: record.toolName }, error });
+      }
+      throw error;
+    }
+  };
+}
+
+const AUDIT_ERROR_WINDOW_MS = 60_000;
+
+function writeAudit(client: SupabaseClient, sessionId?: string): (record: ToolCallRecord) => Promise<void> {
   return async (record) => {
     const { origin } = record.caller;
     if (origin.kind === "person") {
