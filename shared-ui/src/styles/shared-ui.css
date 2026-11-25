@@ -1389,8 +1389,8 @@
 @media (prefers-reduced-motion: reduce) { .ui-home-row--leaving { transition: none; } }
 
 /* Home panel height caps: 30% of the window, 45% while the Get started checklist shows. */
-.ui-home-panel { max-height: 30vh; overflow-y: auto; }
-.ui-home-panel--first-run { max-height: 45vh; }
+.ui-home-panel .ui-home-rows { max-height: 30vh; overflow-y: auto; }
+.ui-home-panel--first-run .ui-home-rows { max-height: 45vh; }
 .ui-home-checklist { margin-top: 12px; }
 .ui-home-checklist__title { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: var(--font-size-body); font-weight: 500; }
 .ui-home-checklist__title .ui-muted { font-size: var(--font-size-secondary); font-weight: 400; }
