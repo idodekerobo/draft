@@ -1,6 +1,7 @@
 "use client";
 
-import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, type HarnessId } from "draft-core/harnesses";
+import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, harnessModes, type HarnessId } from "draft-core/harnesses";
+import { ModeMenu } from "./ModeMenu";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
 import { clearDraft, NEW_SESSION_DRAFT_KEY, useDraft } from "./drafts";
@@ -32,6 +33,8 @@ interface StartFields {
   model: string | null;
   /** A reasoning effort the model accepts; null for the harness default. */
   effort: string | null;
+  permissionMode?: string;
+  approvalMode?: string;
 }
 
 /** A session on this computer. `runtime` is left out, since a computer is the default. */
@@ -190,6 +193,7 @@ export function SessionStartScreen({
   const [harness, setHarness] = useState<HarnessId>(DEFAULT_HARNESS_ID);
   const [model, setModel] = useState<string | null>(null);
   const [effort, setEffort] = useState<string | null>(null);
+  const [modeChoices, setModeChoices] = useState<Record<string, { permissionMode?: string; approvalMode?: string }>>({});
   const [runtime, setRuntime] = useState<Runtime>("local");
   const [source, setSource] = useState<Source>("repo");
   const [repo, setRepo] = useState("");
@@ -219,6 +223,14 @@ export function SessionStartScreen({
   const snapshotOn = cloudOn && source === "snapshot";
   // Cloud sessions run Claude Code wherever the computer's own setup is, so the local harness picks no longer apply.
   const activeHarness: HarnessId = cloudOn ? "claude" : harness;
+  const modes = harnessModes(activeHarness, model);
+  const choices = modeChoices[activeHarness];
+  const selectedModes = {
+    ...(modes.permission.some((option) => option.value === choices?.permissionMode) ? { permissionMode: choices!.permissionMode } : {}),
+    ...(modes.approval.some((option) => option.value === choices?.approvalMode) ? { approvalMode: choices!.approvalMode } : {}),
+  };
+  const chooseMode = (change: { permissionMode?: string; approvalMode?: string }) =>
+    setModeChoices((choices) => ({ ...choices, [activeHarness]: { ...choices[activeHarness], ...change } }));
   const localProblem = cloudOn ? undefined : availability[harness];
   const setup = blocks(localProblem) ? renderSetup?.(harness) : null;
   const line = problemLine(getHarness(harness)?.label ?? harness, localProblem, devOnly);
@@ -348,7 +360,7 @@ export function SessionStartScreen({
     const message = text.trim();
     if (!message || starting) return;
     if (cloudOn ? !cloudStartable : !folder) return;
-    const fields = { text: message, model, effort };
+    const fields = { text: message, model, effort, ...selectedModes };
     const request: StartRequest = cloudOn
       ? snapshotOn
         ? {
@@ -577,6 +589,20 @@ export function SessionStartScreen({
               >
                 {agentSummary(activeHarness, model, effort, defaults)}
               </SectionedPicker>
+              {modes.permission.length > 0 && <ModeMenu
+                label="Mode"
+                showLabel
+                options={[{ value: "harness-default", label: "Harness default", description: "Uses the harness's starting mode" }, ...modes.permission]}
+                value={selectedModes.permissionMode ?? "harness-default"}
+                onSelect={(value) => chooseMode({ permissionMode: value === "harness-default" ? undefined : value })}
+              />}
+              {modes.approval.length > 0 && <ModeMenu
+                label="Approvals"
+                showLabel
+                options={[{ value: "harness-default", label: "Harness default", description: "Uses the harness's starting approvals" }, ...modes.approval]}
+                value={selectedModes.approvalMode ?? "harness-default"}
+                onSelect={(value) => chooseMode({ approvalMode: value === "harness-default" ? undefined : value })}
+              />}
               <button
                 type="submit"
                 className="ui-btn ui-btn--primary"

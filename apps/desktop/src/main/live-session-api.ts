@@ -4,7 +4,7 @@ import { sessionBase, type StartLiveSessionResult } from "draft-core/host/live-s
 import { listSnapshotEnvFiles, snapshotFolderSize, nodeSnapshotFs, putArchive, uploadSnapshot, type SnapshotExec, type SnapshotFs, type PutArchive, type SnapshotUploadResult } from "./snapshot";
 import { capture } from "../exec";
 
-export type LocalStartParams = { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null };
+export type LocalStartParams = { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null; permissionMode?: string; approvalMode?: string };
 
 /**
  * The seed a cloud session starts from: a GitHub repository, a folder snapshot already uploaded under `sessionId`,
@@ -16,7 +16,7 @@ export type CloudSeedParams =
   | { kind: "routine_run"; sessionId: string }
   | { kind: "empty" };
 
-export type CloudStartParams = { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; seed: CloudSeedParams };
+export type CloudStartParams = { runtime: "cloud"; model: string | null; effort: string | null; permissionMode?: string; network: "restricted" | "open"; seed: CloudSeedParams };
 
 /** The server calls a desktop makes to create a cloud session. Injected so tests can run without a signed-in host. */
 export interface CloudStartDeps {
@@ -69,6 +69,7 @@ export async function startCloudLiveSession(params: CloudStartParams, deps: Clou
         harness: "claude",
         model: params.model,
         reasoningEffort: params.effort,
+        ...(params.permissionMode ? { permissionMode: params.permissionMode } : {}),
         network: params.network,
         ...sessionFields,
         seed: seedBody,

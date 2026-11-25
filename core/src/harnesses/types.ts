@@ -11,6 +11,8 @@ export interface HarnessModel {
   efforts: ReadonlyArray<ReasoningEffort>;
   /** The effort the model uses when none is set. Null when the harness's own setting decides. */
   defaultEffort: ReasoningEffort | null;
+  /** Omitted axes inherit the harness's modes; an empty list disables that axis for this model. */
+  modes?: Partial<Record<keyof HarnessModes, ReadonlyArray<string>>>;
 }
 
 /** One choice in a session's mode menu. `value` goes to the host. */

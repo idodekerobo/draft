@@ -909,7 +909,7 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         }
       },
 
-      startLiveSession: (params) => startLiveSessionRequest(params, ({ harness, folderPath, model, effort }) => startLiveSession({ harness, folderPath, model, effort })),
+      startLiveSession: (params) => startLiveSessionRequest(params, (local) => startLiveSession(local)),
 
       listSessionEnvFiles: ({ folderPath }) => listLiveSessionEnvFiles(folderPath),
       snapshotFolderSize: ({ folderPath }) => liveSessionSnapshotSize(folderPath),

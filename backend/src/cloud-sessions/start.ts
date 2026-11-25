@@ -100,6 +100,7 @@ export async function beginCloudSession(input: CloudStartInput, deps: StartCloud
       harness: input.harness,
       model: input.model,
       reasoning_effort: input.reasoningEffort,
+      ...(input.permissionMode ? { permission_mode: input.permissionMode } : {}),
       host_id: cloudHostId(sessionId),
       // A sandbox has no machine name to show; the app names the place from the execution target.
       host_name: null,

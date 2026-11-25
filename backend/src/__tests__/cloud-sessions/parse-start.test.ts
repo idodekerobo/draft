@@ -14,6 +14,11 @@ function errorOf(result: ReturnType<typeof parseCloudStart>): string | null {
 }
 
 describe("parseCloudStart", () => {
+  it("accepts a native initial Plan mode and rejects modes from another harness", () => {
+    const result = parseCloudStart(body({ permissionMode: "plan" }), owner);
+    expect(result.ok && result.input.permissionMode).toBe("plan");
+    expect(errorOf(parseCloudStart(body({ permissionMode: "full-access" }), owner))).toBe("invalid_mode");
+  });
   it("accepts a repo seed and keeps the owner, network and repository scope", () => {
     const result = parseCloudStart(body({ seed: repoSeed({ gitRemote: "https://github.com/acme/app.git" }) }), owner);
     expect(result).toEqual({

@@ -1,7 +1,21 @@
 import { describe, expect, it } from "bun:test";
+import { harnessModes, type HarnessModel } from "../harnesses";
 import { HARNESSES, cloudToolsetFor, effortAfterModelChange, effortLabel, isEffortFor, modelEfforts, getHarness, harnessInstallUrl, harnessLabel, isHarnessId, isKnownModel, isTestedVersion, modelLabel, parseCliVersion, testedVersionLabel } from "../harnesses";
 
 describe("harness registry", () => {
+  it("filters model-specific modes while inheriting axes the model does not restrict", () => {
+    const model = getHarness("codex")!.models[0]! as HarnessModel;
+    try {
+      model.modes = { permission: ["default"], approval: [] };
+      expect(harnessModes("codex", null).permission.map((mode) => mode.value)).toEqual(["default"]);
+      expect(harnessModes("codex", null).approval).toEqual([]);
+      model.modes = { permission: ["default"] };
+      expect(harnessModes("codex", null).approval.map((mode) => mode.value)).toContain("full-access");
+      expect(harnessModes("codex", "gpt-6.1-sol").permission.map((mode) => mode.value)).toContain("plan");
+    } finally {
+      delete model.modes;
+    }
+  });
   it("has unique ids and a default model first for every harness", () => {
     expect(new Set(HARNESSES.map((h) => h.id)).size).toBe(HARNESSES.length);
     for (const harness of HARNESSES) expect(harness.models[0]).toMatchObject({ alias: null });

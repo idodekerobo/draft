@@ -331,11 +331,11 @@ const launcher: HarnessLauncher = {
     await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, resume: true });
     return { folderPath, tmuxSession };
   },
-  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin }, nativeSessionId }) {
+  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin, permissionMode }, nativeSessionId }) {
     const tmuxSession = tmuxSessionName(sessionId);
     preTrustFolder(folderPath);
     const settingsPath = writeSessionSettings(sessionId);
-    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath });
+    await launchClaudeInTmux({ tmuxSession, folderPath, claudeBin: bin, nativeSessionId, model, effort, settingsPath, permissionMode });
     return { tmuxSession };
   },
 };

@@ -480,7 +480,7 @@ function SessionContents({
     },
     [canAnswer, sleeping, skipQuestions, inputs],
   );
-  const modes = harnessModes(session.harness ?? "claude");
+  const modes = harnessModes(session.harness ?? "claude", session.model);
   const permissionSwitch = useSwitching(session.permission_mode);
   const approvalSwitch = useSwitching(session.approval_mode);
   const changeMode = useCallback(

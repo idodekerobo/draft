@@ -1,4 +1,4 @@
-import { DEFAULT_HARNESS_ID, adapterSupportsTarget, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel, type HarnessId } from "draft-core/harnesses";
+import { DEFAULT_HARNESS_ID, harnessModes, adapterSupportsTarget, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel, type HarnessId } from "draft-core/harnesses";
 import { sessionIdOfSnapshotKey } from "./snapshot-seed";
 
 const MAX_REMOTE_CHARS = 500;
@@ -21,6 +21,7 @@ export interface CloudStartInput {
   harness: HarnessId;
   model: string | null;
   reasoningEffort: string | null;
+  permissionMode?: string;
   network: "restricted" | "open";
   seed: CloudSeed;
 }
@@ -47,6 +48,9 @@ export function parseCloudStart(body: Record<string, unknown>, owner: { workspac
   if (typeof reasoningEffort !== "string" && reasoningEffort !== null) return refuse("unknown_reasoning_effort");
   if (!isEffortFor(harness, model, reasoningEffort)) return refuse("unknown_reasoning_effort");
 
+  const permissionMode = body.permissionMode;
+  if (permissionMode !== undefined && (typeof permissionMode !== "string" || !harnessModes(harness, model).permission.some((mode) => mode.value === permissionMode))) return refuse("invalid_mode");
+
   const network = body.network ?? "restricted";
   if (network !== "restricted" && network !== "open") return refuse("invalid_network");
 
@@ -54,7 +58,7 @@ export function parseCloudStart(body: Record<string, unknown>, owner: { workspac
   if (!seed.ok) return seed;
   return {
     ok: true,
-    input: { workspaceId: owner.workspaceId, ownerUserId: owner.ownerUserId, harness, model, reasoningEffort, network, seed: seed.seed },
+    input: { workspaceId: owner.workspaceId, ownerUserId: owner.ownerUserId, harness, model, reasoningEffort, ...(typeof permissionMode === "string" ? { permissionMode } : {}), network, seed: seed.seed },
   };
 }
 

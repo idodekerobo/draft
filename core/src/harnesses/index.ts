@@ -35,8 +35,15 @@ export function harnessModeValues(id: string, axis: keyof HarnessModes): string[
 }
 
 /** The mode menu for a harness, or empty lists for one this build does not know. */
-export function harnessModes(id: string | null | undefined): HarnessModes {
-  return getHarness(id)?.modes ?? { permission: [], approval: [] };
+export function harnessModes(id: string | null | undefined, model?: string | null): HarnessModes {
+  const harness = getHarness(id);
+  const modes = harness?.modes ?? { permission: [], approval: [] };
+  const supported: HarnessModel | undefined = harness?.models.find((entry) => entry.alias === (model ?? null));
+  if (!supported?.modes) return modes;
+  return {
+    permission: modes.permission.filter((option) => !supported.modes?.permission || supported.modes.permission.includes(option.value)),
+    approval: modes.approval.filter((option) => !supported.modes?.approval || supported.modes.approval.includes(option.value)),
+  };
 }
 
 export const harnessInstallUrl = (id: string): string | null => getHarness(id)?.installUrl ?? null;

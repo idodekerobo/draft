@@ -78,7 +78,7 @@ export interface HarnessLauncher {
     model: string | null;
     effort: string | null;
     nativeSessionId: string;
-    options: { bin: string };
+    options: { bin: string; permissionMode?: string; approvalMode?: string };
   }): Promise<Partial<HostSessionState>>;
   /**
    * Starts an ended session again on this computer, in the same folder with the same conversation.

@@ -2,6 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { buildClaudeCommand } from "../../host/launch";
 
 describe("buildClaudeCommand", () => {
+  it("starts a selected Plan session with the native flag before any message is submitted", () => {
+    expect(buildClaudeCommand("/bin/claude", "abc", "opus", null, false, "high", "plan")).toContain("'--permission-mode' 'plan'");
+    expect(buildClaudeCommand("/bin/claude", "abc", null)).not.toContain("--permission-mode");
+  });
   it("adds --model and --effort only when they are set", () => {
     expect(buildClaudeCommand("/bin/claude", "abc", null)).not.toContain("--effort");
     const command = buildClaudeCommand("/bin/claude", "abc", "opus", null, false, "xhigh");

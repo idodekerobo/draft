@@ -3,7 +3,7 @@ import { SESSION_FAILURES, type SessionFailureCode } from "../session-failure";
 import { existsSync, statSync } from "fs";
 import { basename, resolve } from "path";
 import { hostname } from "os";
-import { DEFAULT_HARNESS_ID, getAdapter, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel, requireInteractiveAdapter, type AdapterDefinition } from "../harnesses";
+import { DEFAULT_HARNESS_ID, harnessModes, getAdapter, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel, requireInteractiveAdapter, type AdapterDefinition } from "../harnesses";
 import { SIGNAL_EVENTS, type LiveSession, type LiveSessionEventsPage } from "../live-sessions";
 import { hostServices, ServerError } from "./services";
 import type { HostEvent } from "./approvals";
@@ -485,7 +485,7 @@ class SessionHost {
   }
 }
 
-export async function startLiveSession(input: { harness?: string; folderPath: string; model?: string | null; effort?: string | null }): Promise<StartLiveSessionResult> {
+export async function startLiveSession(input: { harness?: string; folderPath: string; model?: string | null; effort?: string | null; permissionMode?: string; approvalMode?: string }): Promise<StartLiveSessionResult> {
   const workspaceId = hostServices().workspaceId();
   if (!workspaceId) return { ok: false, error: "Sign in to Draft Cloud first." };
 
@@ -502,6 +502,10 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   if (!checked.ok) return { ok: false, error: checked.error };
   if (!isKnownModel(harness, input.model)) return { ok: false, error: "Choose a model from the list." };
   if (!isEffortFor(harness, input.model, input.effort)) return { ok: false, error: "Choose a reasoning effort from the list." };
+
+  const modes = harnessModes(harness, input.model);
+  if (input.permissionMode !== undefined && !modes.permission.some((mode) => mode.value === input.permissionMode)) return { ok: false, error: "Choose a mode from the list." };
+  if (input.approvalMode !== undefined && !modes.approval.some((mode) => mode.value === input.approvalMode)) return { ok: false, error: "Choose an approval mode from the list." };
 
   const hostId = hostServices().hostId();
   const nativeSessionId = launcher.newNativeSessionId();
@@ -548,7 +552,7 @@ export async function startLiveSession(input: { harness?: string; folderPath: st
   };
 
   try {
-    state = { ...state, ...(await launcher.launch({ sessionId, workspace: { path: folderPath }, model, effort, nativeSessionId, options: { bin: checked.bin } })) };
+    state = { ...state, ...(await launcher.launch({ sessionId, workspace: { path: folderPath }, model, effort, nativeSessionId, options: { bin: checked.bin, permissionMode: input.permissionMode, approvalMode: input.approvalMode } })) };
   } catch (error) {
     console.error("[live-session] launch failed", error);
     await hostServices().fetchServer(`workspaces/${workspaceId}/live-sessions/${sessionId}/end`, {
@@ -583,7 +587,7 @@ async function attachSession(state: HostSessionState, mode: "launch" | "resume")
   if (!checked.ok) return { ok: false, error: checked.error };
   const model = state.model ?? null;
   const effort = state.reasoningEffort ?? null;
-  const options = { bin: checked.bin };
+  const options = { bin: checked.bin, ...(mode === "launch" && state.initialPermissionMode ? { permissionMode: state.initialPermissionMode } : {}) };
   const started =
     mode === "resume"
       ? await launcher.resume({ sessionId: state.sessionId, nativeSessionId: state.nativeSessionId, model, effort, options })

@@ -15,6 +15,7 @@ const FAILED: Partial<Record<InputFailReason, string>> = {
   session_ended: "the session ended",
   session_cleared: "the conversation was cleared",
   pane_unavailable: "the session was not reachable",
+  mode_failed: "the requested mode could not be applied",
 };
 
 /**

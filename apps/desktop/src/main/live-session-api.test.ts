@@ -25,6 +25,12 @@ function deps(response: () => Promise<unknown>, workspaceId: string | null = "w1
 }
 
 describe("startLiveSessionRequest for a cloud session", () => {
+  it("includes the selected initial mode in the cloud creation request", async () => {
+    const { value, fetchServerJSON } = deps(async () => ({ ok: true, session: { id: "s-cloud" } }));
+    await startCloudLiveSession({ ...cloud, permissionMode: "plan" }, value);
+    const [, init] = fetchServerJSON.mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toMatchObject({ permissionMode: "plan" });
+  });
   it("posts the cloud body to the workspace and returns the new session", async () => {
     const { value, fetchServerJSON } = deps(async () => ({ ok: true, session: { id: "s-cloud" } }));
     const startLocal = mock(async () => ({ ok: true as const, sessionId: "local" }));
@@ -181,7 +187,7 @@ describe("listLiveSessionEnvFiles", () => {
 describe("startLiveSessionRequest for a computer session", () => {
   it("hands a computer request to the local start, and does not call the server", async () => {
     const { value, fetchServerJSON } = deps(async () => ({}));
-    const local = { harness: "codex", folderPath: "/work/marigold", model: null, effort: null };
+    const local = { harness: "codex", folderPath: "/work/marigold", model: null, effort: null, permissionMode: "plan", approvalMode: "full-access" };
     const startLocal = mock(async (_params: unknown) => ({ ok: true as const, sessionId: "local-1" }));
     expect(await startLiveSessionRequest(local, startLocal, value)).toEqual({ ok: true, sessionId: "local-1" });
     expect(startLocal).toHaveBeenCalledWith(local);

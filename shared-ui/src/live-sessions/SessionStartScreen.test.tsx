@@ -13,6 +13,32 @@ function setup(recent: string[] = ["/work/marigold", "/work/other"]) {
 }
 
 describe("SessionStartScreen", () => {
+  it("lets Claude start in Auto before its first message", async () => {
+    const { onStart } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Mode: Harness default" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Auto/ }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ harness: "claude", permissionMode: "auto" })));
+  });
+
+  it("keeps mode choices with their harness and offers Codex Plan and approvals", async () => {
+    const { onStart } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Mode: Harness default" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Auto/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Codex" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Mode: Harness default" }));
+    expect(screen.queryByRole("menuitemradio", { name: /^Auto/ })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Plan/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Approvals: Harness default" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Approve for me/ }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ harness: "codex", permissionMode: "plan", approvalMode: "approve-for-me" })));
+  });
+
   it("focuses the message box and defaults to the last folder", () => {
     setup();
     expect(document.activeElement).toBe(screen.getByRole("textbox"));

@@ -62,7 +62,8 @@ export type InputFailReason =
   | "delivery_interrupted"
   | "not_submitted"
   | "host_restarted"
-  | "request_not_open";
+  | "request_not_open"
+  | "mode_failed";
 
 export type InputReason = InputBlockReason | InputFailReason;
 

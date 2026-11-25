@@ -208,7 +208,7 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
   if (session.status === "ended") return errorResponse("session_ended", 409);
   if (session.execution_target === "sandbox" && session.status === "sleeping") return errorResponse("session_sleeping", 409);
 
-  const modes = harnessModes(session.harness);
+  const modes = harnessModes(session.harness, model === undefined ? session.model : typeof model === "string" ? model : null);
   const payload: Record<string, string | null> = {};
   if (model !== undefined || reasoningEffort !== undefined) {
     // The model and effort run on the owner's subscription, so only the owner changes them.

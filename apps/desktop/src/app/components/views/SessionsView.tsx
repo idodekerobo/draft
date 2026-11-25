@@ -141,7 +141,7 @@ export function SessionsView({ onOpenConnections }: { onOpenConnections?: () => 
 
   /** A repository is sent as it is. A folder is packed and uploaded first, and the start names the upload it made. */
   async function startCloud(request: CloudStartRequest | CloudSnapshotStartRequest, progress?: (step: string) => void): Promise<{ ok: true; sessionId: string } | { ok: false; error: string; detail?: string }> {
-    const common = { runtime: "cloud" as const, model: request.model, effort: request.effort, network: request.network };
+    const common = { runtime: "cloud" as const, model: request.model, effort: request.effort, ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}), network: request.network };
     if (request.source === "repo") {
       if (!request.gitRemote) return rpc.request.startLiveSession({ ...common, seed: { kind: "empty" as const } });
       return rpc.request.startLiveSession({ ...common, seed: { kind: "repo" as const, gitRemote: request.gitRemote, branch: request.branch } });
@@ -157,15 +157,19 @@ export function SessionsView({ onOpenConnections }: { onOpenConnections?: () => 
   }
 
   async function start(request: StartRequest, progress?: (step: string) => void): Promise<StartResult> {
-    const { harness, text, model, effort } = request;
+    const { harness, model, effort } = request;
     const result = request.runtime === "cloud"
       ? await startCloud(request, progress)
-      : await rpc.request.startLiveSession({ harness, folderPath: request.folderPath, model, effort });
+      : await rpc.request.startLiveSession({ harness, folderPath: request.folderPath, model, effort, ...(request.permissionMode ? { permissionMode: request.permissionMode } : {}), ...(request.approvalMode ? { approvalMode: request.approvalMode } : {}) });
     if (!result.ok) return result;
+    try {
+      await liveSessionsApi.sendMessage(result.sessionId, request.text);
+    } catch (error) {
+      await refetch();
+      return { ok: false, error: `The session was created, but its first input could not be queued. Open it from the session list to retry. ${error instanceof Error ? error.message : ""}` };
+    }
     track("session_started", { live_session_id: result.sessionId, harness, model: model ?? "default", effort: effort ?? "default", runtime: request.runtime ?? "local" });
     if (request.runtime !== "cloud") setRecentFolders(rememberFolder(window.localStorage, request.folderPath));
-    // The host types the first message once Claude is ready; a failure here leaves an empty session the user can type into.
-    await liveSessionsApi.sendMessage(result.sessionId, text).catch((error) => console.error("[sessions] first message failed", error));
     await refetch();
     setStartedId(result.sessionId);
     setSelectedId(result.sessionId);

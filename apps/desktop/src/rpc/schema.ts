@@ -375,8 +375,8 @@ export type AppRPCType = {
        */
       startLiveSession: {
         params:
-          | { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null }
-          | { runtime: "cloud"; model: string | null; effort: string | null; network: "restricted" | "open"; seed: CloudSessionSeed };
+          | { runtime?: "local"; harness?: string; folderPath: string; model?: string | null; effort?: string | null; permissionMode?: string; approvalMode?: string }
+          | { runtime: "cloud"; model: string | null; effort: string | null; permissionMode?: string; network: "restricted" | "open"; seed: CloudSessionSeed };
         response: { ok: true; sessionId: string } | { ok: false; error: string };
       };
 

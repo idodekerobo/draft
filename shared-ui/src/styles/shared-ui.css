@@ -985,6 +985,16 @@
 .ui-composer__folder { display: flex; align-items: center; gap: var(--space-2); padding: 6px 12px; background: var(--color-bg-surface); color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
 .ui-composer__row { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); }
 .ui-composer__footer { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.ui-start .ui-composer__footer { flex-wrap: wrap; }
+.ui-start .ui-mode__list { left: auto; right: 0; min-width: 0; width: min(280px, calc(100vw - 48px)); max-height: min(400px, calc(100vh - 80px)); overflow-y: auto; }
+@container session-start (max-width: 560px) {
+  .ui-start .ui-composer__footer { flex-direction: column; align-items: stretch; }
+  .ui-start .ui-composer__footer > .ui-picker, .ui-start .ui-composer__footer > .ui-mode { width: 100%; }
+  .ui-start .ui-composer__footer .ui-picker__trigger, .ui-start .ui-composer__footer .ui-mode__trigger { width: 100%; min-height: 32px; justify-content: space-between; }
+  .ui-start .ui-composer__footer .ui-mode__trigger { margin-left: 0; padding-inline: var(--space-2); }
+  .ui-start .ui-mode__label { flex: 1; text-align: left; }
+  .ui-start .ui-composer__footer > .ui-btn { width: 100%; }
+}
 .ui-composer__input { flex: 1; min-width: 0; min-height: 44px; max-height: 200px; padding: 8px 8px 16px; border: 0; background: none; color: var(--color-text-primary); font: var(--font-size-body) var(--font-ui); line-height: 1.4; resize: none; outline: none; }
 .ui-composer__pending { margin-bottom: var(--space-3); }
 @media (prefers-reduced-motion: reduce) { .ui-session__menu-list { animation: ui-fade-in 200ms linear both; } }
@@ -1065,7 +1075,7 @@
 
 .ui-start__body { flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-4); padding: var(--space-6) clamp(16px, 4vw, 40px); }
 .ui-start__heading { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -.02em; text-align: center; }
-.ui-start__box { width: 100%; max-width: 680px; overflow: visible; }
+.ui-start__box { width: 100%; max-width: 680px; overflow: visible; container: session-start / inline-size; }
 .ui-start__box .ui-composer__folder { border-radius: var(--radius-notice) var(--radius-notice) 0 0; }
 .ui-start__folder { position: relative; }
 .ui-start__folder-button { display: inline-flex; align-items: center; gap: var(--space-2); padding: 2px 4px; background: none; border: 0; border-radius: var(--radius-sm); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }

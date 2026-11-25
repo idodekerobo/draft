@@ -170,6 +170,7 @@ function freshState(config: HostConfig, row: SessionRow, harness: HarnessId): Ho
     ended: false,
     model: row.model ?? null,
     reasoningEffort: row.reasoning_effort ?? null,
+    ...(row.permission_mode ? { initialPermissionMode: row.permission_mode } : {}),
   };
 }
 

@@ -148,6 +148,13 @@ describe("startCloudSession", () => {
     expect(run().started_at).toBeString();
   });
 
+  it("persists the selected starting mode before the sandbox launches", async () => {
+    const fly = fakeProvider();
+    expect(await startCloudSession({ ...input, permissionMode: "plan" }, deps({ provider: fly.provider }))).toEqual({ ok: true, sessionId: SESSION });
+    expect(session()).toMatchObject({ permission_mode: "plan" });
+    expect(fly.calls).toEqual(["create", "start"]);
+  });
+
   it("gives the run the cloud toolset and the session permissions, with GitHub scoped to the seed repository", async () => {
     await startCloudSession(input, deps({ provider: fakeProvider().provider }));
 
