@@ -50,6 +50,8 @@ test("Done saves the action, then offers Undo in the toast and refetches", async
   const options = (success.mock.calls[0] as unknown as [string, { action: { label: string } }])[1];
   expect(options.action.label).toBe("Undo");
   await waitFor(() => expect(getNeedsYou.mock.calls.length).toBeGreaterThan(1));
+  // The pressed button is gone, so focus must land on the heading and not on the page body.
+  await waitFor(() => expect(document.activeElement?.id).toBe("needs-you-title"));
 });
 
 test("Not mine is offered only on to-dos, and a refusal is shown", async () => {
