@@ -22,11 +22,11 @@ export function approvalOverrides(approval: CodexApproval): Record<string, unkno
     case "approve-for-me":
       return { approvalPolicy: "on-request", approvalsReviewer: "auto_review", sandboxPolicy: { type: "workspaceWrite" } };
     case "full-access":
-      return { approvalPolicy: "never", sandboxPolicy: { type: "dangerFullAccess" } };
+      return { approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "dangerFullAccess" } };
   }
 }
 
 /** The thread/settings/update that sets Codex's collaboration mode. It needs the model the thread runs. */
-export function collaborationUpdate(threadId: string, mode: CodexCollaboration, model: string): Record<string, unknown> {
-  return { threadId, collaborationMode: { mode, settings: { model, reasoning_effort: null, developer_instructions: null } } };
+export function collaborationUpdate(threadId: string, mode: CodexCollaboration, model: string, effort: string | null = null): Record<string, unknown> {
+  return { threadId, collaborationMode: { mode, settings: { model, reasoning_effort: effort, developer_instructions: null } } };
 }

@@ -65,6 +65,7 @@ class CodexConnection {
   /** Turns send the model only after a person changed it; until then the thread keeps its own. */
   modelChosen = false;
   collaboration: CodexCollaboration = DEFAULT_COLLABORATION;
+  collaborationChosen = false;
   approval: CodexApproval = DEFAULT_APPROVAL;
   /** Until someone chooses, turns keep the thread's own approval settings. */
   approvalChosen = false;
@@ -194,6 +195,15 @@ export class CodexDriver implements HarnessDriver {
   }
 
   private bind(connection: CodexConnection): void {
+    const saved = this.host.state();
+    if (isApproval(saved.codexApprovalMode)) {
+      connection.approval = saved.codexApprovalMode;
+      connection.approvalChosen = true;
+    }
+    if (isCollaboration(saved.codexPermissionMode)) {
+      connection.collaboration = saved.codexPermissionMode;
+      connection.collaborationChosen = true;
+    }
     this.reportModes(connection);
     connection.sink = {
       notification: (method, params) => this.onNotification(connection, method, params),
@@ -383,7 +393,12 @@ export class CodexDriver implements HarnessDriver {
     const messages = inputs.filter((i): i is PendingInput => i.kind === "message");
     try {
       if (!this.recovered) await this.recover(controls, messages);
-      await this.runControls(connection, controls);
+      if (!(await this.runControls(connection, controls))) {
+        for (const input of messages.filter((message) => message.state === "queued")) {
+          await this.host.setInputState(input.id, ["queued"], "failed", "mode_failed");
+        }
+        return;
+      }
       await this.deliver(connection, messages);
     } catch (error) {
       this.host.reportError("codex input", error);
@@ -400,19 +415,32 @@ export class CodexDriver implements HarnessDriver {
   /** Switches the thread's modes. Returns a note for the viewers when it could not. */
   private async setMode(connection: CodexConnection, payload: { permissionMode?: unknown; approvalMode?: unknown }): Promise<string | null> {
     const { permissionMode, approvalMode } = payload;
-    if (isCollaboration(permissionMode)) {
-      if (!connection.model) return "Codex has not said which model it runs, so the mode did not change. Send a message first.";
-      try {
-        await connection.rpc.request("thread/settings/update", collaborationUpdate(connection.threadId, permissionMode, connection.model));
-        connection.collaboration = permissionMode;
-      } catch (error) {
-        console.error("[live-session] codex mode change failed", error);
-        return `Codex did not accept the ${permissionMode === "plan" ? "Plan" : "Default"} mode: ${error instanceof Error ? error.message : "unknown error"}`;
-      }
+    const collaboration = isCollaboration(permissionMode) ? permissionMode : null;
+    const approval = isApproval(approvalMode) ? approvalMode : null;
+    if (collaboration && !connection.model) return "Codex has not said which model it runs, so the mode did not change.";
+    if (!collaboration && !approval) return null;
+    try {
+      await connection.rpc.request("thread/settings/update", {
+        ...(collaboration ? collaborationUpdate(connection.threadId, collaboration, connection.model!, connection.effort) : { threadId: connection.threadId }),
+        ...(approval ? approvalOverrides(approval) : {}),
+      });
+    } catch (error) {
+      return `Codex did not accept the mode settings: ${error instanceof Error ? error.message : "unknown error"}`;
     }
-    if (isApproval(approvalMode)) {
-      connection.approval = approvalMode;
+    if (collaboration) {
+      connection.collaboration = collaboration;
+      connection.collaborationChosen = true;
+    }
+    if (approval) {
+      connection.approval = approval;
       connection.approvalChosen = true;
+    }
+    this.host.persist({
+      ...(isApproval(approvalMode) ? { codexApprovalMode: connection.approval } : {}),
+      ...(isCollaboration(permissionMode) ? { codexPermissionMode: connection.collaboration } : {}),
+    });
+    if (connection.busy && (isApproval(approvalMode) || isCollaboration(permissionMode))) {
+      this.note("The new settings apply to the next turn. The running turn and its pending permission requests still use the previous settings.");
     }
     this.reportModes(connection);
     return null;
@@ -445,7 +473,8 @@ export class CodexDriver implements HarnessDriver {
     this.host.reportModes({ permissionMode: connection.collaboration, approvalMode: connection.approval });
   }
 
-  private async runControls(connection: CodexConnection, controls: ControlInput[]): Promise<void> {
+  private async runControls(connection: CodexConnection, controls: ControlInput[]): Promise<boolean> {
+    let modesAccepted = true;
     for (const input of controls.filter((i) => i.state === "queued")) {
       if (!(await this.host.setInputState(input.id, ["queued"], "delivering"))) continue;
       try {
@@ -458,7 +487,7 @@ export class CodexDriver implements HarnessDriver {
           await this.host.setInputState(input.id, ["delivering"], decided ? "consumed" : "failed", decided ? undefined : "request_not_open");
         } else if (input.kind === "set_mode") {
           const note = (await this.setAgent(connection, input.payload)) ?? (await this.setMode(connection, input.payload));
-          if (note) this.note(note);
+          if (note) { this.note(note); modesAccepted = false; }
           await this.host.setInputState(input.id, ["delivering"], note ? "failed" : "consumed", note ? "pane_unavailable" : undefined);
         } else {
           if (connection.busy && connection.turnId) await connection.rpc.request("turn/interrupt", { threadId: connection.threadId, turnId: connection.turnId });
@@ -466,9 +495,11 @@ export class CodexDriver implements HarnessDriver {
         }
       } catch (error) {
         console.error("[live-session] codex control action failed", input.id, error);
+        if (input.kind === "set_mode") modesAccepted = false;
         await this.host.setInputState(input.id, ["delivering"], "failed", "pane_unavailable").catch(() => {});
       }
     }
+    return modesAccepted;
   }
 
   private async deliver(connection: CodexConnection, messages: PendingInput[]): Promise<void> {
@@ -495,6 +526,7 @@ export class CodexDriver implements HarnessDriver {
         ...(connection.effort ? { effort: connection.effort } : {}),
         ...(connection.modelChosen && connection.model ? { model: connection.model } : {}),
         ...(connection.approvalChosen ? approvalOverrides(connection.approval) : {}),
+        ...(connection.collaborationChosen && connection.model ? { collaborationMode: collaborationUpdate(connection.threadId, connection.collaboration, connection.model, connection.effort).collaborationMode } : {}),
       });
       connection.busy = true;
       connection.turnId = started.turn.id;
@@ -575,7 +607,7 @@ const launcher: HarnessLauncher = {
       throw new LaunchError(`Codex could not resume the session: ${error instanceof Error ? error.message : "unknown error"}`);
     }
   },
-  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin } }) {
+  async launch({ sessionId, workspace: { path: folderPath }, model, effort, options: { bin, permissionMode, approvalMode } }) {
     const { server, rpc, route } = await openServer(bin, sessionId);
     try {
       const started = await rpc.request<ThreadStartResult>("thread/start", {
@@ -590,9 +622,24 @@ const launcher: HarnessLauncher = {
       connection.rpc = rpc;
       connection.model = started.model ?? model;
       connection.effort = effort;
+      const collaboration = isCollaboration(permissionMode) ? permissionMode : null;
+      const approval = isApproval(approvalMode) ? approvalMode : null;
+      if (collaboration && !connection.model) throw new LaunchError("Codex did not report a model, so the selected mode could not be applied.");
+      if (collaboration || approval) {
+        await rpc.request("thread/settings/update", {
+          ...(collaboration ? collaborationUpdate(started.thread.id, collaboration, connection.model!, effort) : { threadId: started.thread.id }),
+          ...(approval ? approvalOverrides(approval) : {}),
+        });
+      }
+      if (collaboration) { connection.collaboration = collaboration; connection.collaborationChosen = true; }
+      if (approval) { connection.approval = approval; connection.approvalChosen = true; }
       route.connection = connection;
       live.set(sessionId, connection);
-      return { nativeSessionId: started.thread.id };
+      return {
+        nativeSessionId: started.thread.id,
+        ...(collaboration ? { codexPermissionMode: collaboration } : {}),
+        ...(approval ? { codexApprovalMode: approval } : {}),
+      };
     } catch (error) {
       rpc.close();
       server.stop();

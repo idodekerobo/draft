@@ -27,8 +27,8 @@ export const codexDefinition = {
     ],
     approval: [
       { value: "ask-for-approval", label: "Ask for approval", description: "Works in the folder; asks for outside edits and the internet" },
-      { value: "approve-for-me", label: "Approve for me", description: "Only asks for actions a reviewer finds unsafe" },
-      { value: "full-access", label: "Full access", description: "Runs everything with no prompts or sandbox" },
+      { value: "approve-for-me", label: "Approve for me", description: "A reviewer handles eligible tool permissions. Changes apply to the next turn." },
+      { value: "full-access", label: "Full access", description: "No execution approval prompts or sandbox. Changes apply to the next turn." },
     ],
   },
   testedVersion: { major: 0, minor: 169 },

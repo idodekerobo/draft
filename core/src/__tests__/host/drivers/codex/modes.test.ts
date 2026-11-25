@@ -5,7 +5,7 @@ describe("codex modes", () => {
   it("maps each approval choice to turn settings", () => {
     expect(approvalOverrides("ask-for-approval")).toEqual({ approvalPolicy: "on-request", approvalsReviewer: "user", sandboxPolicy: { type: "workspaceWrite" } });
     expect(approvalOverrides("approve-for-me")).toMatchObject({ approvalPolicy: "on-request", approvalsReviewer: "auto_review" });
-    expect(approvalOverrides("full-access")).toEqual({ approvalPolicy: "never", sandboxPolicy: { type: "dangerFullAccess" } });
+    expect(approvalOverrides("full-access")).toEqual({ approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "dangerFullAccess" } });
   });
 
   it("builds the collaboration update with the thread's model and no instruction change", () => {

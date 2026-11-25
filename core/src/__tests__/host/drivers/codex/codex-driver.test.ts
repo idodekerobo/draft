@@ -1,10 +1,48 @@
-import { beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { LiveTextChunk } from "../../../../live-sessions";
 import { installHostServices } from "../../../../host/services";
 import { fakeHostServices } from "../../fake-host-services";
 import type { HostSessionState } from "../../../../host/cursor-store";
 import type { DriverHost } from "../../../../host/drivers/harness-driver";
-import { CodexDriver } from "../../../../host/drivers/codex/codex-driver";
+import { CodexDriver, codex } from "../../../../host/drivers/codex/codex-driver";
+import * as appServer from "../../../../host/drivers/codex/app-server-process";
+import { RpcClient } from "../../../../host/drivers/codex/rpc-client";
+
+describe("Codex launch modes", () => {
+  const spies: Array<{ mockRestore(): void }> = [];
+  afterEach(() => { for (const spy of spies.splice(0)) spy.mockRestore(); });
+
+  it("waits for initial Plan and full-access settings before returning the new session", async () => {
+    let apply!: () => void;
+    const applied = new Promise<void>((resolve) => { apply = resolve; });
+    const calls: Array<{ method: string; params: unknown }> = [];
+    const rpc = {
+      request: async (method: string, params: unknown) => {
+        calls.push({ method, params });
+        if (method === "thread/start") return { thread: { id: "launch-plan-thread" }, model: "gpt-6.1-sol" };
+        if (method === "thread/settings/update") await applied;
+        return {};
+      },
+      notify: () => {}, close: () => {},
+    };
+    spies.push(spyOn(appServer, "startAppServer").mockResolvedValue({ url: "ws://fake", token: "fake", stop: () => {}, exited: new Promise<number>(() => {}) }));
+    spies.push(spyOn(RpcClient, "connect").mockResolvedValue(rpc as unknown as RpcClient));
+    let finished = false;
+    const launched = codex.launcher.launch({
+      sessionId: "launch-plan-session", workspace: { path: "/tmp" }, nativeSessionId: "", model: null, effort: "high",
+      options: { bin: "codex", permissionMode: "plan", approvalMode: "full-access" },
+    }).then((value) => { finished = true; return value; });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(finished).toBe(false);
+    expect(calls.at(-1)).toEqual({ method: "thread/settings/update", params: {
+      threadId: "launch-plan-thread", approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "dangerFullAccess" },
+      collaborationMode: { mode: "plan", settings: { model: "gpt-6.1-sol", reasoning_effort: "high", developer_instructions: null } },
+    } });
+    apply();
+    expect(await launched).toMatchObject({ codexPermissionMode: "plan", codexApprovalMode: "full-access" });
+    expect(calls.some((call) => call.method === "turn/start")).toBe(false);
+  });
+});
 
 const state: HostSessionState = {
   sessionId: "s1",
@@ -34,6 +72,99 @@ const host: DriverHost = {
 };
 
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+describe("CodexDriver approval changes", () => {
+  function setup(saved: Partial<HostSessionState> = {}) {
+    const localState = { ...state, ...saved };
+    const reported: unknown[] = [];
+    const notes: unknown[] = [];
+    const inputStates: unknown[] = [];
+    const driver = new CodexDriver({
+      ...host,
+      state: () => localState,
+      persist: (patch) => Object.assign(localState, patch),
+      reportModes: (modes) => { reported.push(modes); },
+      postHostEvents: async (events) => { notes.push(...events); },
+      setInputState: async (...args) => { inputStates.push(args); return true; },
+    }) as unknown as {
+      bind(connection: unknown): void;
+      setMode(connection: unknown, payload: unknown): Promise<string | null>;
+      deliver(connection: unknown, messages: unknown[]): Promise<void>;
+      ownedConnection: unknown;
+      serve(inputs: unknown[]): Promise<void>;
+    };
+    const request = mock(async (_method: string, _params: unknown) => ({ turn: { id: "turn1" } }));
+    const connection = {
+      threadId: "t1", model: "gpt-6.1-sol", effort: "high", busy: false,
+      approval: "approve-for-me", approvalChosen: true, collaboration: "default", collaborationChosen: false,
+      rpc: { request },
+    };
+    driver.ownedConnection = connection;
+    return { driver, connection, request, localState, reported, notes, inputStates };
+  }
+
+  it("clears the previous reviewer in Codex before reporting and persisting full access", async () => {
+    const { driver, connection, request, localState, reported } = setup();
+    expect(await driver.setMode(connection, { approvalMode: "full-access" })).toBeNull();
+    expect(request).toHaveBeenCalledWith("thread/settings/update", {
+      threadId: "t1", approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "dangerFullAccess" },
+    });
+    expect(localState.codexApprovalMode).toBe("full-access");
+    expect(reported.at(-1)).toMatchObject({ approvalMode: "full-access" });
+    await driver.deliver(connection, [{ id: "i1", kind: "message", state: "queued", delivered_text: "go" }]);
+    expect(request).toHaveBeenLastCalledWith("turn/start", expect.objectContaining({ approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "dangerFullAccess" } }));
+  });
+
+  it("applies Plan before the first turn and sends Plan with that turn", async () => {
+    const { driver, connection, request } = setup();
+    expect(await driver.setMode(connection, { permissionMode: "plan" })).toBeNull();
+    await driver.deliver(connection, [{ id: "i1", kind: "message", state: "queued", delivered_text: "go" }]);
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["thread/settings/update", "turn/start"]);
+    expect(request).toHaveBeenLastCalledWith("turn/start", expect.objectContaining({
+      collaborationMode: { mode: "plan", settings: { model: "gpt-6.1-sol", reasoning_effort: "high", developer_instructions: null } },
+    }));
+  });
+
+  it("keeps the previous settings when Codex rejects the approval update", async () => {
+    const { driver, connection, request, localState, reported } = setup();
+    request.mockImplementation(async () => { throw new Error("policy restriction"); });
+    expect(await driver.setMode(connection, { approvalMode: "full-access" })).toContain("policy restriction");
+    expect(connection.approval).toBe("approve-for-me");
+    expect(localState.codexApprovalMode).toBeUndefined();
+    expect(reported).toEqual([]);
+  });
+
+  it("does not start the queued first message under settings Codex rejected", async () => {
+    const { driver, request, inputStates } = setup();
+    request.mockImplementation(async () => { throw new Error("policy restriction"); });
+    await driver.serve([
+      { id: "mode1", kind: "set_mode", state: "queued", payload: { approvalMode: "full-access" } },
+      { id: "i1", kind: "message", state: "queued", delivered_text: "go" },
+    ]);
+    expect(request.mock.calls.map(([method]) => method)).toEqual(["thread/settings/update"]);
+    expect(inputStates).toContainEqual(["i1", ["queued"], "failed", "mode_failed"]);
+  });
+
+  it("restores chosen modes after reconnect and includes them in the next turn with the chosen effort", async () => {
+    const { driver, connection, request } = setup({ codexApprovalMode: "full-access", codexPermissionMode: "plan" });
+    driver.bind(connection);
+    expect(connection.approval).toBe("full-access");
+    expect(connection.collaboration).toBe("plan");
+    await driver.deliver(connection, [{ id: "i1", kind: "message", state: "queued", delivered_text: "go" }]);
+    expect(request).toHaveBeenLastCalledWith("turn/start", expect.objectContaining({
+      approvalPolicy: "never", approvalsReviewer: "user",
+      collaborationMode: { mode: "plan", settings: { model: "gpt-6.1-sol", reasoning_effort: "high", developer_instructions: null } },
+    }));
+  });
+
+  it("explains that a running turn and pending permissions retain their previous settings", async () => {
+    const { driver, connection, notes } = setup();
+    connection.busy = true;
+    await driver.setMode(connection, { approvalMode: "full-access" });
+    expect(JSON.stringify(notes)).toContain("next turn");
+    expect(JSON.stringify(notes)).toContain("pending permission requests");
+  });
+});
 
 type Notify = (method: string, params: unknown) => void;
 

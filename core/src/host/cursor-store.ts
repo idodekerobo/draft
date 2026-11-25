@@ -39,6 +39,9 @@ export interface HostSessionState {
   resumeRequestId?: string;
   /** Permission requests posted and not yet closed, so a restart can close them. */
   openRequests?: string[];
+  initialPermissionMode?: string;
+  codexApprovalMode?: string;
+  codexPermissionMode?: string;
 }
 
 /** Dev builds use another folder so they never resume the installed app's sessions, or the reverse. */
