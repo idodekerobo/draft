@@ -8,7 +8,7 @@ import { beginCloudSession } from "../cloud-sessions/start";
 import { SLEEPABLE_STATUSES, sleepCloudSession } from "../cloud-sessions/sleep";
 import { discardSnapshot, snapshotKeyOf, storageSnapshotStore } from "../cloud-sessions/snapshot-seed";
 import { wakeCloudSession } from "../cloud-sessions/wake";
-import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, interactiveAdapterFor, requireInteractiveAdapter, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
+import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, adapterSupportsTarget, getAdapter, harnessModeValues, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
@@ -120,6 +120,9 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
 
   const harness = body.harness ?? DEFAULT_HARNESS_ID;
   if (!isHarnessId(harness)) return errorResponse("unknown_harness", 400);
+  // A desktop from before adapters were recorded sends none; it gets the harness's live-session adapter.
+  const adapter = body.adapterId === undefined ? interactiveAdapterFor(harness) : getAdapter(typeof body.adapterId === "string" ? body.adapterId : null);
+  if (!adapter || adapter.harness !== harness || adapter.kind !== "interactive" || !adapterSupportsTarget(adapter, "host")) return errorResponse("unknown_adapter", 400);
   const model = optionalString(body.model, 100);
   if (!isKnownModel(harness, model)) return errorResponse("unknown_model", 400);
   const reasoningEffort = optionalString(body.reasoningEffort, 20);
@@ -148,7 +151,7 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
       reasoning_effort: reasoningEffort,
       native_session_id: optionalString(body.nativeSessionId, 200),
       execution_target: "host",
-      adapter_id: requireInteractiveAdapter(harness).id,
+      adapter_id: adapter.id,
     })
     .select(SESSION_COLUMNS)
     .single<SessionRow>();

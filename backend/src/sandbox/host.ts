@@ -164,6 +164,7 @@ function freshState(config: HostConfig, row: SessionRow, harness: HarnessId): Ho
     nativeSessionId: row.native_session_id || registrationFor(requireInteractiveAdapter(harness).id).launcher.newNativeSessionId(),
     folderPath: WORKSPACE_PATH,
     harness,
+    adapterId: row.adapter_id ?? requireInteractiveAdapter(harness).id,
     cursors: {},
     rawUploads: {},
     ended: false,

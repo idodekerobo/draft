@@ -22,6 +22,8 @@ export interface HostSessionState {
   folderPath: string;
   /** Which harness runs the session. A file with none, or an unknown one, is refused at load. */
   harness?: string;
+  /** The adapter that runs the harness. A file saved before adapters were recorded has none; it is derived from the harness. */
+  adapterId?: string;
   /** Claude only. */
   tmuxSession?: string;
   cursors: Record<string, FileCursor>;

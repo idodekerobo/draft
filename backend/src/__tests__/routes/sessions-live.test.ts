@@ -420,6 +420,27 @@ describe("live session routes", () => {
     expect(await res.json()).toEqual({ error: "forbidden" });
   });
 
+  it("stores the host target and the adapter of a new local session", async () => {
+    expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "codex", adapterId: "codex-app-server" }, { id: WS }))).status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ harness: "codex", execution_target: "host", adapter_id: "codex-app-server" });
+  });
+
+  it("gives a desktop that sends no adapter the live-session adapter of its harness", async () => {
+    expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "claude" }, { id: WS }))).status).toBe(201);
+    expect(inserted.at(-1)).toMatchObject({ execution_target: "host", adapter_id: "claude-terminal" });
+  });
+
+  it("refuses an adapter that is unknown, runs another harness, is one-shot, or cannot run on a host", async () => {
+    const count = inserted.length;
+    for (const adapterId of ["future", "claude-terminal", "claude-print", 7]) {
+      const res = await routes.CREATE(post("/x", { hostId: "host-1", harness: "codex", adapterId }, { id: WS }));
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe("unknown_adapter");
+    }
+    expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "claude", adapterId: "codex-exec" }, { id: WS }))).status).toBe(400);
+    expect(inserted).toHaveLength(count);
+  });
+
   it("stores the harness and model of a new session and rejects unknown ones", async () => {
     expect((await routes.CREATE(post("/x", { hostId: "host-1", harness: "claude", model: "haiku" }, { id: WS }))).status).toBe(201);
     expect(inserted.at(-1)).toMatchObject({ harness: "claude", model: "haiku" });
