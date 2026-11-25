@@ -6,6 +6,7 @@ import { fetchClientMetadataResource } from "@better-auth/cimd/node";
 import { Pool } from "pg";
 import { loadConfig } from "../config";
 import { supabaseSessionBridge } from "./better-auth-supabase-bridge-plugin";
+import { mcpOptions } from "./mcp-options";
 
 const config = loadConfig();
 
@@ -57,19 +58,7 @@ export const auth = betterAuth({
     jwt(),
     // mcp() is the OAuth provider itself (wraps @better-auth/oauth-provider);
     // it cannot be combined with a separate oauthProvider() call.
-    mcp({
-      resource: config.mcpResourceUrl,
-      // Absolute web-app URLs — these pages are Next.js routes on the
-      // separate app.* origin, not served by this Bun process.
-      loginPage: `${config.appUrl}/oauth/login`,
-      consentPage: `${config.appUrl}/oauth/consent`,
-      scopes: ["read", "write"],
-      // Also caps what CIMD clients may request at /authorize.
-      clientRegistrationDefaultScopes: ["read", "write"],
-      clientRegistrationAllowedScopes: ["read", "write"],
-      // DCR left off for v1 — Claude Code and ChatGPT/Codex both prefer
-      // CIMD automatically (allowDynamicClientRegistration defaults false).
-    }),
+    mcp(mcpOptions(config)),
     // CIMD lets clients self-identify via an HTTPS client_id URL instead
     // of calling /oauth2/register.
     cimd({
