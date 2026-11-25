@@ -1357,13 +1357,35 @@
 .ui-routines__builtins-list p { margin: var(--space-1) 0 0; }
 @media (prefers-reduced-motion: reduce) { .ui-routines__builtins-chevron { transition: none; } }
 
-/* Home: Needs you rows keep their actions in one fixed column so rows line up whatever they offer. */
-.ui-home-row__actions { grid-column: 2; grid-row: 1; align-self: center; display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 168px; }
+/* Home: Needs you is one bordered card. Each row has a tag column, a title with a short detail, and an action column. */
+.ui-home-panel { margin-top: 16px; padding: 4px 24px 8px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); background: var(--color-bg-primary); }
+.ui-home-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 12px; }
+.ui-home-panel__title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 16px; font-weight: 600; }
+.ui-home-panel__title:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.ui-home-panel__count { color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-weight: 400; font-variant-numeric: tabular-nums; }
+.ui-home-panel .ui-muted, .ui-home-panel .ui-error { margin: 0 0 12px; }
+.ui-home-rows { border-top: 1px solid var(--color-border); }
+.ui-home-rows > li:last-child { border-bottom: 0; }
+.ui-home-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) auto; column-gap: 16px; align-items: center; padding: 14px 0; }
+.ui-home-row__tag { align-self: start; padding-top: 2px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
+.ui-home-row__text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ui-home-row__title { color: var(--color-text-primary); font-size: var(--font-size-body); font-weight: 500; overflow-wrap: anywhere; }
+.ui-home-row__detail { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--color-text-secondary); font-size: var(--font-size-secondary); line-height: 1.45; white-space: pre-line; }
+.ui-home-row__actions { display: flex; align-items: center; justify-content: flex-end; gap: 16px; min-width: 150px; }
 .ui-home-row__actions .ui-link { font-size: var(--font-size-secondary); white-space: nowrap; }
+.ui-home-more { display: block; padding: 12px 0 8px; border-top: 1px solid var(--color-border); width: 100%; text-align: left; font-size: var(--font-size-secondary); }
+.ui-home-welcome { margin-top: 32px; }
+.ui-home-welcome__title { margin: 0 0 8px; font-size: var(--font-size-body); font-weight: 600; }
+.ui-home-welcome__text { margin: 0; max-width: 60ch; color: var(--color-text-secondary); line-height: 1.5; }
 .ui-home-row--leaving { opacity: 0; transition: opacity 200ms var(--motion-ease); }
 .ui-home-row[aria-current="true"] { background: var(--color-selected-bg); }
 @media (pointer: coarse) { .ui-home-row__actions .ui-btn, .ui-home-row__actions .ui-link { min-height: 44px; touch-action: manipulation; } }
-@media (max-width: 720px) { .ui-home-row__actions { min-width: 0; flex-wrap: wrap; } }
+@media (max-width: 720px) {
+  .ui-home-panel { padding: 4px 16px 8px; }
+  .ui-home-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+  .ui-home-row__tag { grid-column: 1 / -1; padding-top: 0; }
+  .ui-home-row__actions { min-width: 0; flex-wrap: wrap; }
+}
 @media (prefers-reduced-motion: reduce) { .ui-home-row--leaving { transition: none; } }
 
 /* Home panel height caps: 30% of the window, 45% while the Get started checklist shows. */

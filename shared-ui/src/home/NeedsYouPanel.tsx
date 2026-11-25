@@ -124,23 +124,25 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
   const hidden = data.rows.length - rows.length;
 
   return (
-    <section className={`ui-activity-section ui-home-panel${showChecklist ? " ui-home-panel--first-run" : ""}`} aria-labelledby="needs-you-title">
-      <h2 id="needs-you-title" ref={heading} tabIndex={-1} className="ui-activity-section-title">
-        Needs you{data.count > 0 ? ` (${data.count})` : ""}
+    <section className={`ui-home-panel${showChecklist ? " ui-home-panel--first-run" : ""}`} aria-labelledby="needs-you-title">
+      <header className="ui-home-panel__header">
+        <h2 id="needs-you-title" ref={heading} tabIndex={-1} className="ui-home-panel__title">
+          Needs you{data.count > 0 && <span className="ui-home-panel__count">{data.count}</span>}
+        </h2>
         {data.count > 0 && (
           <button type="button" className="ui-link" aria-expanded={!collapsed} onClick={() => { setCollapsed(!collapsed); writeCollapsed(!collapsed); }}>{collapsed ? "Show" : "Hide"}</button>
         )}
-      </h2>
+      </header>
       <p className="ui-visually-hidden" role="status" aria-live="polite">{data.count === 0 ? "Nothing needs you." : `${data.count} need${data.count === 1 ? "s" : ""} you.`}</p>
       {data.partial && <p className="ui-error" role="alert">Some items didn't load. <button className="ui-link" type="button" onClick={() => void refresh()}>Retry</button></p>}
       {data.count === 0 && !data.partial && <p className="ui-muted">Nothing needs you right now.</p>}
       {!collapsed && data.count > 0 && (
         <>
-          <ul className="ui-rows">
+          <ul className="ui-rows ui-home-rows">
             {rows.map((row) => <NeedsYouRow key={`${row.kind}:${row.id}`} row={row} highlighted={rowId(row) === highlightId} leaving={leaving === rowId(row)} handlers={handlers(rowId(row))} />)}
           </ul>
-          {hidden > 0 && <button type="button" className="ui-link" onClick={() => setExpanded(true)}>{hidden} more</button>}
-          {expanded && data.rows.length > VISIBLE_ROWS && <button type="button" className="ui-link" onClick={() => setExpanded(false)}>Show fewer</button>}
+          {hidden > 0 && <button type="button" className="ui-link ui-home-more" onClick={() => setExpanded(true)}>{hidden} more</button>}
+          {expanded && data.rows.length > VISIBLE_ROWS && <button type="button" className="ui-link ui-home-more" onClick={() => setExpanded(false)}>Show fewer</button>}
         </>
       )}
       {showChecklist && data.getStarted && <GetStartedChecklist facts={data.getStarted} onOpenConnections={navigation.onOpenConnections} onOpenRoutines={navigation.onOpenRoutines} />}
@@ -152,7 +154,7 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
 export function NeedsYouPanel(props: NeedsYouPanelProps) {
   return (
     <DataBoundary
-      fallback={<section className="ui-activity-section" aria-busy="true"><h2 className="ui-activity-section-title">Needs you</h2><p className="ui-muted" role="status">Loading…</p></section>}
+      fallback={<section className="ui-home-panel" aria-busy="true"><header className="ui-home-panel__header"><h2 className="ui-home-panel__title">Needs you</h2></header><p className="ui-muted" role="status">Loading…</p></section>}
       errorMessage="Couldn't load what needs you."
     >
       <Rows {...props} />
