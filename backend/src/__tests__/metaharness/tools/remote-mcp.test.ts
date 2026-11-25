@@ -1,3 +1,4 @@
+import { SANDBOX_RUN_DIRECTORY, sandboxComputer, sandboxExecution } from "draft-core/run-spec";
 import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { ANY_RUN, runCaller } from "draft-core/tools";
@@ -82,11 +83,12 @@ function runWith(connectionId: string, toolsAllowed: "all" | string[] = "all"): 
   return {
     id: parseAgentRunId("22222222-2222-4222-8222-222222222222"),
     kind: "routine",
-    network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
     onBehalfOf: null,
-    runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [{ connectionId: parseConnectionId(connectionId), tools: toolsAllowed }], skills: [], instructions: [] } },
+    execution: sandboxExecution("claude-print"),
+    toolset: { nativeTools: [], mcpServers: [{ connectionId: parseConnectionId(connectionId), tools: toolsAllowed }], skills: [], instructions: [] },
+    computer: sandboxComputer("restricted", SANDBOX_RUN_DIRECTORY),
     harness: "claude",
     model: null,
     instructions: "",
@@ -194,13 +196,11 @@ describe("remoteToolsForRun", () => {
     expect(offered.map((tool) => tool.name)).toEqual(["mcp.linear.search_issues"]);
   });
 
-  it("offers nothing for a run with no toolset connections, a local run, or a revoked connection", async () => {
+  it("offers nothing for a run with no toolset connections, or a revoked connection", async () => {
     const db = newDb();
     const { connectionId } = await connect(db, fakeRemote());
     const none = runWith(connectionId);
-    if (none.runtime.type !== "cloud") throw new Error("unreachable");
-    expect(await remoteToolsForRun(fakeClient(db), { ...none, runtime: { ...none.runtime, toolset: { ...none.runtime.toolset, mcpServers: [] } } })).toEqual([]);
-    expect(await remoteToolsForRun(fakeClient(db), { ...none, runtime: { type: "local", hostId: "mac" as never } })).toEqual([]);
+    expect(await remoteToolsForRun(fakeClient(db), { ...none, toolset: { ...none.toolset, mcpServers: [] } })).toEqual([]);
     db.tables.connections![0]!.status = "revoked";
     expect(await remoteToolsForRun(fakeClient(db), runWith(connectionId))).toEqual([]);
   });
@@ -210,8 +210,7 @@ describe("remoteToolsForRun", () => {
     const first = await connect(db, fakeRemote(), { displayName: "Linear", url: "https://a.example.com/mcp" });
     const second = await connect(db, fakeRemote({ tools: [{ ...tools[0]!, name: "x".repeat(31) }, tools[0]!] }), { displayName: "Linear", url: "https://b.example.com/mcp" });
     const run = runWith(first.connectionId);
-    if (run.runtime.type !== "cloud") throw new Error("unreachable");
-    const both = { ...run, runtime: { ...run.runtime, toolset: { ...run.runtime.toolset, mcpServers: [...run.runtime.toolset.mcpServers, { connectionId: parseConnectionId(second.connectionId), tools: "all" as const }] } } };
+    const both = { ...run, toolset: { ...run.toolset, mcpServers: [...run.toolset.mcpServers, { connectionId: parseConnectionId(second.connectionId), tools: "all" as const }] } };
     const names = (await remoteToolsForRun(fakeClient(db), both)).map((tool) => tool.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.some((name) => name.includes("x".repeat(31)))).toBe(false);

@@ -44,7 +44,7 @@ describe("a routine's agent run follows its session", () => {
 
   it("emits a routine completion only for the winning terminal transition", async () => {
     const { client, run } = setup();
-    Object.assign(run(), { kind: "routine", on_behalf_of_user_id: "u1", scheduled_task_id: "t1", harness: "claude", runtime: { type: "cloud" }, trigger: { type: "event" } });
+    Object.assign(run(), { kind: "routine", on_behalf_of_user_id: "u1", scheduled_task_id: "t1", harness: "claude", execution: { target: { type: "sandbox" } }, trigger: { type: "event" } });
     const capture = spyOn(analytics, "captureProductEvent").mockResolvedValue(undefined);
     try {
       await finishAgentRun(client, "r1", { status: "succeeded" });

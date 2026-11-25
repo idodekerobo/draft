@@ -163,8 +163,10 @@ export interface LiveSession {
   owner_name: string | null;
   /** A routine run is read-only: nobody can message it. */
   session_type?: "interactive" | "routine";
-  /** Where it runs: the owner's computer (local) or a Draft sandbox (cloud). */
-  runtime?: "local" | "cloud";
+  /** Where it runs: an already-registered host such as the owner's computer, a Draft sandbox, or Draft's backend. */
+  execution_target?: "host" | "sandbox" | "backend";
+  /** The adapter that runs the harness, such as `claude-terminal`. */
+  adapter_id?: string;
   /** When the session's files were last backed up. Cloud sessions only; null until the first backup. */
   raw_uploaded_at?: string | null;
   title: string | null;

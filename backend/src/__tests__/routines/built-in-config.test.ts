@@ -67,7 +67,7 @@ describe("built-in routine settings", () => {
     const common = { workspaceId: WS, scheduledTaskId: TASK, occurrenceAt: "2026-11-23T03:00:00.000Z", contextVersionId: VERSION, resultSchema: {}, settings };
     for (const spec of [buildSynthesisRunSpec({ ...common, runId: RUN, triggerType: "schedule" }), buildSummarizationRunSpec({ ...common, id: RUN })]) {
       expect(spec).toMatchObject({ harness: "codex", model: settings.model, instructions: settings.prompt, reasoningEffort: "high", onBehalfOf: null });
-      if (spec.runtime.type === "cloud") expect(spec.runtime.toolset.nativeTools.every((tool) => tool.harness === "codex")).toBe(true);
+      expect(spec.toolset.nativeTools.every((tool) => tool.harness === "codex")).toBe(true);
     }
     expect(buildSummarizationPrompt("transcript", settings.prompt)).toContain(settings.prompt);
     expect(buildSummarizationPrompt("transcript", settings.prompt)).toContain('"keyDecisions"');

@@ -19,7 +19,7 @@ describe("sessionBanner", () => {
   });
 
   it("shows no banner for a cloud session, since Draft restarts it", () => {
-    expect(sessionBanner({ ...base, status: "host_offline", runtime: "cloud" })).toBeNull();
+    expect(sessionBanner({ ...base, status: "host_offline", execution_target: "sandbox" })).toBeNull();
   });
 
   it("warns about an untested Claude version, but not for an ended session", () => {

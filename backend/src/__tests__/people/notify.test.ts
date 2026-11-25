@@ -1,3 +1,4 @@
+import { SANDBOX_RUN_DIRECTORY, sandboxComputer, sandboxExecution } from "draft-core/run-spec";
 import { describe, expect, it, mock } from "bun:test";
 import type { ChannelSendResult, NotifyChannelId, NotifyMessage } from "draft-core/notify";
 import { parseAgentRunId, parseContextVersionId, parsePersonId, parseUserId, parseWorkspaceId, parseScheduledTaskId, parseIsoTimestamp, type AgentRunSpec } from "draft-core/run-spec";
@@ -95,11 +96,10 @@ function setup(options: { db?: ReturnType<typeof newDb>; channel?: NotifyChannel
 const runSpec = (permissions: ReadonlyArray<AnyDraftToolPermission>, onBehalfOf: string | null = OWNER): AgentRunSpec => ({
   id: parseAgentRunId(RUN),
   kind: "routine",
-    network: "restricted",
   workspaceId: parseWorkspaceId(WS),
   trigger: { type: "cron", scheduledTaskId: parseScheduledTaskId(TASK), occurrenceAt: parseIsoTimestamp("2026-11-11T09:00:00.000Z") },
   onBehalfOf: onBehalfOf ? parseUserId(onBehalfOf) : null,
-  runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+  execution: sandboxExecution("claude-print"), toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, computer: sandboxComputer("restricted", SANDBOX_RUN_DIRECTORY),
   harness: "claude",
   model: null,
   instructions: "",

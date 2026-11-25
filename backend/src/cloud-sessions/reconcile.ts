@@ -105,7 +105,7 @@ async function reconcileStuckHosts(deps: ReconcileCloudSessionsDeps): Promise<{ 
   const { data, error } = await deps.client
     .from("sessions")
     .select("id, workspace_id, status, last_seen, sandbox_volume")
-    .eq("runtime", "cloud")
+    .eq("execution_target", "sandbox")
     .eq("session_type", "interactive")
     .is("deleted_at", null)
     .in("status", STUCK_STATUSES)
@@ -206,7 +206,7 @@ async function reconcileLeakedVolumes(deps: ReconcileCloudSessionsDeps): Promise
   const { data, error } = await deps.client
     .from("sessions")
     .select("id, workspace_id, sandbox_volume")
-    .eq("runtime", "cloud")
+    .eq("execution_target", "sandbox")
     .eq("status", "ended")
     .not("sandbox_volume", "is", null)
     .limit(RECONCILE_BATCH);

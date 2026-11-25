@@ -71,9 +71,8 @@ describe("a routine run's toolset", () => {
       id: "22222222-2222-4222-8222-222222222222", workspaceId: WS, scheduledTaskId: TASK, ownerUserId: "66666666-6666-4666-8666-666666666666", occurrenceAt: "2026-11-09T09:00:00.000Z",
       routine, contextVersionId: VERSION, mcpServers: [{ connectionId: OWN, tools: "all" }],
     });
-    if (spec.runtime.type !== "cloud") throw new Error("unreachable");
-    expect(spec.runtime.toolset.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
-    expect(spec.runtime.toolset.mcpServers.map((server) => [server.connectionId as string, server.tools])).toEqual([[OWN, "all"]]);
+    expect(spec.toolset.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
+    expect(spec.toolset.mcpServers.map((server) => [server.connectionId as string, server.tools])).toEqual([[OWN, "all"]]);
   });
 });
 
@@ -129,7 +128,7 @@ describe("dispatch resolves a routine's connections", () => {
     await dispatchAgentRoutine({ task, occurrenceAt: "2026-11-09T09:00:00.000Z", kind: "timer", firstEventId: "2026-11-09T09:00:00.000Z", concurrencyKey: null, config: {} as never, client: fakeClient(db), launch });
 
     const run = db.tables.agent_runs![0]!;
-    const toolset = (run.runtime as { toolset: { nativeTools: Array<{ tool: string }>; mcpServers: Array<{ connectionId: string }> } }).toolset;
+    const toolset = run.toolset as { nativeTools: Array<{ tool: string }>; mcpServers: Array<{ connectionId: string }> };
     expect(toolset.mcpServers.map((server) => server.connectionId)).toEqual([OWN, SHARED]);
     expect(toolset.nativeTools.map((tool) => tool.tool)).toEqual(["Read", "Glob", "Grep", "Bash", "WebSearch"]);
     expect(run.status).toBe("running");
@@ -145,7 +144,7 @@ describe("dispatch resolves a routine's connections", () => {
     const plain = { ...task, config_json: { ...base } } as unknown as ScheduledTaskRow;
     await dispatchAgentRoutine({ task: plain, occurrenceAt: "2026-11-09T09:00:00.000Z", kind: "timer", firstEventId: "2026-11-09T09:00:00.000Z", concurrencyKey: null, config: {} as never, client: fakeClient(db), launch: mock<LaunchRoutineRun>(async () => undefined) });
     expect(db.tables.errors).toHaveLength(0);
-    expect((db.tables.agent_runs![0]!.runtime as { toolset: { mcpServers: unknown[] } }).toolset.mcpServers).toEqual([]);
+    expect((db.tables.agent_runs![0]!.toolset as { mcpServers: unknown[] }).mcpServers).toEqual([]);
   });
 });
 
@@ -172,7 +171,7 @@ describe("routine built-in tools", () => {
         occurrenceAt: "2026-11-19T00:00:00Z", ownerUserId: "44444444-4444-4444-8444-444444444444", contextVersionId: "55555555-5555-4555-8555-555555555555",
         routine: { ...base, harness: "claude", builtInTools } as never,
       });
-      return spec.runtime.type === "cloud" ? spec.runtime.toolset.nativeTools.map((entry) => entry.tool).sort() : [];
+      return spec.toolset.nativeTools.map((entry) => entry.tool).sort();
     };
     expect(tools(["Edit"])).toEqual(["Edit", "Glob", "Grep", "Read"]);
     expect(tools([])).toEqual(["Glob", "Grep", "Read"]);

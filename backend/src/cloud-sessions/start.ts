@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { requireInteractiveAdapter } from "draft-core/harnesses";
 import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { cloudHostId } from "../auth/with-host-auth";
 import { CredentialError } from "../credentials/crypto";
@@ -100,13 +101,14 @@ export async function beginCloudSession(input: CloudStartInput, deps: StartCloud
       model: input.model,
       reasoning_effort: input.reasoningEffort,
       host_id: cloudHostId(sessionId),
-      // A sandbox has no machine name to show; the app names the place from runtime.
+      // A sandbox has no machine name to show; the app names the place from the execution target.
       host_name: null,
       git_remote: seed.kind === "repo" ? seed.gitRemote : null,
       folder_name: folderNameOf(seed),
       title: routineSource ? `Continued: ${routineSource.routineTitle}` : null,
       seed: storedSeedOf(seed),
-      runtime: "cloud",
+      execution_target: "sandbox",
+      adapter_id: requireInteractiveAdapter(input.harness).id,
       status: "starting",
     })
     .select("id")
@@ -161,6 +163,7 @@ export async function beginCloudSession(input: CloudStartInput, deps: StartCloud
       reasoningEffort: input.reasoningEffort,
       network: input.network,
       repo: seed.kind === "repo" ? seed.repo : null,
+      harness: input.harness,
     });
     await createAgentRun(client, { spec, idempotencyKey: `cloud-session:${sessionId}`, status: "preparing", sessionId });
     runCreated = true;

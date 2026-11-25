@@ -1,5 +1,5 @@
-import { cloudToolsetFor } from "draft-core/harnesses";
-import { parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { adapterSupportsTarget, cloudToolsetFor, interactiveAdapterFor, type AdapterId, type HarnessId } from "draft-core/harnesses";
+import { SANDBOX_SESSION_DIRECTORY, parseAgentRunId, parseContextVersionId, parseUserId, parseWorkspaceId, sandboxComputer, sandboxExecution, type AgentRunSpec } from "draft-core/run-spec";
 import type { AnyDraftToolPermission } from "draft-core/tools";
 
 /**
@@ -28,20 +28,25 @@ export interface CloudRunSpecInput {
   contextVersionId: string;
   /** "owner/name" of the seed repository, or null when there is none. */
   repo: string | null;
+  /** The person's choice. It must have a live-session adapter that runs in a sandbox. */
+  harness: HarnessId;
 }
 
 /** The spec of one run of a cloud session. The session wakes by starting a new run, so each run has its own spec. */
 export function buildCloudRunSpec(input: CloudRunSpecInput): AgentRunSpec {
+  const adapter = interactiveAdapterFor(input.harness);
+  if (!adapter || !adapterSupportsTarget(adapter, "sandbox")) throw new Error(`No cloud session adapter for harness: ${input.harness}`);
   return {
     id: parseAgentRunId(input.runId),
     kind: "interactive",
-    network: input.network,
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: { type: "manual", requestedBy: parseUserId(input.ownerUserId) },
     // The session is the owner's own agent, as a local session is: it calls Draft as the owner.
     onBehalfOf: parseUserId(input.ownerUserId),
-    runtime: { type: "cloud", toolset: cloudToolsetFor("claude") },
-    harness: "claude",
+    execution: sandboxExecution(adapter.id as AdapterId),
+    toolset: cloudToolsetFor(input.harness),
+    computer: sandboxComputer(input.network, SANDBOX_SESSION_DIRECTORY),
+    harness: input.harness,
     model: input.model,
     reasoningEffort: input.reasoningEffort,
     instructions: "",

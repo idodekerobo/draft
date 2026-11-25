@@ -8,7 +8,7 @@ import { beginCloudSession } from "../cloud-sessions/start";
 import { SLEEPABLE_STATUSES, sleepCloudSession } from "../cloud-sessions/sleep";
 import { discardSnapshot, snapshotKeyOf, storageSnapshotStore } from "../cloud-sessions/snapshot-seed";
 import { wakeCloudSession } from "../cloud-sessions/wake";
-import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, interactiveAdapterFor, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
+import { CLAUDE_LAUNCH_ONLY_MODES, DEFAULT_HARNESS_ID, harnessModeValues, interactiveAdapterFor, requireInteractiveAdapter, isEffortFor, isHarnessId, isKnownModel } from "draft-core/harnesses";
 import { EVENTS_PAGE_SIZE, splitAuthor } from "draft-core/live-sessions";
 import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { isIncomingLine, type IncomingLine } from "draft-core/harnesses/claude/live-lines";
@@ -147,6 +147,8 @@ export const CREATE = withAuth<WorkspaceRequest>(async (req, caller) => {
       model,
       reasoning_effort: reasoningEffort,
       native_session_id: optionalString(body.nativeSessionId, 200),
+      execution_target: "host",
+      adapter_id: requireInteractiveAdapter(harness).id,
     })
     .select(SESSION_COLUMNS)
     .single<SessionRow>();
@@ -513,7 +515,7 @@ export const REOPEN = withAuth<ReopenRequest>(async (req, caller) => {
   if (!owned.ok) return owned.response;
 
   // A cloud session's volume is removed once it ends, so it cannot be reopened.
-  if (owned.session.runtime === "cloud") return errorResponse("cloud_session_ended", 409);
+  if (owned.session.execution_target === "sandbox") return errorResponse("cloud_session_ended", 409);
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;

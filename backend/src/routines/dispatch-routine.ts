@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { requireRoutineAdapter } from "draft-core/harnesses";
 import { parseAgentEventId, parseUserId } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
@@ -104,7 +105,8 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
       workspace_id: task.workspace_id,
       owner_user_id: task.created_by_user_id,
       session_type: "routine",
-      runtime: "cloud",
+      execution_target: "sandbox",
+      adapter_id: requireRoutineAdapter(routine.harness),
       harness: routine.harness,
       model: routine.model,
       reasoning_effort: routine.reasoningEffort ?? null,

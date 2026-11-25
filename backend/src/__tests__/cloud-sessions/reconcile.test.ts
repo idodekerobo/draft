@@ -17,7 +17,7 @@ function session(id: string, overrides: Row = {}): Row {
   return {
     id,
     workspace_id: WS,
-    runtime: "cloud",
+    execution_target: "sandbox",
     session_type: "interactive",
     status: "host_offline",
     last_seen: LONG_AGO,
@@ -158,7 +158,7 @@ describe("reconcileCloudSessions: stuck hosts", () => {
       sessions: [
         session("live", { status: "live" }),
         session("routine", { status: "starting", session_type: "routine" }),
-        session("local", { runtime: "local", status: "host_offline" }),
+        session("local", { execution_target: "host", status: "host_offline" }),
       ],
       agent_runs: [run("live"), run("routine"), run("local")],
       session_inputs: [],

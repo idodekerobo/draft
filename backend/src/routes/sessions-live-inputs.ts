@@ -56,16 +56,16 @@ function publicInput(row: SessionInputRow): PublicInput {
 async function wakeIfSleeping(workspaceId: string, sessionId: string): Promise<boolean> {
   const { data, error } = await serviceClient
     .from("sessions")
-    .select("runtime, status")
+    .select("execution_target, status")
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
     .is("deleted_at", null)
-    .maybeSingle<{ runtime: string; status: string }>();
+    .maybeSingle<{ execution_target: string; status: string }>();
   if (error) {
     await recordError({ workspaceId, sessionId, operation: "session", code: "wake_lookup_failed", message: "Reading a session before a wake failed", error });
     return false;
   }
-  if (data?.runtime !== "cloud" || data.status !== "sleeping") return false;
+  if (data?.execution_target !== "sandbox" || data.status !== "sleeping") return false;
   try {
     await wakeCloudSession({ workspaceId, sessionId }, productionStartDeps());
   } catch (error) {

@@ -37,6 +37,13 @@ export function requireInteractiveAdapter(harness: string | null | undefined): A
   return adapter;
 }
 
+/** The one-shot adapter of a harness, for a routine or a batch run. Throws for a harness this build does not know. */
+export function requireRoutineAdapter(harness: string | null | undefined): AdapterId {
+  const adapter = routineAdapterFor(harness);
+  if (!adapter) throw new Error(`No one-shot adapter runs harness: ${harness ?? "(none)"}`);
+  return adapter.id as AdapterId;
+}
+
 export const adapterSupportsTarget = (adapter: AdapterDefinition, target: ExecutionTargetType): boolean => adapter.targets.includes(target);
 
 /** The built-in tools a cloud run of the harness may be given: what its sandbox adapters allow. */

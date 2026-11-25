@@ -14,11 +14,10 @@ function setup(files: Record<string, string>, permissions: AnyDraftToolPermissio
   const run: AgentRunSpec = {
     id: parseAgentRunId("22222222-2222-4222-8222-222222222222"),
     kind: "routine",
-    network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
     onBehalfOf: null,
-    runtime: { type: "local", hostId: parseHostId("mac") },
+    execution: { target: { type: "host", hostId: parseHostId("mac") }, adapterId: "claude-terminal" }, toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, computer: { type: "host_computer", computerId: "mac", workingDirectory: "/work" },
     harness: "claude",
     model: null,
     instructions: "",

@@ -11,11 +11,10 @@ function runWith(permissions: AnyDraftToolPermission[], kind: AgentRunKind = "ro
   const run: AgentRunSpec = {
     id: parseAgentRunId("11111111-1111-4111-8111-111111111111"),
     kind,
-    network: "restricted",
     workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
     trigger: { type: "manual", requestedBy: parseUserId("33333333-3333-4333-8333-333333333333") },
     onBehalfOf: null,
-    runtime: { type: "local", hostId: parseHostId("mac") },
+    execution: { target: { type: "host", hostId: parseHostId("mac") }, adapterId: "claude-terminal" }, toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] }, computer: { type: "host_computer", computerId: "mac", workingDirectory: "/work" },
     harness: "claude",
     model: null,
     instructions: "",

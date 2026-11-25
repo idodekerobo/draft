@@ -47,13 +47,15 @@ describe("the synthesis run spec", () => {
     expect(spec.permissions as unknown).toEqual([{ tool: "context.read" }, { tool: "context.write" }]);
     expect(spec.output).toEqual({ type: "structured", schema: { type: "object" } });
     expect(spec.inputs.contextVersionId as string).toBe(VERSION);
+    expect(spec.execution).toEqual({ target: { type: "sandbox" }, adapterId: "claude-print" });
+    expect(spec.computer).toEqual({ type: "sandbox", profileId: "default", workingDirectory: "/run", network: "restricted" });
   });
 
   it("is saved onto the run row a trigger already made, and reads back the same", async () => {
     const db = fakeDb({
       agent_runs: [{
         id: RUN, workspace_id: WS, kind: "synthesis", trigger: { type: "system", reason: "manual" }, on_behalf_of_user_id: null,
-        runtime: { type: "cloud", toolset: { nativeTools: [], mcpServers: [], skills: [], instructions: [] } },
+        execution: null, toolset: null, computer: null, continuation: null,
         harness: "claude", model: null, instructions: "", base_context_version_id: VERSION, permissions: [], output: { type: "none" }, status: "preparing",
       }],
     });

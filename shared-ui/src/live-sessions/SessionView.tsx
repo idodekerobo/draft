@@ -38,6 +38,7 @@ import { useSessionStream, type SessionStreamState } from "./useSessionStream";
 import { useLiveText } from "./useLiveText";
 import { messageDomId, messageUrl, sessionUrl } from "./share-links";
 import { SessionMenu, useSessionMenu, type SessionMenuItem } from "./SessionMenu";
+import { isDraftCloudSession, isSandboxSession } from "./place";
 import { SessionNotFoundError, type LiveSession, type LiveSessionLink, type LiveSessionsApi } from "./types";
 import { cloudStartFailure } from "./cloud-start";
 import { CloudStartNoticeView } from "./CloudStartNotice";
@@ -585,7 +586,7 @@ function SessionContents({
   const menu = useSessionMenu({ api, items: menuItems, onDeleted });
 
   // Only a computer can run a session again. A cloud session that failed to start has no run to bring back.
-  const canResume = Boolean(api.resume) && session.mine === true && session.status === "ended" && session.runtime !== "cloud" && session.end_reason !== "cleared" && session.end_reason !== "start_failed" && session.end_reason !== "expired";
+  const canResume = Boolean(api.resume) && session.mine === true && session.status === "ended" && !isDraftCloudSession(session) && session.end_reason !== "cleared" && session.end_reason !== "start_failed" && session.end_reason !== "expired";
   const resume = useCallback(async () => {
     if (!api.resume || resuming) return;
     setResumeState({ sessionId, pending: true, error: null });
@@ -630,7 +631,7 @@ function SessionContents({
               {watchers && <> · <span className="ui-session__presence" aria-live="polite">{watchers}</span></>}
             </span>
             <span className="ui-muted ui-session__meta ui-session__agent">{agentLabel({ harness: session.harness ?? "claude", model: session.model ?? null, effort: session.reasoning_effort ?? null })}</span>
-            {session.runtime === "cloud" && <CloudNote session={session} />}
+            {isSandboxSession(session) && <CloudNote session={session} />}
           </div>
         </Crumbs>
         <div className="ui-session__actions">
@@ -703,7 +704,7 @@ function SessionContents({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended" || resuming || Boolean(resumeError)} resuming={resuming} resumeRetryable={session.last_failure?.retryable} resumeFailure={resumeError ?? (session.status === "ended" ? session.last_failure?.message : null)} preserveDraft={resuming || Boolean(resumeError) || Boolean(session.last_failure)} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume || resuming || (resumeError && session.mine && session.runtime !== "cloud") ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended" || resuming || Boolean(resumeError)} resuming={resuming} resumeRetryable={session.last_failure?.retryable} resumeFailure={resumeError ?? (session.status === "ended" ? session.last_failure?.message : null)} preserveDraft={resuming || Boolean(resumeError) || Boolean(session.last_failure)} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume || resuming || (resumeError && session.mine && !isDraftCloudSession(session)) ? resume : undefined} />
             </>
           )}
         </div>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { cloudStartNotice, elapsedLabel, hostWaitOf } from "./cloud-start-notice";
 
-const base = { status: "starting" as const, started_at: "2026-11-19T20:00:00Z", folder_name: "draft", runtime: "cloud" as const, last_seq: 0, end_reason: null };
+const base = { status: "starting" as const, started_at: "2026-11-19T20:00:00Z", folder_name: "draft", execution_target: "sandbox" as const, last_seq: 0, end_reason: null };
 
 describe("cloudStartNotice", () => {
   it("says the machine is starting, names the repository, and that the message waits", () => {
@@ -17,7 +17,7 @@ describe("cloudStartNotice", () => {
     expect(cloudStartNotice({ ...base, status: "ended", end_reason: "seed_failed" })).toMatchObject({ tone: "error", title: "This session could not start" });
     expect(cloudStartNotice({ ...base, status: "ended", end_reason: "user_exit" })).toBeNull();
     expect(cloudStartNotice({ ...base, status: "ended", end_reason: "host_failed", last_seq: 30 })).toBeNull();
-    expect(cloudStartNotice({ ...base, runtime: "local" })).toBeNull();
+    expect(cloudStartNotice({ ...base, execution_target: "host" })).toBeNull();
     expect(cloudStartNotice({ ...base, status: "live" })).toBeNull();
   });
 });
@@ -27,7 +27,7 @@ describe("hostWaitOf", () => {
     expect(hostWaitOf(base)).toBe("cloud_starting");
     expect(hostWaitOf({ ...base, last_seq: 3 })).toBe("cloud_waking");
     expect(hostWaitOf({ ...base, status: "host_offline" })).toBe("cloud");
-    expect(hostWaitOf({ ...base, status: "host_offline", runtime: "local" })).toBe("local");
+    expect(hostWaitOf({ ...base, status: "host_offline", execution_target: "host" })).toBe("local");
     expect(hostWaitOf({ ...base, status: "live" })).toBe(false);
   });
 });

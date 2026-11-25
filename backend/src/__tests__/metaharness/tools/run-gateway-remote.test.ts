@@ -1,3 +1,4 @@
+import { SANDBOX_RUN_DIRECTORY, sandboxComputer, sandboxExecution } from "draft-core/run-spec";
 import { describe, expect, it } from "bun:test";
 import { parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { createAgentRun } from "../../../metaharness/runs/agent-run-store";
@@ -38,14 +39,12 @@ async function setup(options: { named?: boolean } = {}) {
   const spec: AgentRunSpec = {
     id: parseAgentRunId(RUN_ID),
     kind: "routine",
-    network: "restricted",
     workspaceId: parseWorkspaceId(WS),
     trigger: { type: "manual", requestedBy: parseUserId(OWNER) },
     onBehalfOf: null,
-    runtime: {
-      type: "cloud",
-      toolset: { nativeTools: [], mcpServers: options.named === false ? [] : [{ connectionId: parseConnectionId(CONNECTION_ID), tools: "all" }], skills: [], instructions: [] },
-    },
+    execution: sandboxExecution("claude-print"),
+    toolset: { nativeTools: [], mcpServers: options.named === false ? [] : [{ connectionId: parseConnectionId(CONNECTION_ID), tools: "all" }], skills: [], instructions: [] },
+    computer: sandboxComputer("restricted", SANDBOX_RUN_DIRECTORY),
     harness: "claude",
     model: null,
     instructions: "",

@@ -118,7 +118,8 @@ describe("startCloudSession", () => {
       id: SESSION,
       workspace_id: WS,
       owner_user_id: OWNER,
-      runtime: "cloud",
+      execution_target: "sandbox",
+      adapter_id: "claude-terminal",
       host_id: `cloud:${SESSION}`,
       host_name: null,
       status: "starting",
@@ -142,8 +143,8 @@ describe("startCloudSession", () => {
       harness: "claude",
       model: "haiku",
     });
-    expect((run().runtime as { type: string; network: string }).type).toBe("cloud");
-    expect((run().runtime as { network: string }).network).toBe("restricted");
+    expect(run().execution).toEqual({ target: { type: "sandbox" }, adapterId: "claude-terminal" });
+    expect(run().computer).toEqual({ type: "sandbox", profileId: "default", workingDirectory: "/data/workspace", network: "restricted" });
     expect(run().started_at).toBeString();
   });
 
@@ -158,7 +159,7 @@ describe("startCloudSession", () => {
     expect(names).not.toContain("people.notify");
     expect(permissions.find((p) => p.tool === "github.credential")).toEqual({ tool: "github.credential", limits: { repos: ["acme/app"], access: "write" } });
 
-    const toolset = (run().runtime as { toolset: { nativeTools: Array<{ tool: string }> } }).toolset;
+    const toolset = run().toolset as { nativeTools: Array<{ tool: string }> };
     expect(toolset.nativeTools.map((tool) => tool.tool)).toEqual(expect.arrayContaining(["Read", "Glob"]));
   });
 
@@ -218,7 +219,7 @@ describe("startCloudSession", () => {
     const fly = fakeProvider();
     await startCloudSession({ ...input, network: "open" }, deps({ provider: fly.provider }));
     expect(fly.created[0]!.env.DRAFT_NETWORK).toBe("open");
-    expect((run().runtime as { network: string }).network).toBe("open");
+    expect((run().computer as { network: string }).network).toBe("open");
   });
 
   it("never logs the Claude login or the run token", async () => {
@@ -389,7 +390,7 @@ describe("startCloudSession from a folder snapshot", () => {
       git_remote: null,
       folder_name: "marigold",
       seed: { kind: "snapshot", storageKey: SNAPSHOT_KEY },
-      runtime: "cloud",
+      execution_target: "sandbox",
       status: "starting",
       host_id: `cloud:${SESSION}`,
     });

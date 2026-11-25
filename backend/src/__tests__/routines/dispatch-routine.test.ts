@@ -70,7 +70,8 @@ describe("dispatchAgentRoutine", () => {
     expect(db.tables.sessions).toHaveLength(1);
     expect(db.tables.sessions![0]).toMatchObject({
       session_type: "routine",
-      runtime: "cloud",
+      execution_target: "sandbox",
+      adapter_id: "claude-print",
       owner_user_id: OWNER_ID,
       scheduled_task_id: TASK_ID,
       status: "starting",
@@ -155,7 +156,9 @@ describe("dispatchAgentRoutine", () => {
       { tool: "routines.create", limits: { maxPerRun: 5 } }, { tool: "routines.update" }, { tool: "routines.delete" },
       { tool: "routines.list" }, { tool: "routines.run" }, { tool: "routines.runs" },
     ]);
-    expect(run.runtime).toMatchObject({ type: "cloud", toolset: { nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }, { harness: "claude", tool: "Grep" }, { harness: "claude", tool: "Bash" }] } });
+    expect(run.execution).toEqual({ target: { type: "sandbox" }, adapterId: "claude-print" });
+    expect(run.computer).toEqual({ type: "sandbox", profileId: "default", workingDirectory: "/run", network: "open" });
+    expect(run.toolset).toMatchObject({ nativeTools: [{ harness: "claude", tool: "Read" }, { harness: "claude", tool: "Glob" }, { harness: "claude", tool: "Grep" }, { harness: "claude", tool: "Bash" }] });
     expect(run.started_at).toBeTruthy();
     const launchInput = launch.mock.calls[0]![0];
     expect(launchInput.run.id).toBe(run.id as never);
@@ -180,7 +183,8 @@ describe("dispatchAgentRoutine", () => {
     const db = newDb();
     await dispatch(db, okLaunch(), undefined, { config_json: { title: "t", prompt: "p", harness: "codex", model: null } });
     expect(db.tables.agent_runs![0]).toMatchObject({ harness: "codex", model: null });
-    expect(db.tables.agent_runs![0]!.runtime).toMatchObject({ toolset: { nativeTools: [{ harness: "codex", tool: "shell" }] } });
+    expect(db.tables.agent_runs![0]!.execution).toEqual({ target: { type: "sandbox" }, adapterId: "codex-exec" });
+    expect(db.tables.agent_runs![0]!.toolset).toMatchObject({ nativeTools: [{ harness: "codex", tool: "shell" }] });
   });
 
   it("seeds a workspace with no context so the run has a base version", async () => {

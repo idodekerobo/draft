@@ -180,8 +180,8 @@ export async function remoteToolsForRun(
   run: AgentRunSpec,
   options: { connect?: ConnectRemoteMcp } = {},
 ): Promise<RegisteredTool[]> {
-  if (run.runtime.type !== "cloud" || run.runtime.toolset.mcpServers.length === 0) return [];
-  const permissions = new Map(run.runtime.toolset.mcpServers.map((server) => [server.connectionId as string, server.tools]));
+  if (run.toolset.mcpServers.length === 0) return [];
+  const permissions = new Map(run.toolset.mcpServers.map((server) => [server.connectionId as string, server.tools]));
 
   const { data, error } = await client
     .from("connections")
@@ -225,8 +225,7 @@ function buildRemoteTool(client: SupabaseClient, connection: McpConnectionRow, s
     inputSchema: input,
     // Held only by a cloud run whose toolset names this connection and this tool.
     permission: (run) => {
-      if (run.runtime.type !== "cloud") return null;
-      const named = run.runtime.toolset.mcpServers.find((server) => server.connectionId === connection.id);
+      const named = run.toolset.mcpServers.find((server) => server.connectionId === connection.id);
       return named && (named.tools === "all" || named.tools.includes(remote.name)) ? {} : null;
     },
     parse(raw) {

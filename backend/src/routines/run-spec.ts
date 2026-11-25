@@ -1,5 +1,5 @@
-import { cloudToolsetFor } from "draft-core/harnesses";
-import { cronTrigger, parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec, type AgentRunTrigger } from "draft-core/run-spec";
+import { cloudToolsetFor, requireRoutineAdapter } from "draft-core/harnesses";
+import { SANDBOX_RUN_DIRECTORY, cronTrigger, sandboxComputer, sandboxExecution, parseAgentRunId, parseContextVersionId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec, type AgentRunTrigger } from "draft-core/run-spec";
 import { ROUTINE_READ_PERMISSIONS, type AnyDraftToolPermission } from "draft-core/tools";
 import { effectiveBuiltInTools, type AgentRoutineConfig } from "./config";
 
@@ -65,17 +65,15 @@ export function buildRoutineRunSpec(input: RoutineRunSpecInput): AgentRunSpec {
   return {
     id: parseAgentRunId(input.id),
     kind: "routine",
-    network: "open",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: input.trigger ?? cronTrigger(input.scheduledTaskId, input.occurrenceAt),
     onBehalfOf: parseUserId(input.ownerUserId),
-    runtime: {
-      type: "cloud",
-      toolset: cloudToolsetFor(input.routine.harness, {
-        nativeTools: [...ROUTINE_ALWAYS_ON_NATIVE_TOOLS[input.routine.harness], ...effectiveBuiltInTools(input.routine)],
-        mcpServers: (input.mcpServers ?? []).map((server) => ({ connectionId: parseConnectionId(server.connectionId), tools: server.tools })),
-      }),
-    },
+    execution: sandboxExecution(requireRoutineAdapter(input.routine.harness)),
+    toolset: cloudToolsetFor(input.routine.harness, {
+      nativeTools: [...ROUTINE_ALWAYS_ON_NATIVE_TOOLS[input.routine.harness], ...effectiveBuiltInTools(input.routine)],
+      mcpServers: (input.mcpServers ?? []).map((server) => ({ connectionId: parseConnectionId(server.connectionId), tools: server.tools })),
+    }),
+    computer: sandboxComputer("open", SANDBOX_RUN_DIRECTORY),
     harness: input.routine.harness,
     model: input.routine.model,
     reasoningEffort: input.routine.reasoningEffort ?? null,

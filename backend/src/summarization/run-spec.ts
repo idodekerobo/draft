@@ -1,6 +1,6 @@
 import type { BuiltInRoutineConfig } from "../routines/built-in-config";
-import { cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, type AgentRunSpec, type JsonSchema } from "draft-core/run-spec";
-import { cloudToolsetFor } from "draft-core/harnesses";
+import { SANDBOX_RUN_DIRECTORY, cronTrigger, parseAgentRunId, parseContextVersionId, parseWorkspaceId, sandboxComputer, sandboxExecution, type AgentRunSpec, type JsonSchema } from "draft-core/run-spec";
+import { cloudToolsetFor, requireRoutineAdapter } from "draft-core/harnesses";
 
 export interface SummarizationRunSpecInput {
   id: string;
@@ -18,11 +18,12 @@ export function buildSummarizationRunSpec(input: SummarizationRunSpecInput): Age
   return {
     id: parseAgentRunId(input.id),
     kind: "summarization",
-    network: "restricted",
     workspaceId: parseWorkspaceId(input.workspaceId),
     trigger: cronTrigger(input.scheduledTaskId, input.occurrenceAt),
     onBehalfOf: null,
-    runtime: { type: "cloud", toolset: cloudToolsetFor(input.settings?.harness ?? "claude") },
+    execution: sandboxExecution(requireRoutineAdapter(input.settings?.harness ?? "claude")),
+    toolset: cloudToolsetFor(input.settings?.harness ?? "claude"),
+    computer: sandboxComputer("restricted", SANDBOX_RUN_DIRECTORY),
     harness: input.settings?.harness ?? "claude",
     model: input.settings?.model ?? null,
     reasoningEffort: input.settings?.reasoningEffort ?? null,

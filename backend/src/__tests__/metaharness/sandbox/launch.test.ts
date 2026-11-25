@@ -440,7 +440,8 @@ describe("launchSandboxRun routine runs", () => {
       launchSandboxRun({ spec, bundle: bundle(), prompt: prompt as never, credentials: { claudeCodeOAuthToken: "t", codexAuthJson: "{}" }, config }, { provider: flyProvider(client), bundleUploader: uploader });
     await expect(run({ ...routineSpec({ harness: "codex" }), output: { type: "structured", schema: jsonSchema } })).resolves.toMatchObject({ machineId: "machine-1" });
     await expect(run({ ...routineSpec({ harness: "codex" }) }, { kind: "items", manifestPath: "input/manifest.json" })).rejects.toThrow("items need structured output");
-    await expect(run({ ...routineSpec(), runtime: { type: "local", hostId: "mac" as never } })).rejects.toThrow("cloud runtime");
+    await expect(run({ ...routineSpec(), execution: { target: { type: "host", hostId: "mac" as never }, adapterId: "claude-terminal" } })).rejects.toThrow("sandbox execution target");
+    await expect(run({ ...routineSpec(), execution: { target: { type: "backend", packageVersion: "1" }, adapterId: "claude-terminal" } })).rejects.toThrow("sandbox execution target");
     await expect(run({ ...routineSpec(), output: { type: "none" } })).rejects.toThrow("text or structured output");
   });
 });

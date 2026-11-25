@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseAgentEventId, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
+import { SANDBOX_RUN_DIRECTORY, parseAgentEventId, sandboxComputer, sandboxExecution, parseAgentRunId, parseContextVersionId, parseIsoTimestamp, parseScheduledTaskId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunSpec } from "draft-core/run-spec";
 import { personCaller, runCaller } from "draft-core/tools";
 import { auditToDatabase, createAgentRun, specFromRow } from "../../../metaharness/runs/agent-run-store";
 import type { ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
@@ -8,7 +8,6 @@ import type { AgentRunRow } from "../../../types/tables";
 const spec: AgentRunSpec = {
   id: parseAgentRunId("11111111-1111-4111-8111-111111111111"),
   kind: "routine",
-  network: "open",
   workspaceId: parseWorkspaceId("22222222-2222-4222-8222-222222222222"),
   trigger: {
     type: "cron",
@@ -16,15 +15,14 @@ const spec: AgentRunSpec = {
     occurrenceAt: parseIsoTimestamp("2026-11-09T09:00:00.000Z"),
   },
   onBehalfOf: null,
-  runtime: {
-    type: "cloud",
-    toolset: {
-      nativeTools: [{ harness: "claude", tool: "WebSearch" }],
-      mcpServers: [{ connectionId: parseConnectionId("66666666-6666-4666-8666-666666666666"), tools: ["search"] }],
-      skills: [],
-      instructions: [],
-    },
+  execution: sandboxExecution("codex-exec"),
+  toolset: {
+    nativeTools: [{ harness: "codex", tool: "web_search" }],
+    mcpServers: [{ connectionId: parseConnectionId("66666666-6666-4666-8666-666666666666"), tools: ["search"] }],
+    skills: [],
+    instructions: [],
   },
+  computer: sandboxComputer("open", SANDBOX_RUN_DIRECTORY),
   harness: "codex",
   model: "gpt-6-sol",
   reasoningEffort: "ultra",
@@ -60,6 +58,35 @@ describe("agent run store", () => {
     expect(specFromRow(rowFrom(inserts[0].row))).toEqual(spec);
   });
 
+  it("stores the execution, toolset and computer in their own columns, with the network on the computer", async () => {
+    const { client, inserts } = fakeClient();
+    await createAgentRun(client, { spec, idempotencyKey: "k-columns" });
+    expect(inserts[0].row).toMatchObject({
+      execution: { target: { type: "sandbox" }, adapterId: "codex-exec" },
+      computer: { type: "sandbox", profileId: "default", workingDirectory: SANDBOX_RUN_DIRECTORY, network: "open" },
+      continuation: null,
+    });
+    expect(inserts[0].row.toolset).toEqual(spec.toolset);
+    expect(inserts[0].row).not.toHaveProperty("runtime");
+  });
+
+  it("round-trips a continuation, and leaves it out of a fresh launch", async () => {
+    const { client, inserts } = fakeClient();
+    const resumed: AgentRunSpec = { ...spec, continuation: { type: "native", nativeSessionId: "native-1" } };
+    await createAgentRun(client, { spec: resumed, idempotencyKey: "k-resume" });
+    expect(specFromRow(rowFrom(inserts[0].row))).toEqual(resumed);
+    expect(specFromRow(rowFrom(inserts[0].row)).continuation).toEqual({ type: "native", nativeSessionId: "native-1" });
+    await createAgentRun(client, { spec, idempotencyKey: "k-fresh" });
+    expect("continuation" in specFromRow(rowFrom(inserts[1].row))).toBe(false);
+  });
+
+  it("refuses to save a spec whose adapter cannot run on its target", async () => {
+    const { client, inserts } = fakeClient();
+    await expect(createAgentRun(client, { spec: { ...spec, execution: { target: { type: "sandbox" }, adapterId: "codex-app-server" } }, idempotencyKey: "k-bad" })).rejects.toThrow("cannot run on a sandbox target");
+    await expect(createAgentRun(client, { spec: { ...spec, execution: sandboxExecution("claude-print") }, idempotencyKey: "k-bad2" })).rejects.toThrow("does not run harness codex");
+    expect(inserts).toEqual([]);
+  });
+
   it("round-trips the user a run acts for, and reads the actor back from the run id", async () => {
     const { client, inserts } = fakeClient();
     const asUser: AgentRunSpec = { ...spec, onBehalfOf: parseUserId("99999999-9999-4999-8999-999999999999") };
@@ -85,7 +112,7 @@ describe("agent run store", () => {
   it("reads the run a synthesis run was mirrored as, with a system trigger", () => {
     const mirrored = rowFrom({
       id: spec.id, workspace_id: spec.workspaceId, kind: "synthesis", trigger: { type: "system", reason: "source_threshold" }, on_behalf_of_user_id: spec.onBehalfOf,
-      runtime: spec.runtime, harness: "claude", model: null, instructions: "", base_context_version_id: spec.inputs.contextVersionId,
+      execution: sandboxExecution("claude-print"), toolset: spec.toolset, computer: spec.computer, continuation: null, harness: "claude", model: null, instructions: "", base_context_version_id: spec.inputs.contextVersionId,
       permissions: [], output: { type: "structured", schema: {} }, status: "succeeded", attempt: 1, retry_of_run_id: null, idempotency_key: "k", prompt_version: "synthesis-v1", session_id: null,
     });
     expect(specFromRow(mirrored)).toMatchObject({ kind: "synthesis", trigger: { type: "system", reason: "source_threshold" }, permissions: [] });
@@ -94,7 +121,7 @@ describe("agent run store", () => {
   it("rejects rows that do not match the spec", () => {
     const good = rowFrom({
       id: spec.id, workspace_id: spec.workspaceId, kind: "routine", trigger: spec.trigger, on_behalf_of_user_id: spec.onBehalfOf,
-      runtime: spec.runtime, harness: "codex", model: null, instructions: "", base_context_version_id: spec.inputs.contextVersionId,
+      execution: spec.execution, toolset: spec.toolset, computer: spec.computer, continuation: null, harness: "codex", model: null, instructions: "", base_context_version_id: spec.inputs.contextVersionId,
       permissions: [], output: spec.output, status: "queued", attempt: 1, retry_of_run_id: null, idempotency_key: "k", prompt_version: null, session_id: null,
     });
     expect(() => specFromRow({ ...good, harness: "unknown-harness" })).toThrow("Unknown harness");
@@ -106,7 +133,11 @@ describe("agent run store", () => {
     expect(() => specFromRow({ ...good, trigger: { type: "manual", requestedBy: "nope" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "system", reason: "because" } })).toThrow();
     expect(() => specFromRow({ ...good, trigger: { type: "event", eventIds: ["evt_123"] } })).toThrow();
-    expect(() => specFromRow({ ...good, runtime: { type: "local", hostId: "" } })).toThrow();
+    expect(() => specFromRow({ ...good, execution: { target: { type: "host", hostId: "" }, adapterId: "claude-terminal" } })).toThrow();
+    expect(() => specFromRow({ ...good, execution: { target: { type: "sandbox" }, adapterId: "future" } })).toThrow("unknown adapter");
+    expect(() => specFromRow({ ...good, computer: { type: "sandbox", profileId: "default", workingDirectory: "/run", network: "public" } })).toThrow();
+    expect(() => specFromRow({ ...good, toolset: { ...(spec.toolset as object), nativeTools: [{ harness: "codex", tool: "Read" }] } })).toThrow("unknown built-in tool");
+    expect(() => specFromRow({ ...good, execution: null })).toThrow();
   });
 });
 

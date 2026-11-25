@@ -2,7 +2,7 @@
  * The contract for one agent run. Draft builds one AgentRunSpec per run, saves it,
  * and every surface the run touches (launch, tool gateway, audit) reads it from here.
  */
-import { cloudNativeToolsFor, isNativeTool } from "./harnesses/adapters";
+import { cloudNativeToolsFor, getAdapter, isNativeTool, type AdapterId } from "./harnesses/adapters";
 import type { HarnessId } from "./harnesses";
 import type { AnyDraftToolPermission } from "./tools";
 
@@ -125,9 +125,59 @@ export interface AgentRunToolset {
   instructions: ReadonlyArray<InstructionFileId>;
 }
 
-export type AgentRunRuntime =
-  | { type: "local"; hostId: HostId }
-  | { type: "cloud"; toolset: AgentRunToolset };
+/**
+ * Where Draft sends a run. `host` is an already-registered, running host; `sandbox` is one Draft starts (its image is a
+ * launch fact, not part of the spec); `backend` is Draft's own backend running the agent loop.
+ */
+export type ExecutionTarget =
+  | { type: "host"; hostId: HostId }
+  | { type: "sandbox" }
+  | { type: "backend"; packageVersion: string };
+
+/** Which computer a run's file and command tools may act on. Separate from where the agent loop runs. */
+export type ComputerPolicy =
+  | { type: "host_computer"; computerId: string; workingDirectory: string }
+  | { type: "sandbox"; profileId: string; workingDirectory: string; network: "open" | "restricted" }
+  | { type: "none" };
+
+/** What a run resumes earlier agent state from. Omitted on a fresh launch. */
+export type RunContinuation =
+  | { type: "native"; nativeSessionId: string }
+  | { type: "durable"; storageId: string; conversationId: number };
+
+export interface AgentRunExecution {
+  target: ExecutionTarget;
+  adapterId: AdapterId;
+}
+
+/** The sandbox folder a cloud session's agent works in. */
+export const SANDBOX_SESSION_DIRECTORY = "/data/workspace";
+/** The sandbox folder that holds the files of a one-shot run. */
+export const SANDBOX_RUN_DIRECTORY = "/run";
+const DEFAULT_SANDBOX_PROFILE = "default";
+
+export const sandboxExecution = (adapterId: AdapterId): AgentRunExecution => ({ target: { type: "sandbox" }, adapterId });
+
+export const sandboxComputer = (network: "open" | "restricted", workingDirectory: string): ComputerPolicy =>
+  ({ type: "sandbox", profileId: DEFAULT_SANDBOX_PROFILE, workingDirectory, network });
+
+/** What a person sees: a `host` target is "This computer" (`local`); a sandbox or backend target is "Draft Cloud" (`cloud`). */
+export const runtimeOfTarget = (target: ExecutionTarget["type"]): "local" | "cloud" => (target === "host" ? "local" : "cloud");
+
+/** The network a run's sandbox allows. Runs that do not use a sandbox computer get the restricted default. */
+export const networkOf = (computer: ComputerPolicy): "open" | "restricted" => (computer.type === "sandbox" ? computer.network : "restricted");
+
+/** Why a run's target, adapter and computer cannot go together, or null when they can. */
+export function executionProblem(spec: Pick<AgentRunSpec, "harness" | "execution" | "computer">): string | null {
+  const adapter = getAdapter(spec.execution.adapterId);
+  if (!adapter) return `Unknown adapter: ${spec.execution.adapterId}`;
+  if (adapter.harness !== spec.harness) return `Adapter ${adapter.id} does not run harness ${spec.harness}`;
+  const target = spec.execution.target.type;
+  if (!adapter.targets.includes(target)) return `Adapter ${adapter.id} cannot run on a ${target} target`;
+  if (target === "host" && spec.computer.type === "sandbox") return "A host target cannot use a sandbox computer";
+  if (target === "sandbox" && spec.computer.type === "host_computer") return "A sandbox target cannot use a host computer";
+  return null;
+}
 
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
@@ -139,7 +189,6 @@ export type AgentRunOutput =
 export interface AgentRunSpec {
   id: AgentRunId;
   kind: AgentRunKind;
-  network: "open" | "restricted";
   workspaceId: WorkspaceId;
   trigger: AgentRunTrigger;
   /**
@@ -147,7 +196,11 @@ export interface AgentRunSpec {
    * the run, not the actor. Null for a workspace run on shared sources, which has no self.
    */
   onBehalfOf: UserId | null;
-  runtime: AgentRunRuntime;
+  execution: AgentRunExecution;
+  /** Cloud: an allow-list. Local: only what Draft adds; the person's own tools stay on. */
+  toolset: AgentRunToolset;
+  computer: ComputerPolicy;
+  continuation?: RunContinuation;
   harness: HarnessId;
   /** A model alias of the harness, or null for the harness default. */
   model: string | null;

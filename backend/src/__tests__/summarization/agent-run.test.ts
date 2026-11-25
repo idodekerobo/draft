@@ -43,7 +43,8 @@ describe("summarization run spec", () => {
       trigger: { type: "cron", scheduledTaskId: TASK, occurrenceAt: schedule.occurrenceAt },
       output: { type: "structured" },
     });
-    expect(spec.runtime.type).toBe("cloud");
+    expect(spec.execution).toEqual({ target: { type: "sandbox" }, adapterId: "claude-print" });
+    expect(spec.computer).toEqual({ type: "sandbox", profileId: "default", workingDirectory: "/run", network: "restricted" });
   });
 });
 

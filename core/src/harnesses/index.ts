@@ -4,7 +4,7 @@ import { codexDefinition } from "./codex/definition";
 import { isCloudNativeTool, type AgentRunToolset, type McpServerPermission, type NativeToolPermission } from "../run-spec";
 import { REASONING_EFFORTS, type HarnessDefinition, type HarnessModel, type HarnessModes, type ReasoningEffort } from "./types";
 
-export { ADAPTERS, adapterSupportsTarget, getAdapter, interactiveAdapterFor, isAdapterId, requireAdapter, requireInteractiveAdapter, routineAdapterFor } from "./adapters";
+export { ADAPTERS, adapterSupportsTarget, getAdapter, interactiveAdapterFor, isAdapterId, requireAdapter, requireInteractiveAdapter, requireRoutineAdapter, routineAdapterFor } from "./adapters";
 export type { AdapterCapabilities, AdapterDefinition, AdapterId, ExecutionTargetType } from "./adapters";
 export { REASONING_EFFORTS } from "./types";
 export type { HarnessDefinition, HarnessModel, HarnessModeOption, HarnessModes, ReasoningEffort } from "./types";

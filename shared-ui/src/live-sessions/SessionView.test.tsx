@@ -886,7 +886,7 @@ it("keeps a missing linked target pending until its events arrive", async () => 
 });
 
 describe("SessionView for a cloud session", () => {
-  const cloud = (extra: Partial<LiveSession> = {}): LiveSession => ({ ...session, runtime: "cloud", host_name: "Draft Cloud", mine: true, ...extra });
+  const cloud = (extra: Partial<LiveSession> = {}): LiveSession => ({ ...session, execution_target: "sandbox", host_name: "Draft Cloud", mine: true, ...extra });
   const withSession = (live: LiveSession, extra: Partial<LiveSessionsApi> = {}): LiveSessionsApi => ({ ...api, ...extra, fetchEvents: async () => ({ viewer, session: live, events: [], inputs: [] }) });
   const resume = mock(async (_id: string) => {});
 
@@ -903,7 +903,7 @@ describe("SessionView for a cloud session", () => {
   });
 
   it("shows no cloud note for a computer session", async () => {
-    render(<SessionView api={withSession({ ...session, mine: true, runtime: "local" })} sessionId="s1" />);
+    render(<SessionView api={withSession({ ...session, mine: true, execution_target: "host" })} sessionId="s1" />);
     await screen.findByRole("heading", { name: "fix login" });
     expect(screen.queryByText(/Draft Cloud/)).toBeNull();
   });
@@ -937,7 +937,7 @@ describe("SessionView for a cloud session", () => {
 
 describe("SessionView while a cloud session sleeps", () => {
   // last_seq matches the one event the fixtures return: the stream pages until it reaches last_seq.
-  const sleeping: LiveSession = { ...session, status: "sleeping", runtime: "cloud", host_name: "Draft Cloud", mine: true, last_seq: 1 };
+  const sleeping: LiveSession = { ...session, status: "sleeping", execution_target: "sandbox", host_name: "Draft Cloud", mine: true, last_seq: 1 };
   const request = { seq: 1, source_id: "a", kind: "permission_request" as const, payload: { requestId: "r1", name: "Bash", input: { command: "ls" } }, created_at: "2026-10-27T10:00:00Z" };
   const sleepingApi = (events: LiveSessionEvent[] = [], extra: Partial<LiveSessionsApi> = {}): LiveSessionsApi => ({
     ...api,

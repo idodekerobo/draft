@@ -16,10 +16,19 @@ When you add a concept, add it here first.
   built-in routines (for example "Update company context") run Draft jobs.
 - **Start reason**: why a run started: `schedule`, `event` or `manual`. Stored `agent_runs.trigger.type` values
   `cron` and `system` mean a schedule start and a system start; they are not rewritten.
-- **Runtime**: where a session or run executes: `local` or `cloud`.
+- **Runtime**: what a person picks when starting a session: "This computer" (`local`) or "Draft Cloud" (`cloud`).
+  Derived from the execution target (`runtimeOfTarget`); not stored on runs or sessions.
+- **Execution target**: where Draft sends a run to execute: `host` (an already-registered, running host such as the
+  desktop host), `sandbox` (Draft starts a sandbox, which runs its own host) or `backend` (Draft's backend runs the agent
+  loop itself). `AgentRunSpec.execution.target`; a session's target type is `sessions.execution_target`. Not a machine.
+- **Computer policy**: which computer a run's file and command tools may act on, and under what limits: `host_computer`,
+  `sandbox` or `none`. Separate from where the agent loop runs. `AgentRunSpec.computer`.
+- **Continuation**: the reference a run resumes earlier agent state from: a native session ID or a durable conversation.
+  Omitted on a fresh launch. `AgentRunSpec.continuation`.
 - **Sleeping**: a cloud session's status (`sessions.status`) while no run is in progress. A new run wakes it.
 - **Host**: the process that drives a session's harness and relays its events. The desktop host runs on a person's
-  computer; the sandbox host runs in a cloud machine. Column `sessions.host_id`.
+  computer; the sandbox host runs in a cloud machine. Column `sessions.host_id`. A `host` execution target sends a run to
+  an already-registered host.
 - **Machine**: one computer or VM. A host runs on a machine. Fly VM IDs are `sandbox_machine_id`.
 - **Sandbox**: an isolated cloud machine Draft starts through a `SandboxProvider`. It may have a volume.
 - **Seed**: what a cloud session's workspace starts from. A GitHub repository (`repo`, cloned), a folder snapshot
@@ -45,7 +54,8 @@ When you add a concept, add it here first.
   desktop host and the sandbox host.
   Drivers live in `core/src/host/drivers/`.
 - **Runner**: the one-shot program inside a routine sandbox (`backend/src/sandbox/runner.ts`). Not a CLI binary.
-- **Toolset**: the native tools, MCP servers, skills and instructions a cloud run gets (`AgentRunToolset`).
+- **Toolset**: what Draft gives a run (`AgentRunToolset`). Cloud: an allow-list of built-in tools plus MCP servers, skills
+  and instructions. Local: only Draft's additions; the person's own tools stay on.
 - **Built-in tool**: a tool a harness ships with, such as Claude Code's `Edit` or `Bash`, as opposed to Draft's tools.
   Code calls them native tools. A routine picks its own (`builtInTools`); reading tools are always on.
 - **Agent client**: an AI tool installed on a person's computer that Draft can connect to (Claude Code, Codex, Cursor).

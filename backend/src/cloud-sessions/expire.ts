@@ -42,7 +42,7 @@ export async function expireIdleCloudSessions(deps: ExpireIdleCloudSessionsDeps)
   const { data, error } = await deps.client
     .from("sessions")
     .select("id, workspace_id, sandbox_volume, seed")
-    .eq("runtime", "cloud")
+    .eq("execution_target", "sandbox")
     .eq("status", "sleeping")
     .is("deleted_at", null)
     .lt("last_event_at", cutoff)

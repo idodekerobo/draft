@@ -5,6 +5,7 @@ import { useSessionViewStates } from "./view-state";
 import { useCallback, useState, type ReactNode } from "react";
 import { Dialog } from "../routines/Dialog";
 import { usePopover } from "./usePopover";
+import { isSandboxSession } from "./place";
 import type { LiveSession, LiveSessionsApi } from "./types";
 
 export interface SessionMenuItem {
@@ -88,7 +89,7 @@ export function useSessionMenu({ api, items, onDeleted }: UseSessionMenuOptions)
         {
           label: "Delete",
           danger: true,
-          confirm: session.runtime === "cloud" ? DELETE_CLOUD : running ? DELETE_LIVE : DELETE_IDLE,
+          confirm: isSandboxSession(session) ? DELETE_CLOUD : running ? DELETE_LIVE : DELETE_IDLE,
           onSelect: async () => {
             await api.deleteSession!(session.id);
             viewStates.deleteSession(session.id);

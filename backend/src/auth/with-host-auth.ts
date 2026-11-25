@@ -43,7 +43,7 @@ function runTokenCandidate(headers: Headers): string | null {
 }
 
 type RunAuthRow = { id: string; workspace_id: string; kind: string; status: string; session_id: string | null };
-type SessionAuthRow = { owner_user_id: string; runtime: string; host_id: string };
+type SessionAuthRow = { owner_user_id: string; execution_target: string; host_id: string };
 
 /**
  * Checks a run token and the run and session it names. Every failed check is a refusal, and none of them
@@ -81,14 +81,14 @@ async function cloudHostCaller(req: HostRequest, token: string, allowFinishedRun
 
   const { data: session, error: sessionError } = await serviceClient
     .from("sessions")
-    .select("owner_user_id, runtime, host_id")
+    .select("owner_user_id, execution_target, host_id")
     .eq("id", sessionId)
     .eq("workspace_id", workspaceId)
     .is("deleted_at", null)
     .maybeSingle<SessionAuthRow>();
   if (sessionError) return fail(sessionError, { workspaceId, sessionId, agentRunId: claims.runId }, "host_session_lookup_failed", "A host request's session could not be loaded");
   if (!session) return refuse(404, "session_not_found");
-  if (session.runtime !== "cloud") return refuse(403, "session_not_cloud");
+  if (session.execution_target !== "sandbox") return refuse(403, "session_not_cloud");
 
   const hostId = cloudHostId(sessionId);
   if (session.host_id !== hostId) return refuse(403, "foreign_host");
