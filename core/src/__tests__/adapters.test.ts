@@ -41,6 +41,10 @@ describe("adapter registry", () => {
     expect(ADAPTERS.filter((adapter) => adapter.id !== "pi-durable-sdk").every((adapter) => adapter.launchable && adapter.eventPath === "lines")).toBe(true);
   });
 
+  it("retries a failed raw upload from a saved state only for Claude live sessions", () => {
+    expect(ADAPTERS.filter((adapter) => adapter.capabilities.rawUpload).map((adapter) => adapter.id)).toEqual(["claude-terminal"]);
+  });
+
   it("gives steer to Codex live sessions only", () => {
     expect(requireAdapter("codex-app-server").capabilities.steer).toBe(true);
     expect(requireAdapter("claude-terminal").capabilities.steer).toBe(false);

@@ -6,6 +6,8 @@ export interface AdapterCapabilities {
   terminal: boolean;
   approvals: boolean;
   steer: boolean;
+  /** Uploads the session's raw files, so a failed upload can be retried later from a saved state. */
+  rawUpload: boolean;
 }
 
 /** One way Draft runs a harness. The id is stored on sessions and runs. */

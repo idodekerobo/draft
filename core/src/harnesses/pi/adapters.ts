@@ -7,7 +7,7 @@ export const piAdapters = [
     harness: "pi",
     kind: "interactive",
     targets: ["backend"],
-    capabilities: { terminal: false, approvals: false, steer: false },
+    capabilities: { terminal: false, approvals: false, steer: false, rawUpload: false },
     eventPath: "events",
     launchable: false,
     nativeTools: [],

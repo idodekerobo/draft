@@ -460,7 +460,7 @@ class SessionHost {
     const finalized = await this.finalize().catch(() => false);
     this.driver.dispose();
     if (this.ownsSession()) running.delete(this.state.sessionId);
-    if (!finalized && this.state.harness !== "codex") {
+    if (!finalized && adapterOfStateOrNull(this.state)?.capabilities.rawUpload) {
       this.retiredId = crypto.randomUUID();
       this.state = { ...this.state, ended: true };
       saveRetiredState(this.state, this.retiredId);
