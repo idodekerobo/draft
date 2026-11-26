@@ -53,7 +53,7 @@ _draft_completion() {
       sessions:list) flags="--provider --since --until --limit --cursor --json" ;;
       sessions:read) flags="--after-seq --limit --json" ;;
       sources:list) flags="--provider --type --since --until --limit --cursor --json" ;;
-      routines:*) flags="--on --github --github-access --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --session-id --transcript --cursor --in --at --once --upcoming --fired --mine --json" ;;
+      routines:*) flags="--on --github --github-access --steps --steps-file --clear-steps --no-github --schedule --no-schedule --no-triggers --enable --disable --disabled --wait --session-id --transcript --cursor --in --at --once --upcoming --fired --mine --json" ;;
       *) flags="" ;;
     esac
     COMPREPLY=( $(compgen -W "\$flags" -- "\$cur") )
@@ -209,6 +209,9 @@ _draft() {
               '--on=[Trigger event]:event:' \\
               '--github=[GitHub repository]:repository:' \\
               '--github-access=[GitHub access level]:access:' \\
+              '--steps=[Steps of the routine, as a JSON list]:json:' \\
+              '--steps-file=[Read the routine steps from a JSON file]:file:_files' \\
+              '--clear-steps[Remove the steps of the routine]' \\
               '--no-github[Give the routine no GitHub access]' \\
               '--schedule[Turn the schedule on]' \\
               '--no-schedule[Run only on triggers and Run now]' \\
