@@ -43,12 +43,15 @@ export function normalizeWrites(writes: readonly StorageWrite[], at: () => strin
         push(`entry:${entry.id}`, { kind: "tool_result", toolCallId: message.toolCallId, content: textOf(message.content), isError: message.isError === true });
       }
     } else if (write.type === "submission") {
-      const submission = write.value as { id: number; type: string; status: string; requestId?: string; reason?: string };
+      const submission = write.value as { id: number; type: string; status: string; requestId?: string; reason?: string; detail?: unknown };
       if (submission.type !== "input" || !submission.requestId) continue;
       if (submission.status === "done") push(`settled:${submission.id}`, { kind: "turn_settled", requestId: submission.requestId, outcome: "completed" });
       else if (submission.status === "unanswered") {
         const interrupted = submission.reason === "aborted" || submission.reason === "reset";
-        push(`settled:${submission.id}`, { kind: "turn_settled", requestId: submission.requestId, outcome: interrupted ? "interrupted" : "failed", ...(interrupted ? {} : { reason: submission.reason ?? "failed" }) });
+        // The provider's own reason, when pi kept one, is what the person reads: "model unavailable" is more use than "model_error".
+        const detail = typeof submission.detail === "string" ? submission.detail : (submission.detail as { message?: unknown } | undefined)?.message;
+        const reason = typeof detail === "string" && detail.trim() ? `${submission.reason ?? "failed"}: ${detail.trim().slice(0, 300)}` : (submission.reason ?? "failed");
+        push(`settled:${submission.id}`, { kind: "turn_settled", requestId: submission.requestId, outcome: interrupted ? "interrupted" : "failed", ...(interrupted ? {} : { reason }) });
       }
     }
   }

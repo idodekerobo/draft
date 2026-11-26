@@ -3,6 +3,7 @@ import { startSlackListeners } from "./ingestion/slack/bootstrap";
 import { startScheduler } from "./scheduling/bootstrap";
 import { registerWorkflows } from "./routines/register-workflows";
 import { routes } from "./routes";
+import { startHome, stopHome } from "./home/runtime/bootstrap";
 import { recordError } from "./errors/record-error";
 
 const config = loadConfig();
@@ -28,5 +29,10 @@ startSlackListeners().catch((error) => {
   });
 });
 startScheduler();
+startHome();
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => void stopHome().finally(() => process.exit(0)));
+}
 
 console.log(`draft-backend listening on :${config.port}`);

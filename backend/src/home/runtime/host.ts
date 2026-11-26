@@ -74,6 +74,8 @@ export class HomeHost {
   /** Called when an input is saved. Delivers it here if this process can own the Home, and wakes the owner if another does. */
   async wake(sessionId: string): Promise<void> {
     if (this.#stopped) return;
+    // A session this host does not run (a team session, a cloud session) is none of its business: no delivery, no wake.
+    if (!(await this.#deps.store.loadSession(sessionId))) return;
     const delivered = await this.deliver(sessionId);
     if (!delivered) await this.#deps.bus.notify(sessionId);
   }

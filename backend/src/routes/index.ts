@@ -39,6 +39,7 @@ import * as synthesisRuns from "./synthesis-runs";
 import * as runDetail from "./run-detail";
 import * as whoami from "./whoami";
 import * as homeSession from "./home-session";
+import { wakingHome } from "../home/runtime/wake";
 import * as workspaceModelProvider from "./workspace-model-provider";
 import * as waitlist from "./waitlist";
 import * as workspaceContextExport from "./workspace-context-export";
@@ -106,13 +107,13 @@ export const routes = {
   "/workspaces/:id/live-sessions/:sessionId/reopen": { POST: withCors(sessionsLive.REOPEN), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/raw": { POST: withCors(sessionsLive.RAW_UPLOAD_URLS), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/raw/complete": { POST: withCors(sessionsLive.RAW_UPLOAD_COMPLETE), OPTIONS },
-  "/workspaces/:id/live-sessions/:sessionId/inputs": { GET: withCors(sessionsLiveInputs.INPUTS_LIST), POST: withCors(sessionsLiveInputs.INPUTS_CREATE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/inputs": { GET: withCors(sessionsLiveInputs.INPUTS_LIST), POST: wakingHome(withCors(sessionsLiveInputs.INPUTS_CREATE)), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/inputs/pending": { GET: withCors(sessionsLiveInputs.INPUTS_PENDING), OPTIONS },
-  "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId": { POST: withCors(sessionsLiveInputs.INPUT_ACTION), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId": { POST: wakingHome(withCors(sessionsLiveInputs.INPUT_ACTION)), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/inputs/:inputId/state": { POST: withCors(sessionsLiveInputs.INPUT_STATE), OPTIONS },
-  "/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision": { POST: withCors(sessionsLiveApprovals.DECISION), OPTIONS },
-  "/workspaces/:id/live-sessions/:sessionId/stop": { POST: withCors(sessionsLiveApprovals.STOP), OPTIONS },
-  "/workspaces/:id/live-sessions/:sessionId/mode": { POST: withCors(sessionsLiveApprovals.MODE), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision": { POST: wakingHome(withCors(sessionsLiveApprovals.DECISION)), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/stop": { POST: wakingHome(withCors(sessionsLiveApprovals.STOP)), OPTIONS },
+  "/workspaces/:id/live-sessions/:sessionId/mode": { POST: wakingHome(withCors(sessionsLiveApprovals.MODE)), OPTIONS },
   "/workspaces/:id/live-sessions/:sessionId/host-events": { POST: withCors(sessionsLiveApprovals.HOST_EVENTS), OPTIONS },
   "/sessions/ingest": { POST: sessionsIngest.POST },
   "/sessions/ingest-errors": { POST: sessionsIngestErrors.POST },
