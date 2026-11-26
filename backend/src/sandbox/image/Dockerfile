@@ -38,9 +38,10 @@ RUN curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERS
   && chmod 0755 /usr/local/bin/bun \
   && test "$(/usr/local/bin/bun --version)" = "${BUN_VERSION}"
 
-# runner.mjs and host.mjs are not in git. `bun run build:runner` and `bun run build:host` (from backend) write them into this folder.
+# runner.mjs, host.mjs and computer.mjs are not in git. `bun run build:runner`, `bun run build:host` and `bun run build:computer` (from backend) write them into this folder.
 COPY runner.mjs /opt/draft/runner.mjs
 COPY host.mjs /opt/draft/host.mjs
+COPY computer.mjs /opt/draft/computer.mjs
 COPY configure-egress.sh /usr/local/sbin/configure-egress.sh
 COPY configure-open-egress.sh /usr/local/sbin/configure-open-egress.sh
 COPY entrypoint.sh /usr/local/bin/draft-entrypoint
@@ -50,6 +51,7 @@ COPY gh /usr/local/bin/gh
 RUN chmod 0755 \
     /opt/draft/runner.mjs \
     /opt/draft/host.mjs \
+    /opt/draft/computer.mjs \
     /usr/local/bin/draft-entrypoint \
     /usr/local/sbin/configure-egress.sh \
     /usr/local/sbin/configure-open-egress.sh \

@@ -39,6 +39,8 @@ export interface SandboxProvider {
   /** Deletes only the machine, so its volume can mount a new machine. A machine that is already gone counts as deleted. */
   destroyMachine(ref: SandboxRef): Promise<void>;
   status(ref: SandboxRef): Promise<"running" | "stopped" | "missing">;
+  /** The sandbox created with this metadata pair, if one still exists. It lets a caller that crashed after creating a machine find it again. */
+  find?(metadata: { key: string; value: string }): Promise<SandboxRef | null>;
   /** The address of a port the sandbox exposes. Absent for a provider that cannot expose one. The backend still checks the machine's token. */
   endpoint?(ref: SandboxRef, port: number): SandboxEndpoint;
 }

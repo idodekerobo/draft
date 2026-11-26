@@ -374,6 +374,17 @@ export class FlyMachinesClient {
     return this.readVolume(response, "POST", url);
   }
 
+  /** The machines whose metadata has this key and value, which Fly filters for us. */
+  async listByMetadata(key: string, value: string): Promise<FlyMachine[]> {
+    assertNonEmpty(key, "key");
+    assertNonEmpty(value, "value");
+    const url = `${this.appMachinesUrl()}/machines?metadata.${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+    const response = await this.request(url, { method: "GET" });
+    const body = (await response.json()) as unknown;
+    if (!Array.isArray(body)) throw new Error(`Fly Machines API GET ${url} returned something other than a list`);
+    return body.filter((machine): machine is FlyMachine => typeof machine === "object" && machine !== null && typeof (machine as { id?: unknown }).id === "string");
+  }
+
   async getVolume(volumeId: string): Promise<FlyVolume> {
     assertNonEmpty(volumeId, "volumeId");
     const url = `${this.appMachinesUrl()}/volumes/${encodeURIComponent(volumeId)}`;

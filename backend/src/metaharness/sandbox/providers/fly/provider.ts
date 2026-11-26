@@ -32,6 +32,7 @@ export interface FlyMachinesApi {
   forceDelete(machineId: string): Promise<void>;
   createVolume(input: CreateFlyVolumeInput): Promise<FlyVolume>;
   getVolume(volumeId: string): Promise<FlyVolume>;
+  listByMetadata(key: string, value: string): Promise<FlyMachine[]>;
   deleteVolume(volumeId: string): Promise<void>;
 }
 
@@ -100,6 +101,14 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
 
     async destroyMachine(ref) {
       if (ref.machine) await deleteMachine(ref.machine);
+    },
+
+    async find({ key, value }) {
+      const machine = (await fly.listByMetadata(key, value)).find((candidate) => candidate.state !== "destroying" && candidate.state !== "destroyed");
+      if (!machine) return null;
+      const mounts = (machine.config as { mounts?: Array<{ volume?: string }> } | undefined)?.mounts;
+      const volumeId = mounts?.[0]?.volume;
+      return { provider: FLY, machine: machine.id, volume: volumeId ? volumeRef(await fly.getVolume(volumeId)) : null };
     },
 
     // Fly's proxy routes a request with this header to exactly this machine, and starts it when it is stopped.

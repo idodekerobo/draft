@@ -30,13 +30,18 @@ export interface PiAgentDeps {
   models: Models;
   defaultModel: EmbeddedModelRef;
   /** Draft's tools, and any others, as pi tools. The question tool is always added. */
-  tools?: (context: EmbeddedAgentContext, gate: Gate) => ToolRegistration[];
+  tools?: (context: EmbeddedAgentContext, gate: Gate, lifecycle: AgentLifecycle) => ToolRegistration[];
   onReport?: (error: unknown) => void;
   /** How long a reader of events() waits between checks when nothing signals a commit. */
   pollMs?: number;
 }
 
 type Block = { type: string; text?: string };
+
+/** Whether this agent is shutting down. A tool cut short by a stop ends its work; one cut short by a shutdown leaves it for the restart. */
+export interface AgentLifecycle {
+  readonly closing: boolean;
+}
 
 /**
  * An embedded agent on pi-durable and Postgres: pi's harness over PgStorage, with Draft's tools, Draft's own record of what
@@ -52,6 +57,7 @@ export class PiEmbeddedAgent implements EmbeddedAgentAdapter {
   #harness!: Harness;
   #root!: Conversation;
   #closed = false;
+  readonly #lifecycle = { closing: false };
   #commitListeners = new Set<() => void>();
   #waiters: Array<() => void> = [];
 
@@ -74,7 +80,7 @@ export class PiEmbeddedAgent implements EmbeddedAgentAdapter {
     const hooks = { open: (card: CardRequest & { toolCallId: string; taskId: number }) => this.#openAsk(card), cancel: (toolCallId: string) => this.#cancelAsk(toolCallId) };
     const gate = createGate(hooks);
     registry.install(createAskExtension(hooks, gate));
-    const extra = this.#deps.tools?.(this.#context, gate) ?? [];
+    const extra = this.#deps.tools?.(this.#context, gate, this.#lifecycle) ?? [];
     if (extra.length > 0) registry.install(defineExtension({ name: "draft-tools", tools: extra }));
     this.#harness = await Harness.open(
       this.#storage,
@@ -89,6 +95,7 @@ export class PiEmbeddedAgent implements EmbeddedAgentAdapter {
 
   async close(): Promise<void> {
     if (this.#closed) return;
+    this.#lifecycle.closing = true;
     this.#closed = true;
     for (const wake of this.#waiters.splice(0)) wake();
     try {

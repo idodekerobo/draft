@@ -69,9 +69,22 @@ case "${DRAFT_MODE:-routine}" in
     # The image pins Claude Code, so its self-updater stays off.
     exec gosu agent env HOME=/data DISABLE_AUTOUPDATER=1 /usr/local/bin/bun /opt/draft/host.mjs
     ;;
+  computer)
+    # Home's computer: a server on the /data volume that runs commands and edits files for the backend. Its token comes in the
+    # environment and never leaves it. Network is open: the person's work often needs the internet.
+    : "${DRAFT_COMPUTER_TOKEN:?DRAFT_COMPUTER_TOKEN is required}"
+    agent_uid="$(id -u agent)"
+    agent_gid="$(id -g agent)"
+    mkdir -p /data/workspace /data/.draft/computer
+    # The server and the commands it runs are the same user, so they share the volume. Job records live beside the workspace, in
+    # their own directory; this is the person's own sandbox, so a command that edits them harms only its own job's report.
+    chown "$agent_uid:$agent_gid" /data /data/workspace /data/.draft /data/.draft/computer
+    /usr/local/sbin/configure-open-egress.sh
+    exec gosu agent env HOME=/data DRAFT_COMPUTER_ROOT=/data/workspace DRAFT_COMPUTER_STATE=/data/.draft/computer /usr/local/bin/bun /opt/draft/computer.mjs
+    ;;
   routine) ;;
   *)
-    echo "[entrypoint] fatal: DRAFT_MODE must be host or routine" >&2
+    echo "[entrypoint] fatal: DRAFT_MODE must be host, computer or routine" >&2
     exit 1
     ;;
 esac

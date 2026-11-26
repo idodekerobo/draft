@@ -73,6 +73,7 @@ function fakeApi(overrides: Partial<FlyMachinesApi> = {}) {
       calls.push(`getVolume ${volumeId}`);
       return { id: volumeId, region: "ord" };
     },
+    listByMetadata: async () => [],
     deleteVolume: async (volumeId) => {
       calls.push(`deleteVolume ${volumeId}`);
     },
@@ -384,5 +385,12 @@ describe("a machine that serves a port", () => {
   it("is reached on the app's address with a header that names this machine", () => {
     const provider = createFlyProvider(config, fakeApi().api);
     expect(provider.endpoint!(plain, 8080)).toEqual({ url: "https://draft-sandbox.fly.dev", headers: { "fly-force-instance-id": "machine-1" } });
+  });
+
+  it("finds the machine created with a metadata pair, with its volume, and answers null when there is none or it is gone", async () => {
+    const found = { id: "machine-9", state: "stopped", config: { mounts: [{ volume: "vol_9", path: "/data" }] } };
+    const provider = createFlyProvider(config, fakeApi({ listByMetadata: async (key, value) => (key === "home_session" && value === "s1" ? [{ id: "machine-0", state: "destroyed" }, found] : []) }).api);
+    expect(await provider.find!({ key: "home_session", value: "s1" })).toEqual({ provider: "fly", machine: "machine-9", volume: { provider: "fly", id: "vol_9", region: "ord" } });
+    expect(await provider.find!({ key: "home_session", value: "other" })).toBeNull();
   });
 });

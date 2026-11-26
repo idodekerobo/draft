@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, type FauxProviderHandle, type FauxResponseStep } from "@earendil-works/pi-ai";
-import type { EmbeddedAgentContext } from "../../embedded-agent/adapter";
 import { callerRun } from "draft-core/tools";
 import { z } from "zod";
 import { createPiAgentFactory } from "../../embedded-agent/pi/adapter";
@@ -9,10 +8,10 @@ import { createHomeTools } from "../../home/tools";
 import { buildHomeRunSpec } from "../../home/runtime/spec";
 import { ToolRegistry, type RegisteredTool } from "../../metaharness/tools/tool-registry";
 import { collect, describeEmbeddedAgentContract, kinds, setCollectTimeout, settledFor } from "../embedded-agent/contract";
-import { embeddedAgentDb } from "./embedded-agent-fixture";
+import { embeddedAgentDb, homeContext } from "./embedded-agent-fixture";
 
 // The pi adapter on staging Postgres, with pi's scripted model: the shared contract every adapter passes, then what is pi's own.
-const { describeWithDatabase, pool, db, createWorkspace } = embeddedAgentDb;
+const { describeWithDatabase, pool } = embeddedAgentDb;
 const OWNER_INPUT = (text: string) => ({ text, authorUserId: "33333333-3333-4333-8333-333333333333" });
 
 /** A scripted model that says "Reply: <text>", or never answers when asked to hold. */
@@ -30,25 +29,6 @@ function scriptedModel(): { faux: FauxProviderHandle; steps: FauxResponseStep[] 
     return { ...fauxAssistantMessage(`Reply: ${text}`), provider: model.provider, model: model.id };
   };
   return { faux, steps: Array.from({ length: 60 }, () => respond) };
-}
-
-/** A backend session with a claim, for one test. Gives the context the host would, and removes everything after. */
-async function homeContext(): Promise<{ context: EmbeddedAgentContext; cleanup: () => Promise<void>; sessionId: string }> {
-  const { workspaceId } = await createWorkspace();
-  const userId = randomUUID();
-  await db()`insert into auth.users (id, email) values (${userId}, ${`${userId}@example.test`})`;
-  const [w] = await db()<[{ organization_id: string; team_id: string }]>`select organization_id, team_id from workspaces where id = ${workspaceId}`;
-  await db()`update users set organization_id = ${w.organization_id}, primary_team_id = ${w.team_id}, status = 'active' where id = ${userId}`;
-  const [session] = await db()<[{ id: string }]>`
-    insert into sessions (workspace_id, owner_user_id, host_id, is_home, execution_target, adapter_id)
-    values (${workspaceId}, ${userId}, ${`backend:${randomUUID()}`}, true, 'backend', 'pi-durable-sdk') returning id`;
-  const owner = `test-${randomUUID()}`;
-  const [{ claim }] = await db()<[{ claim: { epoch: number } }]>`select claim_embedded_agent(${session.id}, ${owner}, '10 minutes'::interval) as claim`;
-  const context: EmbeddedAgentContext = {
-    sessionId: session.id, workspaceId, ownerUserId: userId, owner, epoch: Number(claim.epoch), instructions: "You are Home.",
-    assertOwner: () => {}, stillOwner: async () => true, currentRun: async () => { throw new Error("no run in this test"); },
-  };
-  return { context, sessionId: session.id, cleanup: async () => { await db()`delete from sessions where id = ${session.id}`; await db()`delete from auth.users where id = ${userId}`; } };
 }
 
 describeWithDatabase("the pi embedded agent", () => {

@@ -64,7 +64,17 @@ describe("entrypoint.sh", () => {
     const dispatch = entrypoint.indexOf('case "${DRAFT_MODE:-routine}" in');
     expect(dispatch).toBeGreaterThan(-1);
     expect(dispatch).toBeLessThan(entrypoint.indexOf(ROUTINE_BLOCK));
-    expect(entrypoint).toContain("DRAFT_MODE must be host or routine");
+    expect(entrypoint).toContain("DRAFT_MODE must be host, computer or routine");
+  });
+
+  it("runs Home's computer only with a token, as the agent user on the volume, with open egress, then execs its bundle", () => {
+    const entrypoint = read("entrypoint.sh");
+    const computer = entrypoint.slice(entrypoint.indexOf("  computer)"), entrypoint.indexOf("  routine) ;;"));
+    expect(computer).toContain(': "${DRAFT_COMPUTER_TOKEN:?DRAFT_COMPUTER_TOKEN is required}"');
+    expect(computer).toContain("/usr/local/sbin/configure-open-egress.sh");
+    expect(computer).toContain("exec gosu agent env HOME=/data DRAFT_COMPUTER_ROOT=/data/workspace DRAFT_COMPUTER_STATE=/data/.draft/computer /usr/local/bin/bun /opt/draft/computer.mjs");
+    // The token is read from the environment and is never printed.
+    expect(computer).not.toContain("echo \"$DRAFT_COMPUTER_TOKEN");
   });
 
   it("runs the host as the agent user with HOME on /data, then execs the host bundle", () => {
