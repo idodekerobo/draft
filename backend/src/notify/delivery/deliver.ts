@@ -18,7 +18,7 @@ export type DeliverInput = {
   idempotencyKey?: string;
   attribution: string;
   /** Set when the recipient must act. It names what the notification is about and, for a to-do, the identity match that routed it. */
-  action?: { kind: "todo_routed" | "identity_proposed"; refType: string; refId: string; matchedIdentityId?: string | null };
+  action?: { kind: "todo_routed" | "identity_proposed" | "connection_attention"; refType: string; refId: string; matchedIdentityId?: string | null };
   requested?: ReadonlyArray<NotifyChannelId>;
   /** The human whose authority the send used, and where it came from. Both are set by the gateway, not the model. */
   origin: { senderUserId: string | null; agentRunId: string | null; scheduledTaskId: string | null };

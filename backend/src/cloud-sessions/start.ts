@@ -8,6 +8,7 @@ import { recordError } from "../errors/record-error";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
 import type { SandboxRef } from "../metaharness/sandbox/providers";
 import type { ErrorOperation } from "../types/enums";
+import { reportCredentialFailure } from "../notify/product/credential-attention";
 import { claudeCredentialRules } from "./claude-credential";
 import { START_FAILED, cloudRunEnv, cloudRunSpec, endCloudSession, failRun, hostSeedFor, snapshotStoreOf, type CloudSessionDeps } from "./launch";
 import type { CloudSeed, CloudStartInput } from "./parse-start";
@@ -86,7 +87,10 @@ export async function beginCloudSession(input: CloudStartInput, deps: StartCloud
   try {
     ({ secret: claudeToken } = await resolveCredential(client, workspaceId, claudeCredentialRules));
   } catch (cause) {
-    if (cause instanceof CredentialError) return { ok: false, status: 409, error: "claude_not_connected" };
+    if (cause instanceof CredentialError) {
+      await reportCredentialFailure(client, workspaceId, cause);
+      return { ok: false, status: 409, error: "claude_not_connected" };
+    }
     await recordError({ client, workspaceId, operation: "session", code: "claude_credential_failed", message: "Reading the workspace's Claude Code login failed", error: cause });
     return { ok: false, status: 502, error: START_FAILED };
   }

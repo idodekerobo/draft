@@ -20,6 +20,8 @@ export class CredentialError extends Error {
   constructor(
     message: string,
     public reason: CredentialErrorReason,
+    /** The credentials row this is about, when it is known. */
+    public credentialId?: string,
   ) {
     super(message);
     this.name = "CredentialError";

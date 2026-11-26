@@ -8,6 +8,7 @@ import { createAgentRun, specFromRow } from "../metaharness/runs/agent-run-store
 import type { SandboxRef, VolumeRef } from "../metaharness/sandbox/providers";
 import type { ErrorOperation } from "../types/enums";
 import type { AgentRunRow, SessionRow } from "../types/tables";
+import { reportCredentialFailure } from "../notify/product/credential-attention";
 import { claudeCredentialRules } from "./claude-credential";
 import { START_FAILED, cloudRunEnv, cloudRunSpec, endCloudSession, failRun, hostSeedFor, snapshotStoreOf, type CloudSessionDeps, type StoredSeed } from "./launch";
 import { parseGitHubRemote } from "./parse-start";
@@ -143,6 +144,7 @@ export async function wakeCloudSession(input: WakeCloudSessionInput, deps: Cloud
     ({ secret: claudeToken } = await resolveCredential(client, workspaceId, claudeCredentialRules));
   } catch (cause) {
     if (cause instanceof CredentialError) {
+      await reportCredentialFailure(client, workspaceId, cause);
       return abandon({ operation: "session", code: CLAUDE_NOT_CONNECTED, message: "The workspace has no usable Claude Code login", cause, refusal: true });
     }
     return abandon({ operation: "session", code: "claude_credential_failed", message: "Reading the workspace's Claude Code login failed", cause });

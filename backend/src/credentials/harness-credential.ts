@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CredentialRules } from "draft-core/harnesses/types";
+import { recordError } from "../errors/record-error";
+import { clearCredentialAttention } from "../notify/product/credential-attention";
 import { claudeCredentialRules } from "../cloud-sessions/claude-credential";
 import { CURRENT_CREDENTIAL_KEY_VERSION, CredentialError, decryptCredentialPayload, encryptCredentialPayload } from "./crypto";
 
@@ -17,12 +19,17 @@ const SECRET_COLUMNS = "id, status, expires_at, encrypted_payload, encryption_ke
 
 /** The secret of a credentials row. Throws a `CredentialError` when the row is revoked, expired or not active. */
 export function secretFromRow(row: CredentialSecretRow, name: string): string {
-  if (row.status === "revoked") throw new CredentialError(`${name} ${row.id} has been revoked`, "revoked");
+  if (row.status === "revoked") throw new CredentialError(`${name} ${row.id} has been revoked`, "revoked", row.id);
   if (row.status === "expired" || (row.expires_at !== null && new Date(row.expires_at).getTime() <= Date.now())) {
-    throw new CredentialError(`${name} ${row.id} has expired`, "expired");
+    throw new CredentialError(`${name} ${row.id} has expired`, "expired", row.id);
   }
-  if (row.status !== "active") throw new CredentialError(`${name} ${row.id} has unexpected status "${row.status}"`, "missing");
-  return decryptCredentialPayload(row.encrypted_payload, row.encryption_key_version);
+  if (row.status !== "active") throw new CredentialError(`${name} ${row.id} has unexpected status "${row.status}"`, "missing", row.id);
+  try {
+    return decryptCredentialPayload(row.encrypted_payload, row.encryption_key_version);
+  } catch (cause) {
+    if (cause instanceof CredentialError && !cause.credentialId) cause.credentialId = row.id;
+    throw cause;
+  }
 }
 
 async function loadRow(client: SupabaseClient, workspaceId: string, rules: CredentialRules): Promise<CredentialSecretRow | null> {
@@ -47,6 +54,10 @@ export async function saveCredential(client: SupabaseClient, workspaceId: string
     p_user_id: userId,
   });
   if (error || typeof data !== "string") throw error ?? new Error("credential save returned no id");
+  // A stale "login stopped working" notice must not outlive the fix, but a failure to close it must not fail the save.
+  await clearCredentialAttention(client, workspaceId, data).catch((cause) =>
+    recordError({ client, workspaceId, operation: "auth", code: "credential_notice_clear_failed", message: "Closing the login notice failed", detail: { credentialId: data }, error: cause }),
+  );
   return data;
 }
 
