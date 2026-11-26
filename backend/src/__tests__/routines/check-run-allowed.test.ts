@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { checkRunAllowed } from "../../../../routines/built-in/synthesis/check-run-allowed";
+import { checkRunAllowed } from "../../routines/check-run-allowed";
 
 interface FakeWorkspace {
   id: string;
@@ -78,5 +78,17 @@ describe("checkRunAllowed", () => {
     );
     const result = await checkRunAllowed("w1", client);
     expect(result).toEqual({ ok: false, reason: "no inference credential configured for this workspace" });
+  });
+
+  it("counts the runs of the kind it is asked about against the daily cap", async () => {
+    const kinds: unknown[] = [];
+    const client = {
+      from: (table: string) => table === "workspaces"
+        ? { select: () => ({ eq: () => ({ single: async () => ({ data: { runs_enabled: true, max_runs_per_day: 1, inference_credential_id: "cred-1" }, error: null }) }) }) }
+        : { select: () => ({ eq: (column: string, value: unknown) => { if (column === "kind") kinds.push(value); return { eq: () => ({ gte: async () => ({ count: 1, error: null }) }) }; } }) },
+    } as unknown as SupabaseClient;
+    expect((await checkRunAllowed("w1", client, "claude", "summarization")).ok).toBe(false);
+    expect((await checkRunAllowed("w1", client)).ok).toBe(false);
+    expect(kinds).toEqual(["summarization", "synthesis"]);
   });
 });

@@ -1,7 +1,8 @@
 import { completeRunCredentials } from "../../../metaharness/sandbox/launch-with-credentials";
 import { loadBuiltInConfig } from "../../built-in-config";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { checkRunAllowed, RunNotAllowedError } from "./check-run-allowed";
+import { checkRunAllowed } from "../../check-run-allowed";
+import { RunNotAllowedError } from "./check-run-allowed";
 import { authenticateSandboxCallbackRequest } from "../../../metaharness/sandbox";
 import { finalizeSynthesisResult, InvalidSynthesisResultError } from "./finalize-result";
 import { failSynthesisRun } from "./handle-run-failure";
