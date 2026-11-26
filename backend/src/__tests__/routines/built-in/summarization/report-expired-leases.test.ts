@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { reportExpiredSummaryLeases } from "../../summarization/report-expired-leases";
+import { reportExpiredSummaryLeases } from "../../../../routines/built-in/summarization/report-expired-leases";
 
 interface FakeSession {
   id: string;

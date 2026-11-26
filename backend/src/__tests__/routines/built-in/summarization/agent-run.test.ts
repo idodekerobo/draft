@@ -1,13 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { createSandboxCallbackToken } from "../../metaharness/sandbox/callback-token";
+import { createSandboxCallbackToken } from "../../../../metaharness/sandbox/callback-token";
 import {
   completeSummarizationRunCallback,
   parseAgentRunIdFromSummarizationRunId,
-} from "../../summarization/complete-summarization-callback";
-import { startSummarizationRun } from "../../summarization/run-summarization-batch";
-import { summarizationJsonSchema } from "../../summarization/render-prompt";
-import { buildSummarizationRunSpec } from "../../summarization/run-spec";
-import { fakeClient, fakeDb } from "../routines/fake-client";
+} from "../../../../routines/built-in/summarization/complete-summarization-callback";
+import { startSummarizationRun } from "../../../../routines/built-in/summarization/run-summarization-batch";
+import { summarizationJsonSchema } from "../../../../routines/built-in/summarization/render-prompt";
+import { buildSummarizationRunSpec } from "../../../../routines/built-in/summarization/run-spec";
+import { fakeClient, fakeDb } from "../../fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
 const TASK = "55555555-5555-4555-8555-555555555555";

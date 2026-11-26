@@ -87,6 +87,7 @@ The long-running API does not run model work in-process. The sandbox is the isol
 
 - `routines/workflow/` is the step engine. It plans, starts, retries and advances step runs for any routine that has steps. It imports nothing from the rest of `routines/`.
 - `routines/built-in/synthesis/` is synthesis: its steps, prompts, source batching, finishing and retries. It uses the engine.
+- `routines/built-in/summarization/` is session summarization: it claims captured coding sessions, runs one agent over a batch, and stores the summaries. It starts when a team connects Claude coding sessions as a source.
 - The other files in `routines/` are custom routines and the shared routine settings. They use the engine too.
 - `routines/register-workflows.ts` is the one place that tells the engine how each kind of routine carries out its steps.
 

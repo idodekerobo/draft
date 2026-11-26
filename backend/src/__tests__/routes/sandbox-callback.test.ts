@@ -5,8 +5,11 @@ const digest = `registry.fly.io/draft@sha256:${"a".repeat(64)}`;
 // loadSandboxDeploymentConfig() (called with no arguments by the route) reads
 // straight from process.env, so the required sandbox env vars must be present
 // before the route module is imported.
-const ORCHESTRATE_RUN = "../../routines/built-in/synthesis/orchestrate-run";
-let realOrchestrateRun: Record<string, unknown> | null = null;
+const REPLACED_MODULES = [
+  "../../routines/built-in/synthesis/orchestrate-run",
+  "../../routines/built-in/summarization/complete-summarization-callback",
+];
+const realModules = new Map<string, Record<string, unknown>>();
 
 beforeAll(async () => {
   process.env.FLY_API_TOKEN = "fly-token";
@@ -16,11 +19,11 @@ beforeAll(async () => {
   process.env.DRAFT_API_BASE_URL = "https://api.example.test";
   process.env.SANDBOX_CALLBACK_SECRET = "signing-secret";
   // Bun replaces a module for every test file in the run, so the real one is put back when this file ends.
-  realOrchestrateRun = { ...(await import(ORCHESTRATE_RUN)) };
+  for (const path of REPLACED_MODULES) realModules.set(path, { ...(await import(path)) });
 });
 
 afterAll(() => {
-  if (realOrchestrateRun) mock.module(ORCHESTRATE_RUN, () => realOrchestrateRun!);
+  for (const [path, real] of realModules) mock.module(path, () => real);
 });
 
 function callbackRequest(runId = "run-1"): Request {
@@ -102,7 +105,7 @@ describe("POST /sandbox/callback", () => {
         throw new Error("should not be called for a summarization run id");
       },
     }));
-    mock.module("../../summarization/complete-summarization-callback", () => ({
+    mock.module("../../routines/built-in/summarization/complete-summarization-callback", () => ({
       SUMMARIZATION_RUN_ID_PREFIX: "summarize:",
       completeSummarizationRunCallback: async () => new Response(null, { status: 204 }),
     }));

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { registerBuiltInTask } from "../routines/built-in-task";
+import { registerBuiltInTask } from "../../built-in-task";
 
 export const SESSION_SUMMARY_CRON = "0 3 * * *";
 

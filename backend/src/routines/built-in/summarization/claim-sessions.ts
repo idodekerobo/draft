@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CapturedSessionRow } from "../types/tables";
+import type { CapturedSessionRow } from "../../../types/tables";
 
 const DEFAULT_LEASE_SECONDS = 25 * 60;
 

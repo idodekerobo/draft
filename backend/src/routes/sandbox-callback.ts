@@ -1,7 +1,7 @@
 import { SandboxCallbackRequestError } from "../metaharness/sandbox/callback-request";
 import { loadSandboxDeploymentConfig } from "../metaharness/sandbox/config";
 import { completeSynthesisRunCallback } from "../routines/built-in/synthesis/orchestrate-run";
-import { completeSummarizationRunCallback } from "../summarization/complete-summarization-callback";
+import { completeSummarizationRunCallback } from "../routines/built-in/summarization/complete-summarization-callback";
 import { completeRoutineRunCallback } from "../routines/complete-routine-callback";
 import { recordError } from "../errors/record-error";
 import { callbackKind } from "./callback-kind";

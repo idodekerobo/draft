@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { finishAgentRun } from "../metaharness/runs/lifecycle";
-import { recordError } from "../errors/record-error";
+import { finishAgentRun } from "../../../metaharness/runs/lifecycle";
+import { recordError } from "../../../errors/record-error";
 
 const MAX_ATTEMPTS = 3;
 const MAX_LOGGED_SESSION_IDS = 25;

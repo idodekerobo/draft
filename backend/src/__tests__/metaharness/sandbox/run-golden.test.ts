@@ -8,7 +8,7 @@ import { claudeArgs, sanitizedClaudeEnv } from "draft-core/harnesses/claude/runn
 import { codexArgs, codexConfigToml, sanitizedCodexEnv } from "draft-core/harnesses/codex/runner";
 import { type RunnerManifest } from "draft-core/run-manifest";
 import { buildRoutineRunSpec } from "../../../routines/run-spec";
-import { buildSummarizationRunSpec } from "../../../summarization/run-spec";
+import { buildSummarizationRunSpec } from "../../../routines/built-in/summarization/run-spec";
 import { buildSynthesisRunSpec } from "../../../routines/built-in/synthesis/run-spec";
 
 const MCP_URL = "https://api.example.test/runs/11111111-1111-4111-8111-111111111111/mcp";

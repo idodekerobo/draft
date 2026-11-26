@@ -1,4 +1,4 @@
-import { DEFAULT_SUMMARIZATION_PROMPT } from "../routines/built-in-defaults";
+import { DEFAULT_SUMMARIZATION_PROMPT } from "../../built-in-defaults";
 const OUTPUT_PATH = "output/result.json";
 
 export function buildSummarizationPrompt(transcript: string, instructions = DEFAULT_SUMMARIZATION_PROMPT): string {

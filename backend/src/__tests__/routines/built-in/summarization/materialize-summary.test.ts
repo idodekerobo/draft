@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { materializeSessionSummary } from "../../summarization/materialize-summary";
-import type { CapturedSessionRow } from "../../types/tables";
+import { materializeSessionSummary } from "../../../../routines/built-in/summarization/materialize-summary";
+import type { CapturedSessionRow } from "../../../../types/tables";
 
 function baseSession(overrides: Partial<CapturedSessionRow> = {}): CapturedSessionRow {
   return {

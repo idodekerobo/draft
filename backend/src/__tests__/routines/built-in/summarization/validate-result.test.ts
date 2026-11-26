@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateSummarizationResult } from "../../summarization/validate-result";
+import { validateSummarizationResult } from "../../../../routines/built-in/summarization/validate-result";
 
 describe("validateSummarizationResult", () => {
   test("accepts a mix of ok and failed items", () => {

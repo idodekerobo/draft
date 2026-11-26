@@ -1,13 +1,13 @@
-import { completeRunCredentials } from "../metaharness/sandbox/launch-with-credentials";
+import { completeRunCredentials } from "../../../metaharness/sandbox/launch-with-credentials";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { finishAgentRun } from "../metaharness/runs/lifecycle";
-import { saveRunUsage } from "../metaharness/runs/save-run-usage";
-import { describeError } from "../errors/describe-error";
-import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
+import { finishAgentRun } from "../../../metaharness/runs/lifecycle";
+import { saveRunUsage } from "../../../metaharness/runs/save-run-usage";
+import { describeError } from "../../../errors/describe-error";
+import { authenticateSandboxCallbackRequest } from "../../../metaharness/sandbox";
 import { validateSummarizationResult } from "./validate-result";
 import { materializeSessionSummary } from "./materialize-summary";
-import { recordError } from "../errors/record-error";
-import type { CapturedSessionRow } from "../types/tables";
+import { recordError } from "../../../errors/record-error";
+import type { CapturedSessionRow } from "../../../types/tables";
 
 export const SUMMARIZATION_RUN_ID_PREFIX = "summarize:";
 
@@ -43,7 +43,7 @@ export async function completeSummarizationRunCallback(
   callbackSecret: string,
   client?: SupabaseClient,
 ): Promise<Response> {
-  const resolvedClient = client ?? (await import("../db/client")).serviceClient;
+  const resolvedClient = client ?? (await import("../../../db/client")).serviceClient;
   let stage = "callback_auth";
   let runId: string | undefined;
   let workspaceId: string | null = null;

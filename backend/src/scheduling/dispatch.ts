@@ -8,7 +8,7 @@ import { getPendingSynthesisSourceItemIds } from "../routines/built-in/synthesis
 import { launchSynthesisRun } from "../routines/built-in/synthesis/orchestrate-run";
 import { retryPlan } from "../routines/built-in/synthesis/handle-run-failure";
 import { getLatestSynthesisRun } from "../routines/built-in/synthesis/latest-run";
-import { launchSummarizationBatch } from "../summarization/run-summarization-batch";
+import { launchSummarizationBatch } from "../routines/built-in/summarization/run-summarization-batch";
 import { allowOncePer } from "../errors/throttle";
 import { syncPeopleInBackground } from "../people/sync";
 import type { SandboxDeploymentConfig } from "../metaharness/sandbox";

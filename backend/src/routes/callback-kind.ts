@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SUMMARIZATION_RUN_ID_PREFIX } from "../summarization/complete-summarization-callback";
+import { SUMMARIZATION_RUN_ID_PREFIX } from "../routines/built-in/summarization/complete-summarization-callback";
 import { ROUTINE_RUN_ID_PREFIX } from "../routines/config";
 
 export type CallbackKind = "synthesis" | "routine" | "summarization" | "step";

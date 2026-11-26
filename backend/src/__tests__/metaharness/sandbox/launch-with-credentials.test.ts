@@ -1,10 +1,10 @@
-import { launchSummarizationBatch } from "../../../summarization/run-summarization-batch";
+import { launchSummarizationBatch } from "../../../routines/built-in/summarization/run-summarization-batch";
 import { afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { saveCodexCredential, resolveCodexCredential } from "../../../credentials/codex-credential";
 import { completeRunCredentials, launchWithCredentials, RoutineLeaseBusyError } from "../../../metaharness/sandbox/launch-with-credentials";
 import * as launcher from "../../../metaharness/sandbox/launch";
-import { buildSummarizationRunSpec } from "../../../summarization/run-spec";
+import { buildSummarizationRunSpec } from "../../../routines/built-in/summarization/run-spec";
 import { fakeClient, fakeDb } from "../../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";

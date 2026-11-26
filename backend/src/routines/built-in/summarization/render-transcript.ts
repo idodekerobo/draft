@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { CapturedSessionMessageRow } from "../types/tables";
+import type { CapturedSessionMessageRow } from "../../../types/tables";
 
 // Conservative cap: keeps a transcript well within what fits in a single
 // `claude -p` prompt alongside the shared template and instructions.

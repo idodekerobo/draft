@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildSummarizationPrompt, summarizationJsonSchema } from "../../summarization/render-prompt";
+import { buildSummarizationPrompt, summarizationJsonSchema } from "../../../../routines/built-in/summarization/render-prompt";
 
 describe("buildSummarizationPrompt", () => {
   test("inlines the transcript directly into the prompt", () => {

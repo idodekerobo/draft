@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
-import { upsertConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
-import type { CapturedSessionRow } from "../types/tables";
-import { recordError } from "../errors/record-error";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../../../ingestion/captured-sessions/constants";
+import { upsertConnection, upsertSourceItem } from "../../../ingestion/upsert-source-item";
+import type { CapturedSessionRow } from "../../../types/tables";
+import { recordError } from "../../../errors/record-error";
 import type { SessionSummaryPayload } from "./types";
 
 const MAX_SUMMARY_ATTEMPTS = 3;

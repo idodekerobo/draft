@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { truncateTranscriptFromFront } from "../../summarization/render-transcript";
+import { truncateTranscriptFromFront } from "../../../../routines/built-in/summarization/render-transcript";
 
 describe("truncateTranscriptFromFront", () => {
   test("leaves short transcripts untouched", () => {

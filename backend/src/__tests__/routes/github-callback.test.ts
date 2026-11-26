@@ -9,9 +9,10 @@ process.env.GITHUB_APP_SLUG = "draft-context-test";
 process.env.GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\\ntest\\n-----END RSA PRIVATE KEY-----";
 process.env.GITHUB_APP_WEBHOOK_SECRET = "webhook-secret";
 
-const realClientInstanceModule = await import("../../ingestion/github/client-instance");
-const realUpsertModule = await import("../../ingestion/upsert-source-item");
-const realDbClientModule = await import("../../db/client");
+// Copies, taken before anything is replaced: a module object from `import` shows the replacement once mock.module runs.
+const realClientInstanceModule = { ...(await import("../../ingestion/github/client-instance")) };
+const realUpsertModule = { ...(await import("../../ingestion/upsert-source-item")) };
+const realDbClientModule = { ...(await import("../../db/client")) };
 
 function restoreRealModules() {
   mock.module("../../ingestion/github/client-instance", () => realClientInstanceModule);

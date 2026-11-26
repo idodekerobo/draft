@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   parseRunnerFailure,
   parseWorkspaceIdFromSummarizationRunId,
-} from "../../summarization/complete-summarization-callback";
+} from "../../../../routines/built-in/summarization/complete-summarization-callback";
 
 describe("parseRunnerFailure", () => {
   test("recognizes the runner's {error, diagnostics} failure body", () => {

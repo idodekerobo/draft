@@ -1,5 +1,5 @@
-import type { BuiltInRoutineConfig } from "../routines/built-in-config";
-import { buildBuiltInRunSpec } from "../routines/built-in-run-spec";
+import type { BuiltInRoutineConfig } from "../../built-in-config";
+import { buildBuiltInRunSpec } from "../../built-in-run-spec";
 import { cronTrigger, type AgentRunSpec, type JsonSchema } from "draft-core/run-spec";
 
 export interface SummarizationRunSpecInput {
