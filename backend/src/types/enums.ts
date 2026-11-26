@@ -119,7 +119,8 @@ export type WorkspaceEventType =
   | "manual_edit"
   | "notification_done"
   | "notification_not_mine"
-  | "notification_undone";
+  | "notification_undone"
+  | "run_result";
 
 export type WorkspaceEventVisibility = "shared" | "private";
 

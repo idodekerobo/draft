@@ -2,12 +2,14 @@ import { loadConfig } from "./config";
 import { startSlackListeners } from "./ingestion/slack/bootstrap";
 import { startScheduler } from "./scheduling/bootstrap";
 import { registerWorkflows } from "./routines/register-workflows";
+import { registerRunResultEvents } from "./events/run-result";
 import { routes } from "./routes";
 import { startHome, stopHome } from "./home/runtime/bootstrap";
 import { recordError } from "./errors/record-error";
 
 const config = loadConfig();
 registerWorkflows();
+registerRunResultEvents();
 
 Bun.serve({
   port: config.port,
