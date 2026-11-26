@@ -1,7 +1,5 @@
-import { defaultBuiltInConfig } from "../../built-in-config";
-import { CronExpressionParser } from "cron-parser";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ScheduledTaskRow } from "../../../types/tables";
+import { registerBuiltInTask } from "../../built-in-task";
 
 // Hourly 9am-6pm UTC, ~4h spacing overnight (fixed UTC approximation of
 // "work hours" -- no per-workspace timezone column exists yet).
@@ -20,29 +18,10 @@ export async function createInitialWorkspaceSynthesis(
   client?: SupabaseClient,
 ): Promise<void> {
   const db = client ?? (await import("../../../db/client")).serviceClient;
-
-  const nextDueAt = CronExpressionParser.parse(SYNTHESIS_SCHEDULE_CRON, {
-    currentDate: new Date(),
-    tz: SYNTHESIS_SCHEDULE_TIMEZONE,
-  })
-    .next()
-    .toDate();
-
-  const { error } = await db.from("scheduled_tasks").upsert(
-    {
-      workspace_id: workspace.id,
-      connection_id: null,
-      task_type: "synthesize_workspace",
-      config_json: { ...defaultBuiltInConfig("synthesize_workspace") },
-      task_key: workspace.id,
-      schedule_kind: "cron",
-      cron_expression: SYNTHESIS_SCHEDULE_CRON,
-      interval_seconds: null,
-      timezone: SYNTHESIS_SCHEDULE_TIMEZONE,
-      enabled: true,
-      next_due_at: nextDueAt.toISOString(),
-    } satisfies Partial<ScheduledTaskRow>,
-    { onConflict: "workspace_id,task_type,task_key", ignoreDuplicates: true },
-  );
-  if (error) throw error;
+  await registerBuiltInTask(db, {
+    workspaceId: workspace.id,
+    taskType: "synthesize_workspace",
+    cron: SYNTHESIS_SCHEDULE_CRON,
+    timezone: SYNTHESIS_SCHEDULE_TIMEZONE,
+  });
 }
