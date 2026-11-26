@@ -56,6 +56,13 @@ describe("permission narrowing", () => {
     expect(permissionsBeyondRoutine(step({ permissions: [{ tool: "people.notify" }] }), routinePermissions)).toHaveLength(1);
   });
 
+  it("gives a step with no list everything the routine has, and no more", () => {
+    const open = step({ permissions: undefined });
+    expect(permissionsBeyondRoutine(open, routinePermissions)).toEqual([]);
+    expect(resolveStepPermissions(open, routinePermissions)).toEqual(routinePermissions);
+    expect(checkRoutineSteps([open], context).ok).toBe(true);
+  });
+
   it("keeps only what the routine still grants when a step runs", () => {
     const wanted = step({ permissions: [{ tool: "context.read" }, { tool: "context.write" }] });
     expect(resolveStepPermissions(wanted, [{ tool: "context.read" }])).toEqual([{ tool: "context.read" }]);

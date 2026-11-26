@@ -3,7 +3,7 @@ import { desktopMcp, restoreDesktopMcp, withDesktopMcp } from "./main/host/mcp-r
 import { folderOptionsFromBody, syncedFoldersFromBody } from "draft-core/integrations/google-drive-folders";
 // desktop/src/index.ts — Draft desktop app: Bun main process
 
-import type { SynthesisRunsPage } from "draft-shared-ui";
+import type { RunDetail, StepRunTranscript, SynthesisRunsPage } from "draft-shared-ui";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import { getAppState } from "draft-core/appState";
 import { getActiveProfile, getWorkspacePath, readDraftConfig, writeDraftConfig, ensureAnalyticsConfig, getInstalledTools, resolveNotificationsEnabled, type AnalyticsConfig } from "draft-core/config";
@@ -1100,6 +1100,18 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
         if (!workspaceId) return { runs: [], nextCursor: null };
         const before = params?.before;
         return fetchServerJSON<SynthesisRunsPage>(`workspaces/${workspaceId}/synthesis-runs${before ? `?before=${encodeURIComponent(before)}` : ""}`);
+      },
+
+      getRunDetail: async ({ runId }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("No workspace yet");
+        return fetchServerJSON<RunDetail>(`workspaces/${workspaceId}/runs/${encodeURIComponent(runId)}`);
+      },
+
+      getRunTranscript: async ({ runId }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("No workspace yet");
+        return fetchServerJSON<StepRunTranscript>(`workspaces/${workspaceId}/runs/${encodeURIComponent(runId)}/transcript`);
       },
 
       startBrowserSignIn: async () => {

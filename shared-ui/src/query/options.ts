@@ -2,7 +2,7 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import type { SynthesisRunSummary } from "../activity/ActivityList";
 import type { DraftApi } from "./api";
 import type { RoutineRun, RoutinesResponse } from "../routines/types";
-import { queryKeys, routineRunsKey } from "./keys";
+import { queryKeys, routineRunsKey, runDetailKey, runTranscriptKey } from "./keys";
 
 export const POLL_MS = 30_000;
 
@@ -66,4 +66,27 @@ export const routineRunsQueryOptions = (api: Pick<DraftApi, "getRoutineRuns">, w
     getNextPageParam: (page) => (page.length === RUNS_PAGE_SIZE ? routineRunCursor(page[page.length - 1]!) : undefined),
     staleTime: ROUTINE_RUN_POLL_MS,
     refetchInterval: (query) => (anyRunning(query.state.data?.pages[0]) ? ROUTINE_RUN_POLL_MS : SAFETY_POLL_MS),
+  });
+
+/** One run with its steps. A run that is still going is polled quickly, so the steps settle without a reload. */
+export const runDetailQueryOptions = (api: Pick<DraftApi, "getRunDetail">, workspaceId: string, runId: string) =>
+  queryOptions({
+    queryKey: runDetailKey(workspaceId, runId),
+    queryFn: () => {
+      if (!api.getRunDetail) throw new Error("This app cannot show a run's steps.");
+      return api.getRunDetail(runId);
+    },
+    staleTime: STALE_MS.runs,
+    refetchInterval: (query) => ACTIVE_RUN.includes(query.state.data?.status ?? "") ? ROUTINE_RUN_POLL_MS : false,
+  });
+
+/** What one step run did. A finished run's transcript does not change, so it is read once. */
+export const runTranscriptQueryOptions = (api: Pick<DraftApi, "getRunTranscript">, workspaceId: string, runId: string) =>
+  queryOptions({
+    queryKey: runTranscriptKey(workspaceId, runId),
+    queryFn: () => {
+      if (!api.getRunTranscript) throw new Error("This app cannot show a transcript.");
+      return api.getRunTranscript(runId);
+    },
+    staleTime: Infinity,
   });

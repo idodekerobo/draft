@@ -11,7 +11,7 @@ import type { SessionViewQuery, SessionViewResponse } from "draft-core/live-sess
 //   webview.requests  — bun calls → renderer responds
 //   webview.messages  — bun sends fire-and-forget → renderer handles
 
-import type { IntegrationActions, SynthesisRunsPage } from "draft-shared-ui";
+import type { IntegrationActions, RunDetail, StepRunTranscript, SynthesisRunsPage } from "draft-shared-ui";
 import type { RPCSchema } from "electrobun/bun";
 
 export interface SessionMcpStatus {
@@ -529,6 +529,11 @@ export type AppRPCType = {
 
       /** The workspace's newest runs, 50 at a time; `before` is the last shown run's cursor. Includes upcoming routines on the first page; request failures reject. */
       getWorkspaceRuns: { params: { before?: string } | void; response: SynthesisRunsPage };
+
+      /** One run of a routine or of synthesis, with its steps. Request failures reject. */
+      getRunDetail: { params: { runId: string }; response: RunDetail };
+      /** What one step run did, as plain lines. Request failures reject. */
+      getRunTranscript: { params: { runId: string }; response: StepRunTranscript };
 
       startBrowserSignIn: { params: void; response: ActionResult };
       cancelBrowserSignIn: { params: void; response: ActionResult };

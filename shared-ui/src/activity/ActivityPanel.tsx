@@ -9,6 +9,7 @@ import { runHistoryQueryOptions } from "../query/options";
 import { useRoutineMutations } from "../routines/useRoutineMutations";
 import { toast } from "../toast";
 import { ActivityList, type UpcomingRoutine } from "./ActivityList";
+import { RunDetailView } from "./RunDetailView";
 
 interface ActivityProps {
   workspaceId: string;
@@ -55,6 +56,9 @@ function ActivityRuns({ workspaceId, onFixInConnections, onOpenRun, onOpenRoutin
   const [removing, setRemoving] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [focusAfterCancel, setFocusAfterCancel] = useState<string | null>(null);
+  // The run whose steps are open, and the run whose button takes focus when they close.
+  const [stepsOf, setStepsOf] = useState<string | null>(null);
+  const [returnTo, setReturnTo] = useState<string | null>(null);
   const cancelButtons = useRef(new Map<string, HTMLButtonElement>());
   const upcomingHeading = useRef<HTMLHeadingElement>(null);
   const runsHeading = useRef<HTMLHeadingElement>(null);
@@ -116,6 +120,10 @@ function ActivityRuns({ workspaceId, onFixInConnections, onOpenRun, onOpenRoutin
     }
   }
 
+  if (stepsOf) {
+    return <RunDetailView workspaceId={workspaceId} runId={stepsOf} onBack={() => { setReturnTo(stepsOf); setStepsOf(null); }} />;
+  }
+
   return (
     <>
       {(upcoming.length > 0 || upcomingError) && (
@@ -129,7 +137,7 @@ function ActivityRuns({ workspaceId, onFixInConnections, onOpenRun, onOpenRoutin
       )}
       <section className="ui-activity-section" aria-labelledby="activity-runs-title">
         <h2 id="activity-runs-title" ref={runsHeading} tabIndex={-1} className="ui-activity-section-title">Runs</h2>
-        <ActivityList runs={runs} onFixInConnections={onFixInConnections} onOpenRun={onOpenRun} onOpenRoutine={onOpenRoutine} onOpenCreatedOnce={(id) => void openCreatedOnce(id)} onRunAgain={(id) => { if (!running) void runAgain(id); }} runningRoutineId={running} />
+        <ActivityList runs={runs} onFixInConnections={onFixInConnections} onOpenRun={onOpenRun} onOpenSteps={(id) => { setReturnTo(null); setStepsOf(id); }} focusStepsFor={returnTo} onOpenRoutine={onOpenRoutine} onOpenCreatedOnce={(id) => void openCreatedOnce(id)} onRunAgain={(id) => { if (!running) void runAgain(id); }} runningRoutineId={running} />
         {hasNextPage && (
           <div className="ui-activity-more">
             <button type="button" className="ui-btn" disabled={isFetchingNextPage} onClick={() => void fetchNextPage()}>{isFetchingNextPage ? "Loading…" : "Show older runs"}</button>

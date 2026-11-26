@@ -3,6 +3,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { TrackFn } from "../analytics/events";
 import type { SynthesisRunsPage } from "../activity/ActivityList";
+import type { RunDetail, StepRunTranscript } from "../activity/run-detail-types";
 import type { CreateRoutineInput, Routine, RoutinePatch, RoutineRun, RoutineRunOutcome, RoutinesResponse } from "../routines/types";
 
 /** Reads both apps share. Web implements it with the HTTP API, desktop with RPC. */
@@ -17,6 +18,10 @@ export interface DraftApi {
   /** One routine's runs, 50 at a time; `before` is the last shown run's cursor (see routineRunCursor). */
   getRoutineRuns(id: string, before?: string): Promise<RoutineRun[]>;
   runRoutine?(id: string): Promise<RoutineRunOutcome>;
+  /** A run of a routine or of synthesis, with its steps. */
+  getRunDetail?(runId: string): Promise<RunDetail>;
+  /** What one step run did, as plain lines. */
+  getRunTranscript?(runId: string): Promise<StepRunTranscript>;
   getRoutineSlackChannels?(): Promise<Array<{ id: string; name: string }>>;
   getRoutineGithubRepos?(): Promise<string[]>;
 }

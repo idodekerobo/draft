@@ -18,8 +18,11 @@ export interface RoutineStep {
   prompt: string;
   /** A model alias of the routine's harness. Null means the default for this step. */
   model: string | null;
-  /** Must be a subset of the routine's permissions, never wider. */
-  permissions: AnyDraftToolPermission[];
+  /**
+   * Must be a subset of the routine's permissions, never wider. Left out, the step may use everything the routine may,
+   * and no more.
+   */
+  permissions?: AnyDraftToolPermission[];
   fanOut: StepFanOut;
   output: StepOutput;
   /** Keys of earlier steps whose outputs this step reads. */
@@ -60,7 +63,7 @@ export const RoutineStepInput = z.object({
   key: z.string().regex(STEP_KEY_PATTERN),
   prompt: z.string().trim().min(1).max(STEP_PROMPT_MAX_CHARS),
   model: z.string().min(1).max(80).nullable(),
-  permissions: z.array(permissionSchema).max(40),
+  permissions: z.array(permissionSchema).max(40).optional(),
   fanOut: fanOutSchema,
   output: outputSchema,
   inputsFrom: z.array(z.string().regex(STEP_KEY_PATTERN)).max(MAX_ROUTINE_STEPS).optional(),
@@ -97,11 +100,12 @@ const sameGrant = (a: AnyDraftToolPermission, b: AnyDraftToolPermission): boolea
 
 /** The permissions of a step that its routine does not have. A step may only narrow: same tool, provider and limits. */
 export function permissionsBeyondRoutine(step: Pick<RoutineStep, "permissions">, routine: ReadonlyArray<AnyDraftToolPermission>): AnyDraftToolPermission[] {
-  return step.permissions.filter((permission) => !routine.some((granted) => sameGrant(permission, granted)));
+  return (step.permissions ?? []).filter((permission) => !routine.some((granted) => sameGrant(permission, granted)));
 }
 
 /** What a step may use when it runs: its own permissions, kept only where the routine still grants them. */
 export function resolveStepPermissions(step: Pick<RoutineStep, "permissions">, routine: ReadonlyArray<AnyDraftToolPermission>): AnyDraftToolPermission[] {
+  if (!step.permissions) return [...routine];
   return step.permissions.filter((permission) => routine.some((granted) => sameGrant(permission, granted)));
 }
 
