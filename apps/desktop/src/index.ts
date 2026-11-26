@@ -329,6 +329,23 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       getWebAppUrl: async () => process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
 
+      getModelProvider: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("no_workspace");
+        const body = await fetchServerJSON<{ provider: string; can_edit: boolean; providers: Array<{ id: string; label: string; enabled: boolean }> }>(`workspaces/${workspaceId}/model-provider`);
+        return { provider: body.provider, canEdit: body.can_edit, providers: body.providers };
+      },
+
+      setModelProvider: async ({ provider }) => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("no_workspace");
+        await fetchServerJSON(`workspaces/${workspaceId}/model-provider`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider }),
+        });
+      },
+
       getConnectedApps: async () => {
         // Tools — read from global config.json (not per-profile)
         const cfgResult = readDraftConfig();

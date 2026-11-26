@@ -1399,3 +1399,16 @@
 .ui-home-checklist__circle { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--color-border-strong); font-size: 11px; line-height: 1; flex: none; }
 .ui-home-checklist__circle--done { background: var(--color-accent-fill); border-color: var(--color-accent-fill); color: var(--color-text-on-accent); }
 @media (prefers-reduced-motion: reduce) { .ui-home-checklist__bar span { transition: none; } }
+
+.ui-lab-picker { border: 0; margin: 0; padding: 0; min-width: 0; }
+.ui-lab-picker__options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ui-lab-picker__option {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border: 1px solid var(--color-border); border-radius: 8px; cursor: pointer;
+  color: var(--color-text-primary); font-size: var(--font-size-body);
+}
+.ui-lab-picker__option:has(input:checked) { border-color: var(--color-accent-fill); }
+.ui-lab-picker__option:has(input:focus-visible) { outline: 2px solid var(--color-accent-fill); outline-offset: 2px; }
+.ui-lab-picker__option[data-disabled] { cursor: not-allowed; color: var(--color-text-secondary); }
+.ui-lab-picker__note, .ui-lab-picker__help { color: var(--color-text-secondary); font-size: var(--font-size-body); }
+.ui-lab-picker__help { margin: 8px 0 0; }

@@ -9,6 +9,7 @@ import {
   FirstUserFlow,
   FlowShell,
   JoinerFlow,
+  ModelProviderPicker,
   useQuery,
   useSuspenseQuery,
   type AgentsStepContent,
@@ -21,6 +22,7 @@ import { WebToolList } from "@/components/WebToolList";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { apiFetch } from "@/lib/api";
 import { connectionsQueryOptions, contextQueryOptions } from "@/lib/queries";
+import { loadModelProvider, saveModelProvider } from "@/lib/model-provider";
 import { webToolStatuses } from "@/lib/tool-statuses";
 import { useWorkspace } from "@/lib/workspace";
 
@@ -85,6 +87,13 @@ function CreatorWelcome() {
   const [reading, setReading] = useState(false);
   const [pollingExpired, setPollingExpired] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const agentsStep = useMemo<AgentsStepContent>(
+    () => ({
+      ...WEB_AGENTS_STEP,
+      labPicker: <ModelProviderPicker load={() => loadModelProvider(workspaceId)} save={(provider) => saveModelProvider(workspaceId, provider)} />,
+    }),
+    [workspaceId],
+  );
 
   const { data: connections } = useSuspenseQuery(connectionsQueryOptions(workspaceId, apiFetch));
   const statuses = useMemo(() => webToolStatuses(connections.connections), [connections]);
@@ -122,7 +131,7 @@ function CreatorWelcome() {
       inviteUrl={inviteUrl}
       agentPrompt={AGENT_SETUP_PROMPT}
       sourceFooter={<DesktopNudge surface="sources_step" />}
-      agentsStep={WEB_AGENTS_STEP}
+      agentsStep={agentsStep}
       readingExtra={<DesktopNudge surface="reading_step" />}
       onReadingChange={setReading}
       track={track}

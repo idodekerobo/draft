@@ -41,6 +41,8 @@ export function GiveSourceScreen({ toolList, hasSource, onImportFolder, footer, 
 export interface AgentsStepContent {
   subtitle: string;
   video: DemoVideoSource;
+  /** Above the body: where the person picks the AI lab behind Draft's agent. */
+  labPicker?: ReactNode;
   /** Between the video and the actions, for example the desktop's tool status rows. */
   body?: ReactNode;
   /** Replaces the default Continue button. */
@@ -53,6 +55,7 @@ export function AgentsScreen({ content, onContinue }: { content: AgentsStepConte
       <h1 className="ui-flow__title ui-flow__title--lead">Code with your whole team in one agent session.</h1>
       <p className="ui-flow__subtitle">{content.subtitle}</p>
       <DemoVideo {...content.video} />
+      {content.labPicker}
       {content.body}
       {content.actions?.(onContinue) ?? (
         <FlowActions primary={<button type="button" className="ui-btn ui-btn--primary" onClick={onContinue}>Continue</button>} />

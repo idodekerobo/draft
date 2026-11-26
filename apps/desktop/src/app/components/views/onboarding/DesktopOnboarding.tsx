@@ -4,7 +4,7 @@
 import { SIGNAL_EVENTS, workspaceSignalTopic } from "draft-core/live-sessions";
 import { watchSignals } from "../../../liveSessionsApi";
 import { useEffect, useState, type ReactNode } from "react";
-import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, useSignals, WORKSPACE_SIGNAL_DELAY_MS, type AgentsStepContent, type FlowDestination, type ReadingSource } from "draft-shared-ui";
+import { AGENT_SETUP_PROMPT, buildReadingSources, FirstUserFlow, FlowShell, JoinerFlow, ModelProviderPicker, useSignals, WORKSPACE_SIGNAL_DELAY_MS, type AgentsStepContent, type FlowDestination, type ReadingSource } from "draft-shared-ui";
 import type { ContextFileEntry } from "../../../../rpc/schema";
 import { rpc } from "../../../rpc";
 import { useAnalytics } from "../../../analytics/AnalyticsContext";
@@ -29,6 +29,7 @@ const DESKTOP_AGENTS_STEP: AgentsStepContent = {
     poster: "./multiplayer-coding-demo-poster.jpg",
     alt: "Two teammates brainstorming with Claude Code in the same Draft session",
   },
+  labPicker: <ModelProviderPicker load={() => rpc.request.getModelProvider()} save={(provider) => rpc.request.setModelProvider({ provider })} />,
   body: <AgentsSetup />,
 };
 

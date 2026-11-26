@@ -286,6 +286,12 @@ export type AppRPCType = {
       /** The web app origin, which the renderer cannot read from the environment. */
       getWebAppUrl: { params: void; response: string };
 
+      /** The AI lab the workspace picked for Draft's agent, and whether the caller may change it. Throws when there is no workspace. */
+      getModelProvider: { params: void; response: { provider: string; canEdit: boolean; providers: Array<{ id: string; label: string; enabled: boolean }> } };
+
+      /** Changes the workspace's AI lab. Throws when the caller is not an admin. */
+      setModelProvider: { params: { provider: string }; response: void };
+
       /** Rich connection status for all intelligence tools and input sources, plus firefliesConnections for the Settings list view. */
       getConnectedApps: { params: void; response: ConnectedAppsStatus };
 
