@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ROUTINE_EVENT_NAMES, ROUTINE_PRESETS, ROUTINE_WEEKDAYS, routineProviders } from "./routine-triggers";
+import { RoutineStepsInput } from "./routine-steps";
 
 export * from "./routine-triggers";
 
@@ -77,13 +78,17 @@ export const RoutineInput = z.object({
   github: githubSchema.optional(),
   /** The built-in tools it may use. Left out, a new routine gets them all. */
   builtInTools: z.array(z.string().min(1).max(40)).max(20).optional(),
+  /** Splits the routine into ordered steps. Left out, it runs as one agent. */
+  steps: RoutineStepsInput.optional(),
   enabled: z.boolean().optional(),
 }).strict();
 
 /** A change to a routine. Null turns posting or GitHub access off. In a rule, an omitted schedule or events is unchanged. */
-export const RoutinePatch = RoutineInput.omit({ postChannels: true, github: true }).partial().extend({
+export const RoutinePatch = RoutineInput.omit({ postChannels: true, github: true, steps: true }).partial().extend({
   postChannels: RoutineInput.shape.postChannels.unwrap().nullable().optional(),
   github: githubSchema.nullable().optional(),
+  /** Null removes the steps, so the routine runs as one agent again. */
+  steps: RoutineStepsInput.nullable().optional(),
 }).strict();
 
 export const RoutineListFilter = z.object({

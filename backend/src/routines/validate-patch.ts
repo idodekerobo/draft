@@ -1,12 +1,13 @@
 import { type BuiltInRoutineConfig } from "./built-in-config";
 import { validateAgentRoutineConfig, type AgentRoutineConfig } from "./config";
+import { stepPermissionsFit } from "./check-step-permissions";
 import { defaultRoutineBuiltInTools } from "draft-core/routines";
 import type { RoutineEditability } from "../scheduling/routine-registry";
 import { RoutinePatch, RoutineWhen } from "draft-core/routines";
 
-const AGENT_FIELDS = ["title", "prompt", "harness", "model", "reasoningEffort", "canNotify", "canReadGmail", "postChannels", "github", "builtInTools"] as const;
+const AGENT_FIELDS = ["title", "prompt", "harness", "model", "reasoningEffort", "canNotify", "canReadGmail", "postChannels", "github", "builtInTools", "steps"] as const;
 /** Sending null for one of these turns that ability off. */
-const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github", "reasoningEffort"]);
+const CLEARABLE_FIELDS = new Set<string>(["postChannels", "github", "reasoningEffort", "steps"]);
 const ALLOWED_FIELDS = new Set<string>(["enabled", "when", ...AGENT_FIELDS]);
 
 export interface SchedulePatch {
@@ -32,6 +33,10 @@ function mergeAgentConfig(current: AgentRoutineConfig, record: Record<string, un
   if (record.harness !== undefined && record.harness !== current.harness && record.model === undefined) merged.model = null;
   // Each harness has its own built-in tools, so a new harness with no list starts with all of its own.
   if (record.harness !== undefined && record.harness !== current.harness && record.builtInTools === undefined) merged.builtInTools = defaultRoutineBuiltInTools(record.harness as string);
+  // A step's model belongs to the harness it was written for, so a new harness resets every step to the default.
+  if (record.harness !== undefined && record.harness !== current.harness && record.steps === undefined && current.steps) {
+    merged.steps = current.steps.map((step) => ({ ...step, model: null }));
+  }
   // The model decides which efforts are valid, so a changed harness or model drops the old effort unless a new one comes with it.
   const modelChanged = merged.harness !== current.harness || merged.model !== current.model;
   if (modelChanged && record.reasoningEffort === undefined) delete merged.reasoningEffort;
@@ -81,6 +86,7 @@ export function validatePatch(body: unknown, editable: RoutineEditability, agent
     if (!checked.success) return { ok: false, error: "invalid_body", field: String(checked.error.issues[0]?.path[0] ?? sentAgentFields[0]) };
     const merged = mergeAgentConfig(agentConfig, record);
     if (!merged.ok) return { ok: false, error: "invalid_body", field: merged.field };
+    if (!stepPermissionsFit(merged.config)) return { ok: false, error: "invalid_body", field: "steps" };
     patch.agent = merged.config;
   }
 
