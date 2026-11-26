@@ -19,9 +19,12 @@ mock.module("../../db/client", () => ({
   serviceClient: { from: (table: string) => fakeClient(db).from(table), rpc: (name: string, args: Record<string, unknown>) => fakeClient(db).rpc(name, args) },
 }));
 
-const inputs = await import("../../routes/sessions-live-inputs");
-const approvals = await import("../../routes/sessions-live-approvals");
-const title = await import("../../routes/sessions-live-title");
+// A route handler is wrapped by withAuth when its module loads. In a full run another test file may have loaded it first,
+// so import fresh copies that take this file's mocks.
+const fresh = <T,>(path: string): Promise<T> => import(`${path}?home-access`) as Promise<T>;
+const inputs = await fresh<typeof import("../../routes/sessions-live-inputs")>("../../routes/sessions-live-inputs");
+const approvals = await fresh<typeof import("../../routes/sessions-live-approvals")>("../../routes/sessions-live-approvals");
+const title = await fresh<typeof import("../../routes/sessions-live-title")>("../../routes/sessions-live-title");
 const sessionsTools = await import("../../metaharness/tools/definitions/sessions");
 
 function request(method: "GET" | "POST", params: Record<string, string>, body?: unknown) {
