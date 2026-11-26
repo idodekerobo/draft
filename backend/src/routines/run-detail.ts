@@ -11,13 +11,13 @@ const MAX_PAGE_EVENTS = 200;
 const MAX_TOOL_INPUT_CHARS = 500;
 const MAX_TOOL_RESULT_CHARS = 2_000;
 
-type EventRow = { seq: number; kind: string; payload: Record<string, unknown> | null };
+export type EventRow = { seq: number; kind: string; payload: Record<string, unknown> | null };
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}… [${text.length - max} more characters]` : text);
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
 /** One event as one line. Thinking, previews and approval bookkeeping are left out. */
-function line(event: EventRow): string | null {
+export function eventLine(event: EventRow): string | null {
   const payload = event.payload ?? {};
   switch (event.kind) {
     case "user_message":
@@ -55,7 +55,7 @@ export async function readRunTranscript(client: SupabaseClient, workspaceId: str
   let size = 0;
   let lastSeq = cursor;
   for (const row of rows.slice(0, MAX_PAGE_EVENTS)) {
-    const next = line(row);
+    const next = eventLine(row);
     if (next && size + next.length > MAX_PAGE_CHARS && lines.length > 0) return { lines, nextCursor: lastSeq };
     if (next) {
       lines.push(next);

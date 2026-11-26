@@ -105,7 +105,7 @@ describe("a routine with steps", () => {
 
     expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "completed" });
     expect(parentOf(db).status).toBe("succeeded");
-    const events = db.rpcCalls.filter((call) => call.name === "append_session_events").flatMap((call) => call.args.p_events as Array<{ kind: string; payload: { text: string } }>);
+    const events = db.rpcCalls.filter((call) => call.name === "append_session_events").flatMap((call) => call.args.p_events as Array<{ source_id: string; kind: string; payload: { text: string } }>);
     expect(events).toEqual([
       { source_id: "step:collect:summary", kind: "session_note", payload: { text: "Step collect: Found three facts." } },
       { source_id: "step:write:result", kind: "assistant_text", payload: { text: "Here is the digest." } },

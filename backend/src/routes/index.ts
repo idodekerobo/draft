@@ -36,6 +36,7 @@ import * as routines from "./routines";
 import * as routineOptions from "./routine-options";
 import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
+import * as runDetail from "./run-detail";
 import * as whoami from "./whoami";
 import * as waitlist from "./waitlist";
 import * as workspaceContextExport from "./workspace-context-export";
@@ -63,6 +64,8 @@ export const routes = {
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
   "/workspaces/:id/connections/:provider/channels": { GET: withCors(connections.CHANNELS_GET), POST: withCors(connections.CHANNELS_POST), OPTIONS },
   "/workspaces/:id/synthesis-runs": { GET: withCors(synthesisRuns.GET), POST: withCors(synthesisRuns.POST), OPTIONS },
+  "/workspaces/:id/runs/:runId": { GET: withCors(runDetail.GET), OPTIONS },
+  "/workspaces/:id/runs/:runId/transcript": { GET: withCors(runDetail.TRANSCRIPT), OPTIONS },
   "/workspaces/:id/schedules": { GET: withCors(routines.GET), POST: withCors(routines.POST), OPTIONS },
   "/workspaces/:id/routine-repositories": { GET: withCors(routineOptions.GET), OPTIONS },
   "/workspaces/:id/github-branches": { GET: withCors(routineOptions.BRANCHES), OPTIONS },

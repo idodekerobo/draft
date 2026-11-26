@@ -47,6 +47,8 @@ export interface ActivityRun {
   completedAt: string | null;
   createdAt: string;
   createdRoutines: CreatedRoutine[];
+  /** How many step runs the run started. Zero for a run that has no steps. Open its steps to see them. */
+  stepCount: number;
 }
 
 /** A one-time routine that has not run yet. setBy is the routine whose run made it, or else the person who set it. */
@@ -74,7 +76,7 @@ type CreatedTaskRow = TitleTaskRow & Pick<ScheduledTaskRow, "created_by_run_id">
 type UpcomingRow = Pick<ScheduledTaskRow, "id" | "config_json" | "run_at" | "timezone" | "created_via" | "created_by_run_id" | "created_by_user_id">;
 const UPCOMING_COLUMNS = "id, config_json, run_at, timezone, created_via, created_by_run_id, created_by_user_id";
 
-const titleOf = (task: Pick<ScheduledTaskRow, "config_json">) => (typeof task.config_json.title === "string" ? task.config_json.title : "Routine");
+export const titleOf = (task: Pick<ScheduledTaskRow, "config_json">) => (typeof task.config_json.title === "string" ? task.config_json.title : "Routine");
 
 const routineKindOf = (task: TaskRow): ActivityRun["routineKind"] => (task.schedule_kind === "once" ? "once" : "rule");
 
@@ -82,7 +84,7 @@ const routineKindOf = (task: TaskRow): ActivityRun["routineKind"] => (task.sched
 const createdRoutineKind = (task: CreatedTaskRow): CreatedRoutine["kind"] => routineKind({ ...task, task_type: "agent_routine" });
 
 /** A private routine shows only to the person who made it. */
-const viewerMaySee = (task: TitleTaskRow, viewerId: string | null) =>
+export const viewerMaySee = (task: TitleTaskRow, viewerId: string | null) =>
   task.visibility === "shared" || (viewerId !== null && task.created_by_user_id === viewerId);
 
 /** The routines each run made, keyed by run id. A failed read is recorded and leaves every run with none. */
@@ -111,8 +113,22 @@ async function loadCreatedRoutines(client: SupabaseClient, workspaceId: string, 
   }
 }
 
+/** How many step runs each of these runs started. A failed read is recorded and shows every run with none. */
+async function loadStepCounts(client: SupabaseClient, workspaceId: string, runIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (!runIds.length) return counts;
+  try {
+    const { data, error } = await client.from("agent_runs").select("parent_run_id").eq("workspace_id", workspaceId).in("parent_run_id", runIds).returns<Array<{ parent_run_id: string }>>();
+    if (error) throw error;
+    for (const child of data ?? []) counts.set(child.parent_run_id, (counts.get(child.parent_run_id) ?? 0) + 1);
+  } catch (error) {
+    recordRouteError({ workspaceId, operation: "read", errorCode: "activity_step_counts_failed", error });
+  }
+  return counts;
+}
+
 /** The titles and visibility of these routines, unfiltered. Callers decide what the viewer may see. */
-async function loadRoutineTasks(client: SupabaseClient, workspaceId: string, taskIds: string[]): Promise<TitleTaskRow[]> {
+export async function loadRoutineTasks(client: SupabaseClient, workspaceId: string, taskIds: string[]): Promise<TitleTaskRow[]> {
   if (!taskIds.length) return [];
   const { data, error } = await client
     .from("scheduled_tasks")
@@ -179,7 +195,9 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
   let query = client
     .from("agent_runs")
     .select("id, kind, session_id, scheduled_task_id, status, outcome, trigger, summary, started_at, completed_at, created_at")
-    .eq("workspace_id", workspaceId);
+    .eq("workspace_id", workspaceId)
+    // One row for each run of a routine. Its step runs are in its details, not in the list.
+    .is("parent_run_id", null);
   if (before) query = query.or(olderThan("created_at", before));
   const { data, error } = await query
     .order("created_at", { ascending: false })
@@ -201,6 +219,7 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
     recordRouteError({ workspaceId, operation: "read", errorCode: "activity_results_read_failed", error });
   }
   const created = await loadCreatedRoutines(client, workspaceId, rows.map((run) => run.id), viewerId);
+  const stepCounts = await loadStepCounts(client, workspaceId, rows.map((run) => run.id));
 
   const last = rows[rows.length - 1];
   const page: ActivityPage = {
@@ -221,6 +240,7 @@ export async function listActivity(client: SupabaseClient, workspaceId: string, 
         completedAt: run.completed_at,
         createdAt: run.created_at,
         createdRoutines: created.get(run.id) ?? [],
+        stepCount: stepCounts.get(run.id) ?? 0,
       };
     }),
     nextCursor: rows.length === ACTIVITY_PAGE_SIZE && last ? formatCursor(last.created_at, last.id) : null,
