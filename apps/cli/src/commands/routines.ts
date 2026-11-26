@@ -3,6 +3,7 @@
 // `--wait` is CLI-only. Over MCP, an agent polls routines.runs with the session id.
 
 import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import type { RoutineListFilter } from "draft-core/routines";
 import { ROUTINE_EVENT_NAMES, ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS } from "draft-core/routine-triggers";
 import { callPersonTool, runModeErrorMessage, type FetchErrorCode, type RoutineAgent, type RoutineRun, type RoutineSummary, type ToolCallResult } from "../cloud-client.ts";
@@ -22,9 +23,9 @@ const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\
 const WAIT_INTERVAL_MS = 5_000;
 const WAIT_TIMEOUT_MS = 30 * 60_000;
 
-const CREATE_VALUES = ["title", "prompt", "prompt-file", "harness", "model", "preset", "time", "weekday", "timezone", "in", "at", "on", "post-channels", "github", "github-access"];
+const CREATE_VALUES = ["title", "prompt", "prompt-file", "harness", "model", "preset", "time", "weekday", "timezone", "in", "at", "on", "post-channels", "github", "github-access", "steps", "steps-file"];
 const CREATE_SWITCHES = ["notify", "no-schedule", "disabled"];
-const UPDATE_SWITCHES = ["notify", "no-notify", "no-post", "no-github", "schedule", "no-schedule", "no-triggers", "enable", "disable"];
+const UPDATE_SWITCHES = ["notify", "no-notify", "no-post", "no-github", "schedule", "no-schedule", "no-triggers", "enable", "disable", "clear-steps"];
 const LIST_SWITCHES = ["once", "upcoming", "fired", "mine"];
 
 const LIST_USAGE = "usage: draft routines list [<id>] [--once] [--upcoming | --fired] [--mine] [--json]";
@@ -52,6 +53,7 @@ interface RoutineOptions {
   schedule: { presets: { preset: string; meaning: string }[]; weekdays: string[]; time: string; onSchedule: string };
   agents: { harness: string; status: string; models: { model: string; label: string }[] }[];
   access: { slackChannels: unknown; githubRepos: unknown };
+  steps?: { limits: { maxSteps: number }; step: Record<string, string>; update: string };
   notes?: string;
 }
 
@@ -281,6 +283,55 @@ async function loadPrompt(flags: Flags): Promise<{ text?: string; error?: string
   }
 }
 
+const STEPS_EXAMPLE = '[{"key":"collect","prompt":"List every decision in the notes."},{"key":"write_up","promptFile":"write-up.md","inputsFrom":["collect"]}]';
+
+/**
+ * The steps from --steps (JSON text) or --steps-file (a JSON file), or null for --clear-steps. A step may give its prompt
+ * as `promptFile` instead of `prompt`: the text of that file, read relative to the steps file (or to here for --steps).
+ */
+async function loadSteps(flags: Flags): Promise<{ steps?: unknown[] | null; error?: string }> {
+  const text = flags.values.steps;
+  const file = flags.values["steps-file"];
+  const clear = flags.switches.has("clear-steps");
+  if ([text !== undefined, file !== undefined, clear].filter(Boolean).length > 1) return { error: "give --steps, --steps-file or --clear-steps, only one" };
+  if (clear) return { steps: null };
+  if (text === undefined && file === undefined) return {};
+  let raw = text;
+  if (file !== undefined) {
+    try {
+      raw = await readFile(file, "utf8");
+    } catch {
+      return { error: `cannot read --steps-file: ${file}` };
+    }
+  }
+  const flag = file !== undefined ? "--steps-file" : "--steps";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw!);
+  } catch {
+    return { error: `${flag} must be JSON: a list of steps, for example ${STEPS_EXAMPLE}` };
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.some((step) => typeof step !== "object" || step === null || Array.isArray(step))) {
+    return { error: `${flag} must be a non-empty JSON list of steps, for example ${STEPS_EXAMPLE}` };
+  }
+  const base = file !== undefined ? dirname(resolve(file)) : process.cwd();
+  const steps: Record<string, unknown>[] = [];
+  for (const entry of parsed as Record<string, unknown>[]) {
+    const { promptFile, ...step } = entry;
+    if (promptFile !== undefined) {
+      if (step.prompt !== undefined) return { error: `step "${String(step.key)}" gives both prompt and promptFile. Use one.` };
+      if (typeof promptFile !== "string") return { error: `step "${String(step.key)}": promptFile must be a file path` };
+      try {
+        step.prompt = await readFile(resolve(base, promptFile), "utf8");
+      } catch {
+        return { error: `step "${String(step.key)}": cannot read promptFile: ${promptFile}` };
+      }
+    }
+    steps.push(step);
+  }
+  return { steps };
+}
+
 function oneLine(text: string, max = 160): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max - 3)}...` : flat;
@@ -345,6 +396,7 @@ function formatRoutine(routine: RoutineSummary, detail: boolean): string {
   }
   lines.push(
     `  agent: ${agent.harness}, ${agent.model ?? "default model"}`,
+    ...(agent.steps?.length ? [`  steps: ${agent.steps.map((step) => step.key).join(" → ")}`] : []),
     `  when: ${whenLine(routine)}`,
     `  triggers: ${agent.events?.length ? agent.events.join(", ") : "none"}`,
     "  access:",
@@ -356,6 +408,11 @@ function formatRoutine(routine: RoutineSummary, detail: boolean): string {
   if (detail) {
     lines.push(`  created by: ${agent.createdByName ?? "unknown"}`, `  updated by: ${routine.updatedByName ?? "unknown"}`, "  prompt:");
     lines.push(...agent.prompt.split("\n").map((line) => `    ${line}`));
+    (agent.steps ?? []).forEach((step, index) => {
+      const once = step.fanOut.over === "none" ? "runs once" : "runs for each document in the company context";
+      lines.push(`  step ${index + 1}: ${step.key} (${step.model ?? "default model"}, ${once}${step.inputsFrom?.length ? `, reads ${step.inputsFrom.join(", ")}` : ""})`);
+      lines.push(...step.prompt.split("\n").map((line) => `    ${line}`));
+    });
   }
   return lines.join("\n");
 }
@@ -454,6 +511,10 @@ function formatOptions(options: RoutineOptions): string {
       `  ${agent.harness} (${agent.status})`,
       `    models: ${agent.models.map((model) => `${model.model} (${model.label})`).join(", ") || "none"}`,
     ])),
+    ...(options.steps ? [section("Steps", [
+      `  Up to ${options.steps.limits.maxSteps} ordered steps. Pass them with --steps <json> or --steps-file <path>. ${options.steps.update.replace(/`/g, "")}`,
+      ...Object.entries(options.steps.step).map(([field, meaning]) => `  ${field}: ${meaning}`),
+    ])] : []),
     section("Slack channels", listOrNone(namesOf(options.access.slackChannels), "unavailable right now")),
     section("GitHub repos", listOrNone(namesOf(options.access.githubRepos), "unavailable right now")),
   ];
@@ -488,6 +549,8 @@ async function runCreate(args: string[]): Promise<number> {
   if (!title || !harness || !prompt.text) return usage(command, json, CREATE_USAGE);
   const problem = checkChoices(flags) ?? flagConflict(flags) ?? whenProblem(flags) ?? createRuleProblem(flags);
   if (problem) return usage(command, json, problem);
+  const steps = await loadSteps(flags);
+  if (steps.error) return usage(command, json, steps.error);
 
   const body: Record<string, unknown> = {
     title,
@@ -500,17 +563,19 @@ async function runCreate(args: string[]): Promise<number> {
   if (flags.values["post-channels"] !== undefined) body.postChannels = postChannelsValue(flags.values["post-channels"]);
   if (flags.values.github !== undefined) body.github = githubValue(flags);
   if (flags.switches.has("disabled")) body.enabled = false;
+  if (steps.steps) body.steps = steps.steps;
 
   const result = await callTool(command, json, "routines.create", body);
   if (typeof result === "number") return result;
   return printSaved(result.output, json, "Created routine.");
 }
 
-function buildPatch(flags: Flags, promptText: string | undefined, when: Record<string, unknown> | undefined): Record<string, unknown> {
+function buildPatch(flags: Flags, promptText: string | undefined, when: Record<string, unknown> | undefined, steps: unknown[] | null | undefined): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
   for (const key of PATCH_KEYS) if (flags.values[key] !== undefined) patch[key] = flags.values[key];
   if (promptText !== undefined) patch.prompt = promptText;
   if (when) patch.when = when;
+  if (steps !== undefined) patch.steps = steps;
   const s = flags.switches;
   if (s.has("notify")) patch.canNotify = true;
   if (s.has("no-notify")) patch.canNotify = false;
@@ -537,10 +602,12 @@ async function runUpdate(args: string[]): Promise<number> {
   if (prompt.error) return usage(command, json, prompt.error);
   const problem = checkChoices(flags);
   if (problem) return usage(command, json, problem);
+  const steps = await loadSteps(flags);
+  if (steps.error) return usage(command, json, steps.error);
 
   const when = await updateWhen(command, json, id, flags);
   if (typeof when === "number") return when;
-  const patch = buildPatch(flags, prompt.text, when);
+  const patch = buildPatch(flags, prompt.text, when, steps.steps);
   if (Object.keys(patch).length === 0) return usage(command, json, `nothing to change. ${UPDATE_USAGE}`);
   const result = await callTool(command, json, "routines.update", { taskId: id, patch });
   if (typeof result === "number") return result;
@@ -754,7 +821,21 @@ const SHARED_FLAGS = `  --title <text>           Name of the routine. Up to 120 
   --notify                 Let the agent message teammates on Slack.
   --post-channels <list>   joined (any channel Draft is in), or channel names such as #general,#eng.
   --github <repos>         owner/repo, or a comma list, the agent can use.
-  --github-access <access> read (default) or write. write lets it open pull requests.`;
+  --github-access <access> read (default) or write. write lets it open pull requests.
+  --steps <json>           Split the routine into ordered steps. A JSON list of steps. See "Steps" below.
+  --steps-file <path>      Read the steps from a JSON file. Use this or --steps, not both.`;
+
+const STEPS_SECTION = `Steps:
+  A routine with steps runs them one after another. Each step is a self-contained brief with its own agent run.
+  A step needs a key and a prompt. Everything else is optional:
+    key          Names the step: lowercase letters, digits and underscores. Unique in the list.
+    prompt       What the step does. Or use promptFile.
+    promptFile   A file with the prompt, read relative to the steps file (or to here for --steps).
+    model        A model of the routine's agent. Default: the agent's default model.
+    fanOut       {"over":"none"} runs once (default). {"over":"context_documents","filter":"all_stable"} runs for each document.
+    inputsFrom   Keys of earlier steps whose answers this step reads.
+  --prompt stays required: it is the goal of the whole routine, and the steps do the work.
+  Run \`draft routines options\` for the limits.`;
 
 const TRIGGERS_SECTION = `Triggers for --on:
 ${TRIGGER_LIST}`;
@@ -768,22 +849,27 @@ ${SHARED_FLAGS}
 
 ${TRIGGERS_SECTION}
 
+${STEPS_SECTION}
+
 Examples:
   draft routines create --title "Check PR" --prompt "Review the open pull request." --harness claude --in 2h
   draft routines create --title "Weekday digest" --prompt-file digest.md --harness claude --preset weekdays --time 09:00 --timezone America/New_York
-  draft routines create --title "Review PRs" --prompt "Review each new pull request." --harness claude --no-schedule --on github.pull_request_opened --github acme/app`;
+  draft routines create --title "Review PRs" --prompt "Review each new pull request." --harness claude --no-schedule --on github.pull_request_opened --github acme/app
+  draft routines create --title "Decision digest" --prompt "Write the weekly decision digest." --harness claude --preset weekly --weekday fri --steps-file steps.json`;
 
 const UPDATE_HELP = `usage: draft routines update <id> [options]
 
 Changes only the fields you pass. Other fields stay as they are.
 --on replaces the whole trigger list. --github replaces the repo list.
+--steps and --steps-file replace the whole step list. Read the routine with \`draft routines list <id>\`, change the list, send all of it.
 --in / --at reschedule a one-shot, including one that already ran.
 
 ${SHARED_FLAGS}
   --no-notify              Stop letting the agent message teammates on Slack.
   --no-post                Stop posting in Slack.
   --no-github              Remove GitHub access.
-  --no-triggers            Remove every trigger.
+ --no-triggers            Remove every trigger.
+  --clear-steps            Remove the steps. The routine runs as one agent again.
   --schedule               Turn the schedule on.
   --no-schedule            Turn the schedule off. Only triggers and Run now start the routine.
   --enable                 Turn the routine on.
@@ -792,9 +878,13 @@ ${SHARED_FLAGS}
 
 ${TRIGGERS_SECTION}
 
+${STEPS_SECTION}
+
 Examples:
   draft routines update <id> --time 10:30
-  draft routines update <id> --no-schedule --on linear.issue_completed`;
+  draft routines update <id> --no-schedule --on linear.issue_completed
+  draft routines update <id> --steps-file steps.json
+  draft routines update <id> --clear-steps`;
 
 const DELETE_HELP = `usage: draft routines delete <id> [--json]
 

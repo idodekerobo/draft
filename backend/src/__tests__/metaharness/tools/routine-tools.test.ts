@@ -308,6 +308,67 @@ describe("routines.create from a person", () => {
   });
 });
 
+describe("routines with steps, through the tools an agent uses", () => {
+  const daily = { schedule: { preset: "daily", time: "09:00", timezone: "UTC" } };
+  const two = [{ key: "collect", prompt: "List every decision in the notes." }, { key: "write_up", prompt: "Write them up.", inputsFrom: ["collect"] }];
+  const created = async (steps: unknown[] = two) => {
+    const result = await call("routines.create", asOwner, { title: "Decisions", prompt: "Summarize decisions.", harness: "claude", when: daily, steps });
+    expect(result.status).toBe("ok");
+    return (output(result).routine as { id: string }).id;
+  };
+  const savedSteps = (taskId: string) => (table("scheduled_tasks").find((task) => task.id === taskId)!.config_json as { steps?: Array<Record<string, unknown>> }).steps;
+
+  it("creates a routine from steps that name only a key and a prompt, and fills the rest in", async () => {
+    const taskId = await created();
+    expect(savedSteps(taskId)).toEqual([
+      { key: "collect", prompt: "List every decision in the notes.", model: null, fanOut: { over: "none" }, output: { type: "text" } },
+      { key: "write_up", prompt: "Write them up.", model: null, fanOut: { over: "none" }, output: { type: "text" }, inputsFrom: ["collect"] },
+    ]);
+  });
+
+  it("lists the steps with the routine", async () => {
+    const taskId = await created();
+    const listed = output(await call("routines.list", asOwner, { taskId })).routine as unknown as { agent: { steps: Array<{ key: string }> } };
+    expect(listed.agent.steps.map((step) => step.key)).toEqual(["collect", "write_up"]);
+  });
+
+  it("replaces the whole list on update, and removes it with null", async () => {
+    const taskId = await created();
+    expect((await call("routines.update", asOwner, { taskId, patch: { steps: [{ key: "only", prompt: "Do it all." }] } })).status).toBe("ok");
+    expect(savedSteps(taskId)!.map((step) => step.key)).toEqual(["only"]);
+    expect((await call("routines.update", asOwner, { taskId, patch: { steps: null } })).status).toBe("ok");
+    expect(savedSteps(taskId)).toBeUndefined();
+    expect((table("scheduled_tasks").find((task) => task.id === taskId)!.config_json as { prompt: string }).prompt).toBe("Summarize decisions.");
+  });
+
+  it("refuses steps that break the rules, and saves nothing", async () => {
+    const before = table("scheduled_tasks").length;
+    for (const steps of [
+      [{ key: "a", prompt: "x" }, { key: "a", prompt: "y" }],
+      [{ key: "a", prompt: "x", model: "not-a-model" }],
+      [{ key: "a", prompt: "x", inputsFrom: ["later"] }, { key: "later", prompt: "y" }],
+      [{ key: "a", prompt: "x", fanOut: { over: "source_batches", maxTokensPerBatch: 50000 } }],
+    ]) {
+      const result = await call("routines.create", asOwner, { title: "Bad", prompt: "p", harness: "claude", when: daily, steps });
+      expect(result).toMatchObject({ status: "refused", code: "invalid_input" });
+    }
+    expect(table("scheduled_tasks")).toHaveLength(before);
+  });
+
+  it("tells the agent about steps in the tool text and in routines.options", async () => {
+    const tools = createRoutineTools(fakeClient(db));
+    const description = (name: string) => tools.find((tool) => tool.name === name)!.description;
+    expect(description("routines.create")).toContain("`steps`");
+    expect(description("routines.update")).toContain("replaces the whole step list");
+    expect(description("routines.update")).toContain("`steps: null`");
+    expect(description("routines.list")).toContain("`steps`");
+    const options = (await call("routines.options", asOwner, {}) as { output: { steps: { limits: { maxSteps: number }; update: string; example: unknown[] } } }).output;
+    expect(options.steps.limits.maxSteps).toBe(10);
+    expect(options.steps.update).toContain("replaces the whole list");
+    expect(options.steps.example).toHaveLength(2);
+  });
+});
+
 describe("routines with canReadGmail", () => {
   const GMAIL_REFUSAL = "Gmail is not connected for the routine's owner. Ask the person whether to connect it, then call connections.connect with provider google.";
   const daily = { schedule: { preset: "daily", time: "09:00", timezone: "UTC" } };

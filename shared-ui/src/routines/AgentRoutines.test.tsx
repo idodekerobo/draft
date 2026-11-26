@@ -159,6 +159,47 @@ describe("creating a routine", () => {
     expect(screen.getByRole("button", { name: "Launch watch" })).toBeTruthy();
   });
 
+  it("sends no steps when the routine is not split", async () => {
+    const { createRoutine } = setup({ routines: [] });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Plain" } });
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "Do one thing." } });
+    await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Create routine" })));
+    await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
+    expect("steps" in (createRoutine.mock.calls[0]![0] as object)).toBe(false);
+  });
+
+  it("splits into steps while creating, renames the request to a goal, and sends the steps with the routine", async () => {
+    const { createRoutine } = setup({ routines: [] });
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "New routine" }));
+    const dialog = await screen.findByRole("dialog");
+    const create = within(dialog).getByRole("button", { name: "Create routine" }) as HTMLButtonElement;
+
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Decision digest" } });
+    fireEvent.change(within(dialog).getByLabelText("What should it do?"), { target: { value: "Write the weekly decision digest." } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Split into steps" }));
+
+    expect(within(dialog).getAllByLabelText(/Instructions for step/)).toHaveLength(2);
+    expect((within(dialog).getByLabelText(/What is this routine for\?/) as HTMLTextAreaElement).value).toBe("Write the weekly decision digest.");
+    expect((within(dialog).getByLabelText(/Instructions for step 1/) as HTMLTextAreaElement).value).toBe("Write the weekly decision digest.");
+    expect(create.disabled).toBe(true);
+
+    fireEvent.change(within(dialog).getByLabelText(/Instructions for step 2/), { target: { value: "Turn the decisions into a short digest." } });
+    expect(create.disabled).toBe(false);
+
+    await act(async () => fireEvent.click(create));
+    await waitFor(() => expect(createRoutine).toHaveBeenCalledTimes(1));
+    const sent = createRoutine.mock.calls[0]![0] as CreateRoutineInput;
+    expect(sent).toMatchObject({ title: "Decision digest", prompt: "Write the weekly decision digest." });
+    expect(sent.steps).toEqual([
+      { key: "step_1", prompt: "Write the weekly decision digest.", model: null, fanOut: { over: "none" }, output: { type: "text" } },
+      { key: "step_2", prompt: "Turn the decisions into a short digest.", model: null, fanOut: { over: "none" }, output: { type: "text" }, inputsFrom: ["step_1"] },
+    ]);
+  });
+
   it("offers Read my Gmail off by default and sends it only when turned on", async () => {
     const { createRoutine } = setup({ routines: [], gmailConnected: true });
     await ready();

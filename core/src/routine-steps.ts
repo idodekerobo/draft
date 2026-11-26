@@ -58,19 +58,22 @@ const outputSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("structured"), schema: z.record(z.string(), z.unknown()) }).strict(),
 ]);
 
-/** The shape of a step as it is stored and sent in a request. Whether it fits its routine is checked by `checkRoutineSteps`. */
+/**
+ * The shape of a step as it is stored and sent in a request. Whether it fits its routine is checked by `checkRoutineSteps`.
+ * A step needs only a key and a prompt: the rest default to the routine agent's default model, one run, and a text answer.
+ */
 export const RoutineStepInput = z.object({
-  key: z.string().regex(STEP_KEY_PATTERN),
-  prompt: z.string().trim().min(1).max(STEP_PROMPT_MAX_CHARS),
-  model: z.string().min(1).max(80).nullable(),
-  permissions: z.array(permissionSchema).max(40).optional(),
-  fanOut: fanOutSchema,
-  output: outputSchema,
-  inputsFrom: z.array(z.string().regex(STEP_KEY_PATTERN)).max(MAX_ROUTINE_STEPS).optional(),
-  allowPartial: z.boolean().optional(),
+  key: z.string().regex(STEP_KEY_PATTERN).describe("Names the step. Lowercase letters, digits and underscores, starting with a letter, up to 32 characters. Unique in the list."),
+  prompt: z.string().trim().min(1).max(STEP_PROMPT_MAX_CHARS).describe("What this step does. A self-contained brief: a step's run cannot see the other steps or the conversation, except the answers of steps listed in inputsFrom."),
+  model: z.string().min(1).max(80).nullable().default(null).describe("A model of the routine's agent, from routines.options. null (the default) uses the agent's default model."),
+  permissions: z.array(permissionSchema).max(40).optional().describe("Tools this step may use. It can only narrow the routine's own tools. Left out, the step may use all of them."),
+  fanOut: fanOutSchema.default({ over: "none" }).describe("{over:'none'} runs the step once (the default). {over:'context_documents', filter:'all_stable'|'with_new_evidence'} runs it once for each document in the company context."),
+  output: outputSchema.default({ type: "text" }).describe("{type:'text'} (the default) is a written answer the next step reads."),
+  inputsFrom: z.array(z.string().regex(STEP_KEY_PATTERN)).max(MAX_ROUTINE_STEPS).optional().describe("Keys of earlier steps whose answers this step reads."),
+  allowPartial: z.boolean().optional().describe("true lets the routine go on when some runs of a fanned-out step fail, as long as one succeeds."),
 }).strict();
 
-export const RoutineStepsInput = z.array(RoutineStepInput).min(1).max(MAX_ROUTINE_STEPS);
+export const RoutineStepsInput = z.array(RoutineStepInput).min(1).max(MAX_ROUTINE_STEPS).describe("Ordered steps. Steps run one after another. Sending a list replaces the whole list.");
 
 /** The step list of a routine that has none: one step built from the routine's own prompt, model and permissions. */
 export function stepsOf(routine: {

@@ -4,7 +4,7 @@ import { defaultRoutineBuiltInTools } from "draft-core/routines";
 import type { HarnessId } from "draft-core/harnesses";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { AgentFields, isDisconnected, type AgentStatuses, type AgentValue } from "./AgentFields";
-import { StepsEditor, stepsProblem } from "./StepsEditor";
+import { StepsEditor, stepsProblem, STEPS_GOAL_HELP, STEPS_GOAL_LABEL } from "./StepsEditor";
 import { SynthesisSteps } from "./SynthesisSteps";
 import { Select } from "../controls/Select";
 import { AbilityFields, RoutinePreview, capabilitiesOf, capabilitiesValid, capabilityChanges, type CapabilityValue } from "./CapabilityFields";
@@ -268,6 +268,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
                   renderAgentSetup={renderAgentSetup}
                   refreshAgents={refreshAgents}
                   fieldError={fieldError}
+                  {...(steps.length > 0 ? { promptLabel: STEPS_GOAL_LABEL, promptHelp: STEPS_GOAL_HELP } : {})}
                 />
                 <StepsEditor steps={steps} onChange={setSteps} harness={agent.harness} goal={agent.prompt} disabled={busy} fieldError={fieldError} />
                 <WhenFields

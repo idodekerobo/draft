@@ -941,10 +941,20 @@ export interface RoutineRun {
 }
 
 /** The agent part of a routine. Built-in routines have no agent. */
+/** One step of a routine, as the routine lists it. */
+export interface RoutineStepInfo {
+  key: string;
+  prompt: string;
+  model: string | null;
+  fanOut: { over: string; filter?: string };
+  inputsFrom?: string[];
+}
+
 export interface RoutineAgent {
   prompt: string;
   harness: string;
   model: string | null;
+  steps?: RoutineStepInfo[];
   events?: string[];
   onSchedule?: false;
   canNotify?: boolean;

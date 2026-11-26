@@ -29,10 +29,10 @@ A routine is work Draft runs once, on a repeating schedule, on events (such as a
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `routines.options` | `{}` | Available triggers and provider connections, schedule presets, agents, Slack channels and GitHub repos. Call it before `create` or `update` from your MCP client. |
-| `routines.list` | `{ taskId?, kind?, status?, createdBy? }` | Routines with full settings, or one by `taskId`. `kind` is `once`, `recurring` or `event`; `status` is `upcoming` or `fired`; `createdBy` is `me` or `anyone`. One-time routines are hidden from the default list. |
-| `routines.create` | `{ title, prompt, harness, when, ... }` | Create a routine and return the saved routine. `harness` is required for a person; a routine run can inherit it from its parent. |
-| `routines.update` | `{ taskId, patch }` | Change only the supplied fields. Timing and triggers go under `patch.when`. `postChannels: null` and `github: null` remove that access. |
+| `routines.options` | `{}` | Available triggers and provider connections, schedule presets, agents, Slack channels and GitHub repos, and the rules for `steps`. Call it before `create` or `update` from your MCP client. |
+| `routines.list` | `{ taskId?, kind?, status?, createdBy? }` | Routines with full settings, or one by `taskId`. `kind` is `once`, `recurring` or `event`; `status` is `upcoming` or `fired`; `createdBy` is `me` or `anyone`. One-time routines are hidden from the default list. A routine split into steps lists them in `agent.steps`. |
+| `routines.create` | `{ title, prompt, harness, when, ... }` | Create a routine and return the saved routine. `harness` is required for a person; a routine run can inherit it from its parent. Pass `steps` to split the routine into ordered steps. |
+| `routines.update` | `{ taskId, patch }` | Change only the supplied fields. Timing and triggers go under `patch.when`. `postChannels: null` and `github: null` remove that access. `steps` replaces the whole step list, and `steps: null` removes it. |
 | `routines.delete` | `{ taskId }` | Delete a routine, including cancelling a pending one-time routine. Destructive: confirm with the person first. |
 | `routines.run` | `{ taskId }` | Request an immediate run, including on paused routines and one-time routines that already fired. Returns `sessionId` when started, or `queued: true` and `sessionId: null` when queued behind active work. |
 | `routines.runs` | `{ taskId, cursor?, sessionId?, transcript? }` | Runs, newest first, 50 at a time: status, what started it, result and skip reason. Pass `nextCursor` as `cursor` for older runs. With `sessionId`, return one run; add `transcript: true` for its transcript, using the transcript's own `nextCursor` for more. |
@@ -72,6 +72,39 @@ To reschedule it, call `routines.update` with:
 To list your pending one-time routines, call `routines.list` with `{"kind":"once","status":"upcoming","createdBy":"me"}`. Returned routines include `kind`, `runAt`, `firedAt`, `madeByAgent`, `createdByRunId` and `visibility`. `missingConnections` names triggers or access that cannot work until their provider is connected.
 
 The old top-level schedule fields are no longer accepted. Send timing in `when`; update older CLI or desktop clients before creating or editing routines.
+
+#### Split a routine into steps
+
+Pass `steps` to `routines.create` or `routines.update` for work that has stages. The steps run one after another, each in its own agent run, and a later step reads the answers of the steps named in its `inputsFrom`. Without `steps`, the routine runs as one agent. `prompt` stays required: it is the goal of the whole routine.
+
+A step needs only a `key` and a `prompt`:
+
+| Field | Meaning |
+| --- | --- |
+| `key` | Names the step. Lowercase letters, digits and underscores, starting with a letter, up to 32 characters. Unique in the list. |
+| `prompt` | What the step does. A self-contained brief: the step's run cannot see the conversation or other steps, except those in `inputsFrom`. |
+| `model` | A model of the routine's agent, from `routines.options`. Default `null`: the agent's default model. |
+| `fanOut` | `{"over":"none"}` runs the step once (default). `{"over":"context_documents","filter":"all_stable"}` or `"with_new_evidence"` runs it once for each document in the company context. |
+| `inputsFrom` | Keys of earlier steps whose answers this step reads. |
+| `allowPartial` | `true` lets the routine go on when some runs of a fanned-out step fail, as long as one succeeds. |
+| `permissions` | Tools the step may use. It can only narrow the routine's own. Left out, it may use all of them. |
+
+A list has at most 10 steps. A step cannot fan out over source batches; that is only for the context update routine, whose steps are fixed. `create` and `update` refuse a list with a repeated key, an unknown model, an `inputsFrom` that names a later step, or tools the routine does not have, and answer with `invalid_input` and the field.
+
+An update sends the whole list. To change one step, read the routine with `routines.list`, change the list and send all of it. `steps: null` removes the steps.
+
+~~~json
+{
+  "title": "Decision digest",
+  "prompt": "Write the weekly decision digest for the team.",
+  "harness": "claude",
+  "when": {"schedule": {"preset": "weekly", "weekday": "fri", "time": "16:00", "timezone": "America/New_York"}},
+  "steps": [
+    {"key": "collect", "prompt": "List every decision made this week in the sources."},
+    {"key": "write_up", "prompt": "Write the decisions up for the team.", "inputsFrom": ["collect"]}
+  ]
+}
+~~~
 
 #### Follow-ups from routine runs
 

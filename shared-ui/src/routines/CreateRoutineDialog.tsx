@@ -5,6 +5,7 @@ import type { HarnessId } from "draft-core/harnesses";
 import { useEffect, useRef, useId, useMemo, useState, type ReactNode, type RefObject } from "react";
 import { useDraftTrack } from "../query/api";
 import { AgentFields, isDisconnected, type AgentValue } from "./AgentFields";
+import { StepsEditor, stepsProblem, STEPS_GOAL_HELP, STEPS_GOAL_LABEL } from "./StepsEditor";
 import { defaultAgent, rememberAgent } from "./agent-default";
 import { agentLabel } from "./agent-label";
 import { AbilityFields, RoutinePreview, capabilitiesValid, defaultCapabilities, type CapabilityValue } from "./CapabilityFields";
@@ -12,7 +13,7 @@ import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import { ScheduleFields, browserTimezone, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions, type ScheduleValue } from "./schedule-fields";
-import type { CreateRoutineInput, RoutineAgentStatus, RoutineEventName, RoutinesResponse } from "./types";
+import type { CreateRoutineInput, RoutineAgentStatus, RoutineEventName, RoutinesResponse, RoutineStepEdit } from "./types";
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
 /** Asks what the routine does, which agent runs it, when, and what it may reach. Nothing is saved until Create. */
@@ -40,6 +41,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
   const ids = useId();
   const titleId = `${ids}-title`;
   const [agent, setAgent] = useState<AgentValue>(() => ({ title: "", prompt: "", ...defaultAgent(agents) }));
+  const [steps, setSteps] = useState<RoutineStepEdit[]>([]);
   const [mode, setMode] = useState<WhenMode>("schedule");
   const [events, setEvents] = useState<RoutineEventName[]>([]);
   const [schedule, setSchedule] = useState<ScheduleValue>(() => ({ preset: "daily", time: "09:00", weekday: "mon", timezone: browserTimezone() }));
@@ -58,7 +60,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
   const usesTime = presetUsesTime(schedule.preset);
   const zones = useMemo(() => timezoneOptions(schedule.timezone), [schedule.timezone]);
   const blocked = isDisconnected(agents[agent.harness]);
-  const canCreate = agent.title.trim() !== "" && agent.prompt.trim() !== "" && (!onSchedule || !usesTime || schedule.time !== "") && capabilitiesValid(capabilities) && !saving && !blocked;
+  const canCreate = agent.title.trim() !== "" && agent.prompt.trim() !== "" && (!onSchedule || !usesTime || schedule.time !== "") && capabilitiesValid(capabilities) && stepsProblem(steps) === null && !saving && !blocked;
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
 
   const when = onSchedule
@@ -81,6 +83,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
         ...(capabilities.postChannels ? { postChannels: capabilities.postChannels } : {}),
         ...(capabilities.github ? { github: capabilities.github } : {}),
         builtInTools: capabilities.builtInTools,
+        ...(steps.length > 0 ? { steps } : {}),
       });
       rememberAgent({ harness: agent.harness, model: agent.model, effort: agent.effort });
     } catch (caught) {
@@ -123,7 +126,9 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
                 renderAgentSetup={renderAgentSetup}
                 refreshAgents={refreshAgents}
                 fieldError={fieldError}
+                {...(steps.length > 0 ? { promptLabel: STEPS_GOAL_LABEL, promptHelp: STEPS_GOAL_HELP } : {})}
               />
+              <StepsEditor steps={steps} onChange={setSteps} harness={agent.harness} goal={agent.prompt} disabled={saving} fieldError={fieldError} />
               <WhenFields
                 mode={mode}
                 onModeChange={setMode}

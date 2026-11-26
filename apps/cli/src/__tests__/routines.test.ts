@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { rmSync, writeFileSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createMockBackend, invalidInput, refusal } from "./helpers/mock-backend.ts";
 import { makeHome, runCli, seedCliAuth } from "./helpers/cli-runner.ts";
@@ -646,5 +646,113 @@ describe("draft routines help", () => {
       expect(zsh.stdout).toContain(`'${flag}`);
     }
     expect(zsh.stdout).toContain("list:List routines, including one-shots with --once");
+  });
+});
+
+describe("draft routines steps", () => {
+  const steps = [{ key: "collect", prompt: "List every decision." }, { key: "write_up", prompt: "Write them up.", inputsFrom: ["collect"] }];
+  const create = ["routines", "create", "--title", "Digest", "--prompt", "Write the digest.", "--harness", "claude", "--preset", "weekly", "--weekday", "fri"];
+
+  test("create --steps sends the steps with the routine", async () => {
+    let seen: Record<string, unknown> | undefined;
+    backend.state.toolOutputs["routines.create"] = (input) => { seen = input; return { routine: agentRoutine }; };
+    const result = await runCli([...create, "--steps", JSON.stringify(steps)], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen).toMatchObject({ prompt: "Write the digest.", steps });
+  });
+
+  test("--steps-file reads the steps from a file, and a step's promptFile is read relative to that file", async () => {
+    mkdirSync(join(home, "digest"));
+    writeFileSync(join(home, "digest", "write-up.md"), "Write them up.\nKeep it short.");
+    writeFileSync(join(home, "digest", "steps.json"), JSON.stringify([{ key: "collect", prompt: "List every decision." }, { key: "write_up", promptFile: "write-up.md", inputsFrom: ["collect"] }]));
+    let seen: Record<string, unknown> | undefined;
+    backend.state.toolOutputs["routines.create"] = (input) => { seen = input; return { routine: agentRoutine }; };
+    const result = await runCli([...create, "--steps-file", join(home, "digest", "steps.json")], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(seen!.steps).toEqual([{ key: "collect", prompt: "List every decision." }, { key: "write_up", prompt: "Write them up.\nKeep it short.", inputsFrom: ["collect"] }]);
+  });
+
+  test("update sends the whole list, and --clear-steps sends null", async () => {
+    let seen: unknown;
+    backend.state.toolOutputs["routines.update"] = (input) => { seen = input; return { routine: agentRoutine }; };
+    expect((await runCli(["routines", "update", ROUTINE_ID, "--steps", JSON.stringify(steps)], { home, apiUrl: backend.url })).exitCode).toBe(0);
+    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { steps } });
+    expect((await runCli(["routines", "update", ROUTINE_ID, "--clear-steps"], { home, apiUrl: backend.url })).exitCode).toBe(0);
+    expect(seen).toEqual({ taskId: ROUTINE_ID, patch: { steps: null } });
+  });
+
+  test("bad steps flags are usage errors, exit 2, and call no tool", async () => {
+    writeFileSync(join(home, "both.json"), JSON.stringify([{ key: "a", prompt: "x", promptFile: "y.md" }]));
+    writeFileSync(join(home, "missing.json"), JSON.stringify([{ key: "a", promptFile: "nope.md" }]));
+    const cases: Array<[string[], string]> = [
+      [[...create, "--steps", "not json"], "must be JSON"],
+      [[...create, "--steps", "[]"], "non-empty JSON list"],
+      [[...create, "--steps", "{\"key\":\"a\"}"], "non-empty JSON list"],
+      [[...create, "--steps", JSON.stringify(steps), "--steps-file", join(home, "steps.json")], "only one"],
+      [[...create, "--steps-file", join(home, "absent.json")], "cannot read --steps-file"],
+      [[...create, "--steps-file", join(home, "both.json")], "both prompt and promptFile"],
+      [[...create, "--steps-file", join(home, "missing.json")], "cannot read promptFile"],
+      [["routines", "update", ROUTINE_ID, "--clear-steps", "--steps", JSON.stringify(steps)], "only one"],
+    ];
+    let called = false;
+    backend.state.toolOutputs["routines.create"] = () => { called = true; return { routine: agentRoutine }; };
+    backend.state.toolOutputs["routines.update"] = () => { called = true; return { routine: agentRoutine }; };
+    for (const [args, message] of cases) {
+      const result = await runCli(args, { home, apiUrl: backend.url });
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr + result.stdout).toContain(message);
+    }
+    expect(called).toBe(false);
+  });
+
+  test("steps the tool rejects print the issues it names, exit 1", async () => {
+    backend.state.toolOutputs["routines.create"] = () => invalidInput("steps.0.key: Invalid");
+    const result = await runCli([...create, "--steps", JSON.stringify([{ key: "Bad Key", prompt: "x" }])], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr + result.stdout).toContain("steps.0.key: Invalid");
+  });
+
+  test("list shows the step names, and list <id> shows each step with its prompt", async () => {
+    const withSteps = {
+      ...agentRoutine,
+      agent: { ...agentRoutine.agent, steps: [
+        { key: "collect", prompt: "List every decision.", model: null, fanOut: { over: "none" } },
+        { key: "per_doc", prompt: "Check this document.\nFix it.", model: "haiku", fanOut: { over: "context_documents", filter: "all_stable" }, inputsFrom: ["collect"] },
+      ] },
+    };
+    backend.state.toolOutputs["routines.list"] = () => ({ routines: [withSteps] });
+    const list = await runCli(["routines", "list"], { home, apiUrl: backend.url });
+    expect(list.stdout).toContain("steps: collect → per_doc");
+    expect(list.stdout).not.toContain("Check this document.");
+    backend.state.toolOutputs["routines.list"] = () => ({ routine: withSteps });
+    const one = await runCli(["routines", "list", ROUTINE_ID], { home, apiUrl: backend.url });
+    expect(one.stdout).toContain("step 1: collect (default model, runs once)");
+    expect(one.stdout).toContain("step 2: per_doc (haiku, runs for each document in the company context, reads collect)");
+    expect(one.stdout).toContain("    Check this document.\n    Fix it.");
+  });
+
+  test("options shows the step rules, and the help and completion know the flags", async () => {
+    backend.state.toolOutputs["routines.options"] = () => ({
+      triggers: [], schedule: { presets: [], weekdays: [], time: "HH:MM", onSchedule: "x" }, agents: [], access: { slackChannels: [], githubRepos: [] },
+      steps: { limits: { maxSteps: 10 }, step: { key: "required. Unique in the list." }, update: "`steps` replaces the whole list." },
+    });
+    const options = await runCli(["routines", "options"], { home, apiUrl: backend.url });
+    expect(options.stdout).toContain("Steps");
+    expect(options.stdout).toContain("Up to 10 ordered steps");
+    expect(options.stdout).toContain("replaces the whole list");
+    const createHelp = await runCli(["routines", "create", "--help"], { home, apiUrl: backend.url });
+    const updateHelp = await runCli(["routines", "update", "--help"], { home, apiUrl: backend.url });
+    for (const help of [createHelp.stdout, updateHelp.stdout]) {
+      expect(help).toContain("--steps <json>");
+      expect(help).toContain("--steps-file <path>");
+      expect(help).toContain("promptFile");
+    }
+    expect(updateHelp.stdout).toContain("--clear-steps");
+    const bash = await runCli(["completion"], { home, apiUrl: backend.url });
+    const zsh = await runCli(["completion", "--zsh"], { home, apiUrl: backend.url });
+    for (const flag of ["--steps", "--steps-file", "--clear-steps"]) {
+      expect(bash.stdout).toContain(flag);
+      expect(zsh.stdout).toContain(`'${flag}`);
+    }
   });
 });

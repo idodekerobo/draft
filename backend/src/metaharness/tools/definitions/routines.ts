@@ -1,6 +1,7 @@
 import { isConfigurableBuiltIn, parseBuiltInConfig } from "../../../routines/built-in-config";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { HARNESSES } from "draft-core/harnesses";
+import { MAX_ROUTINE_STEPS, STEP_KEY_PATTERN, STEP_PROMPT_MAX_CHARS } from "draft-core/routine-steps";
 import { routineBuiltInTools, ROUTINE_PRESETS, ROUTINE_TRIGGERS, ROUTINE_WEEKDAYS, RoutineInput, RoutineListFilter, RoutinePatch, routineProvidersForWhen } from "draft-core/routines";
 import type { AgentRunSpec } from "draft-core/run-spec";
 import { ANY_RUN, findToolPermission, type DraftToolLimits, type ToolCaller, type UserCallSurface } from "draft-core/tools";
@@ -205,7 +206,7 @@ async function createRoutine(client: SupabaseClient, actor: RoutineCaller, input
 export function createRoutineTools(client: SupabaseClient) {
   const list = defineTool({
     name: "routines.list", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: RoutineListFilter,
-    description: "List the workspace's routines with their full settings: instructions, agent, schedule, triggers, Slack and GitHub access, last run. Pass taskId for one. missingConnections names triggers or access that can't work until that provider is connected. One-shots are hidden unless kind: \"once\". Filter with status and createdBy.",
+    description: "List the workspace's routines with their full settings: instructions, agent, schedule, triggers, Slack and GitHub access, last run. Pass taskId for one. A routine split into steps lists them in `steps`. missingConnections names triggers or access that can't work until that provider is connected. One-shots are hidden unless kind: \"once\". Filter with status and createdBy.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
       try {
@@ -260,6 +261,22 @@ export function createRoutineTools(client: SupabaseClient) {
               slackChannels: slack,
               githubRepos: github,
             },
+            steps: {
+              what: "Splits a routine into ordered steps that run one after another. Send `steps` to routines.create or routines.update. Each step runs in its own sandbox with its own instructions, and a later step reads the answers of the steps named in its `inputsFrom`.",
+              limits: { maxSteps: MAX_ROUTINE_STEPS, keyPattern: STEP_KEY_PATTERN.source, maxPromptCharacters: STEP_PROMPT_MAX_CHARS },
+              step: {
+                key: "required. Unique in the list.",
+                prompt: "required. A self-contained brief for this step.",
+                model: "optional. A model alias of the routine's agent, from agents[].models. null or left out uses the agent's default.",
+                fanOut: "optional. {over:'none'} runs once (default). {over:'context_documents', filter:'all_stable'|'with_new_evidence'} runs once for each document in the company context. A step cannot fan out over source batches.",
+                inputsFrom: "optional. Keys of earlier steps whose answers this step reads.",
+                allowPartial: "optional. true lets the routine go on when some runs of a fanned-out step fail, as long as one succeeds.",
+                permissions: "optional. Tools the step may use. It can only narrow the routine's own. Left out, it may use all of them.",
+              },
+              update: "`steps` replaces the whole list. Read the routine with routines.list, change the list, send all of it. `steps: null` removes the steps.",
+              example: [{ key: "collect", prompt: "List every decision in the notes." }, { key: "write_up", prompt: "Write the decisions up for the team.", inputsFrom: ["collect"] }],
+              builtIn: "Update company context runs in steps too, but its steps are fixed. Only its guidance, agent, model and schedule can change.",
+            },
             notes: "A routine runs as the person who created it. An event run only sees a source that person can see; otherwise the run is recorded as skipped.",
           },
         };
@@ -269,7 +286,7 @@ export function createRoutineTools(client: SupabaseClient) {
 
   const create = defineTool({
     name: "routines.create", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: RoutineInput,
-    description: "Create a routine: work Draft runs later. `when` is once (`{in:\"2h\"}` or `{at: ISO}`, at most 365 days ahead), a schedule (`{schedule:{preset…}|{cron,timezone}}`), events (`{events:[…]}`), or a schedule plus events. Use it for follow-ups ('check back in 2 hours') and for recurring work. `prompt` must be a self-contained brief: what to do, why, and what done means. The run that fires can't see this conversation. From a run, settings you leave out are copied from your routine. Call routines.options (people only) for presets and triggers. Answers with the saved routine.",
+    description: "Create a routine: work Draft runs later. `when` is once (`{in:\"2h\"}` or `{at: ISO}`, at most 365 days ahead), a schedule (`{schedule:{preset…}|{cron,timezone}}`), events (`{events:[…]}`), or a schedule plus events. Use it for follow-ups ('check back in 2 hours') and for recurring work. `prompt` must be a self-contained brief: what to do, why, and what done means. The run that fires can't see this conversation. From a run, settings you leave out are copied from your routine. Call routines.options (people only) for presets, triggers and the step rules. For work that has stages, pass `steps`: an ordered list that runs one step after another, each step a self-contained brief (`{key, prompt}` is enough; add `inputsFrom` to read earlier steps' answers). Without `steps` the routine runs as one agent. Answers with the saved routine.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
       const scope = scopeOf(actor);
@@ -281,7 +298,7 @@ export function createRoutineTools(client: SupabaseClient) {
 
   const update = defineTool({
     name: "routines.update", mcp: true, allowedOrigins: ["person", ...ANY_RUN], input: z.object({ taskId: UUID, patch: RoutinePatch }),
-    description: "Change a routine. Send only the fields to change. Send `when` to reschedule; a schedule is sent whole, e.g. `{schedule:{preset:'daily',time:'09:00',timezone:'UTC'}}`. A fired one-shot given a new `when` runs again. null turns Slack posting or GitHub access off; `when.events: []` removes every trigger. A run can change only routines its own runs made. Answers with the saved routine.",
+    description: "Change a routine. Send only the fields to change. Send `when` to reschedule; a schedule is sent whole, e.g. `{schedule:{preset:'daily',time:'09:00',timezone:'UTC'}}`. A fired one-shot given a new `when` runs again. null turns Slack posting or GitHub access off; `when.events: []` removes every trigger. `steps` replaces the whole step list: read the routine with routines.list, change the list, and send all of it; `steps: null` removes the steps, so the routine runs as one agent again. A run can change only routines its own runs made. Answers with the saved routine.",
     handler: async ({ caller, input }) => {
       const actor = resolveRoutineCaller(caller);
       const scope = scopeOf(actor);
