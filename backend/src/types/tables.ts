@@ -1,4 +1,5 @@
 import type { AgentRunKind, AgentRunStatus } from "draft-core/run-spec";
+import type { RunUsage } from "draft-core/run-usage";
 import type {
   AgentSessionSummaryStatus,
   ConnectionProvider,
@@ -387,6 +388,7 @@ export interface AgentRunRow {
   needs_input_resolved_at: string | null;
   needs_input_resolved_by: string | null;
   transcript_json: unknown[] | null;
+  usage_json: RunUsage | null;
   scheduled_task_id: string | null;
   started_at: string | null;
   completed_at: string | null;

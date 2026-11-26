@@ -47,6 +47,8 @@ create table agent_runs (
   needs_input_resolved_by  uuid references users(id) on delete set null,
   -- The full stream-json transcript of a run that does not stream to a session.
   transcript_json          jsonb,
+  -- What the harness reported for the run: inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd (or null).
+  usage_json               jsonb,
   scheduled_task_id        uuid,
   started_at               timestamptz,
   completed_at             timestamptz,

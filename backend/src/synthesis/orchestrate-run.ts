@@ -14,6 +14,7 @@ import {
 } from "./prepare-run";
 import { renderSynthesisPrompt } from "./render-prompt";
 import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
+import { saveRunUsage } from "../metaharness/runs/save-run-usage";
 import { syncMembers } from "../people/sync-members";
 import { buildSynthesisRunSpec } from "./run-spec";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
@@ -183,6 +184,8 @@ export async function completeSynthesisRunCallback(
         console.error("completeSynthesisRunCallback: transcript_json update threw", transcriptError);
       }
     }
+
+    await saveRunUsage(resolvedClient, { runId }, authenticated.usage);
 
     // A runner-reported failure and an invalid result are final: fail the run
     // once and answer 204 so the runner stops retrying the callback.

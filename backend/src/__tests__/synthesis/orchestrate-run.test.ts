@@ -325,3 +325,62 @@ describe("completeSynthesisRunCallback failure handling", () => {
     expect(calls.failedUpdates).toHaveLength(0);
   });
 });
+
+describe("completeSynthesisRunCallback usage persistence", () => {
+  const usage = { inputTokens: 1200, outputTokens: 300, cacheReadTokens: 50, cacheWriteTokens: 10, costUsd: 0.04 };
+
+  it("saves usage_json when the runner sends usage", async () => {
+    const { client, calls } = createFakeClient();
+
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({ run_id: runId, bundle_hash: bundleHash, result: { outcome: "no_change", summary: "nothing changed" }, usage }),
+      secret,
+      client,
+    );
+
+    expect(response.status).toBe(204);
+    expect(calls.transcriptUpdates).toEqual([{ payload: { usage_json: usage }, id: runId }]);
+    expect(calls.rpcCalls[0]).toMatchObject({ fn: "finalize_synthesis_run" });
+  });
+
+  it("saves usage_json even when the runner reports a failure", async () => {
+    const { client, calls } = createFakeClient();
+
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({ run_id: runId, bundle_hash: bundleHash, result: { error: "claude_error", diagnostics: {} }, usage }),
+      secret,
+      client,
+    );
+
+    expect(response.status).toBe(204);
+    expect(calls.transcriptUpdates).toEqual([{ payload: { usage_json: usage }, id: runId }]);
+    expect(calls.rpcCalls).toHaveLength(0);
+  });
+
+  it("saves nothing and still finishes the run when the runner sends no usage (an older image)", async () => {
+    const { client, calls } = createFakeClient();
+
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({ run_id: runId, bundle_hash: bundleHash, result: { outcome: "no_change", summary: "nothing changed" } }),
+      secret,
+      client,
+    );
+
+    expect(response.status).toBe(204);
+    expect(calls.transcriptUpdates).toEqual([]);
+    expect(calls.rpcCalls).toHaveLength(1);
+  });
+
+  it("still finishes the run when the usage write fails", async () => {
+    const { client, calls } = createFakeClient({ transcriptUpdateResult: { error: new Error("update rejected") } });
+
+    const response = await completeSynthesisRunCallback(
+      callbackRequest({ run_id: runId, bundle_hash: bundleHash, result: { outcome: "no_change", summary: "nothing changed" }, usage }),
+      secret,
+      client,
+    );
+
+    expect(response.status).toBe(204);
+    expect(calls.rpcCalls).toHaveLength(1);
+  });
+});

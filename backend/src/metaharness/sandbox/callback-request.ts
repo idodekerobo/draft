@@ -1,3 +1,4 @@
+import { parseRunUsage, type RunUsage } from "draft-core/run-usage";
 import {
   type SandboxCallbackClaims,
   verifySandboxCallbackToken,
@@ -40,6 +41,8 @@ export interface AuthenticatedSandboxCallbackRequest {
   /** Full sandbox transcript (stream-json message array), when the caller sent one. */
   transcript?: unknown[];
   authJson?: string;
+  /** What the harness reported for this run. Absent when the runner sent none or sent a value that is not valid. */
+  usage?: RunUsage;
   claims: SandboxCallbackClaims;
 }
 
@@ -154,7 +157,7 @@ function topLevelKeys(source: string): string[] {
 
 function parseBody(
   bytes: Uint8Array,
-): { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[]; auth_json?: string } {
+): { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[]; auth_json?: string; usage?: unknown } {
   let source: string;
   let parsed: unknown;
   try {
@@ -170,7 +173,7 @@ function parseBody(
   // "transcript" is optional -- batch/summarization callbacks don't send
   // one -- everything else about this shape stays exact-match strict.
   const required = new Set(["run_id", "bundle_hash", "result"]);
-  const optional = new Set(["transcript", "auth_json"]);
+  const optional = new Set(["transcript", "auth_json", "usage"]);
   const keys = topLevelKeys(source);
   const seen = new Set(keys);
   if (
@@ -194,7 +197,7 @@ function parseBody(
   if (body.transcript !== undefined && !Array.isArray(body.transcript)) {
     return reject("Callback body transcript must be an array");
   }
-  return body as { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[]; auth_json?: string };
+  return body as { run_id: string; bundle_hash: string; result: unknown; transcript?: unknown[]; auth_json?: string; usage?: unknown };
 }
 
 /**
@@ -252,6 +255,8 @@ export async function authenticateSandboxCallbackRequest(
     reject("Callback identifiers do not match");
   }
 
+  // Usage is bookkeeping. A value that is not valid is dropped here, never a reason to refuse the run's result.
+  const usage = parseRunUsage(body.usage);
   return {
     runId: claims.runId,
     bundleHash: claims.bundleHash,
@@ -259,5 +264,6 @@ export async function authenticateSandboxCallbackRequest(
     transcript: body.transcript,
     claims,
     ...(body.auth_json ? { authJson: body.auth_json } : {}),
+    ...(usage ? { usage } : {}),
   };
 }

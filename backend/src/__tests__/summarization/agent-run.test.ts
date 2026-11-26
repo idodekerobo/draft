@@ -77,9 +77,9 @@ describe("summarization run ids", () => {
   });
 });
 
-function post(result: unknown, runId: string): Request {
+function post(result: unknown, runId: string, extra: Record<string, unknown> = {}): Request {
   const token = createSandboxCallbackToken({ runId, bundleHash: BUNDLE_HASH, expiresAt: Date.now() + 60_000, nonce: "n" }, SECRET);
-  const body = JSON.stringify({ run_id: runId, bundle_hash: BUNDLE_HASH, result });
+  const body = JSON.stringify({ run_id: runId, bundle_hash: BUNDLE_HASH, result, ...extra });
   return new Request("https://api.test/sandbox/callback", {
     method: "POST",
     headers: {
@@ -107,6 +107,19 @@ describe("the summarization callback ends the agent run", () => {
     expect(response.status).toBe(204);
     expect(db.tables.agent_runs![0]).toMatchObject({ status: "succeeded", summary: "0 of 0 sessions summarized", failure_code: null });
     expect(db.tables.agent_runs![0]!.completed_at).toBeTruthy();
+  });
+
+  it("saves the usage the runner reports on the agent run", async () => {
+    const db = runningDb();
+    const usage = { inputTokens: 900, outputTokens: 120, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: null };
+    await completeSummarizationRunCallback(post({ items: [] }, RUN, { usage }), SECRET, fakeClient(db));
+    expect(db.tables.agent_runs![0]).toMatchObject({ status: "succeeded", usage_json: usage });
+  });
+
+  it("leaves usage empty when the runner sends none", async () => {
+    const db = runningDb();
+    await completeSummarizationRunCallback(post({ items: [] }, RUN), SECRET, fakeClient(db));
+    expect(db.tables.agent_runs![0]!.usage_json).toBeUndefined();
   });
 
   it("finishes a batch that reports under the agent run's own id", async () => {

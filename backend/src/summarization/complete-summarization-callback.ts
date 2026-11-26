@@ -1,6 +1,7 @@
 import { completeRunCredentials } from "../metaharness/sandbox/launch-with-credentials";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { finishAgentRun } from "../metaharness/runs/lifecycle";
+import { saveRunUsage } from "../metaharness/runs/save-run-usage";
 import { describeError } from "../errors/describe-error";
 import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
 import { validateSummarizationResult } from "./validate-result";
@@ -60,6 +61,7 @@ export async function completeSummarizationRunCallback(
       workspaceId = (runRow as { workspace_id: string } | null)?.workspace_id ?? null;
     }
     if (agentRunId) await completeRunCredentials(resolvedClient, agentRunId, authenticated.authJson);
+    if (agentRunId) await saveRunUsage(resolvedClient, { runId: agentRunId }, authenticated.usage);
     if (!workspaceId) throw new Error(`Cannot recover workspace from run id: ${authenticated.runId}`);
 
     // The runner reports setup failures (e.g. bundle fetch) as {error, diagnostics}
