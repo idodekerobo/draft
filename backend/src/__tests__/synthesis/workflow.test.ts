@@ -277,7 +277,7 @@ describe("reading step answers", () => {
   });
 
   it("keeps conflicts that name a path and a claim", () => {
-    expect(conflictsOf({ conflicts: [{ path: "a.md", claim: "x" }, { path: 1 }, "no"] })).toEqual([{ path: "a.md", claim: "x" }]);
+    expect(conflictsOf({ conflicts: [{ path: "a.md", claim: "x" }, { path: 1 }, "no"] })).toEqual([{ path: "a.md", claim: "x" }] as never);
     expect(conflictsOf(undefined)).toEqual([]);
   });
 });

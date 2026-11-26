@@ -30,7 +30,7 @@ export interface LaunchRoutineRunInput {
 export type LaunchRoutineRun = (input: LaunchRoutineRunInput) => Promise<{ machineId: string } | void>;
 
 /** The fields the prompt reads. The event's name and provider id stay out of it. */
-function toPromptEvent({ description, providerLabel, sourceItemId, facts, title, text, truncated }: RoutineEventPayload) {
+export function toPromptEvent({ description, providerLabel, sourceItemId, facts, title, text, truncated }: RoutineEventPayload) {
   return { description, providerLabel, sourceItemId, facts, title, text, truncated };
 }
 

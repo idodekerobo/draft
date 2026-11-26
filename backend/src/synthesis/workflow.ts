@@ -3,6 +3,7 @@ import { cloudToolsetFor, type HarnessId } from "draft-core/harnesses";
 import { SANDBOX_RUN_DIRECTORY, sandboxComputer } from "draft-core/run-spec";
 import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
 import type { CaptureEntry, ReconcileConflict } from "draft-core/synthesis-steps";
+import { currentDocumentPaths } from "../routine-steps/context-documents";
 import { registerWorkflow } from "../routine-steps/registry";
 import type { PlannedRun, StepOutputs, WorkflowKind } from "../routine-steps/types";
 import { CONTEXT_HISTORY_SCAN, documentsLastChanged } from "../services/context-history";
@@ -44,17 +45,6 @@ export function conflictsOf(result: unknown): ReconcileConflict[] {
 }
 
 const captureEntries = (outputs: StepOutputs): CaptureEntry[] => (outputs.capture ?? []).flatMap((entry) => entriesOf(entry.result));
-
-/** The paths of the documents in the workspace's newest version. */
-async function currentDocumentPaths(client: SupabaseClient, workspaceId: string): Promise<string[]> {
-  const { data: workspace, error } = await client.from("workspaces").select("current_context_version_id").eq("id", workspaceId).maybeSingle();
-  if (error) throw error;
-  const versionId = (workspace as { current_context_version_id: string | null } | null)?.current_context_version_id;
-  if (!versionId) return [];
-  const { data: version, error: versionError } = await client.from("workspace_context_versions").select("documents_json").eq("id", versionId).maybeSingle();
-  if (versionError) throw versionError;
-  return Object.keys(((version as { documents_json: Record<string, unknown> } | null)?.documents_json) ?? {});
-}
 
 /** The documents a path in `affects` asks for: it exists as a stable document, or it asks for a new one. */
 function splitAffected(entries: ReadonlyArray<CaptureEntry>, stable: ReadonlySet<string>): { existing: string[]; unknown: string[] } {

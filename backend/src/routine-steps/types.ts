@@ -2,9 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RoutineStep } from "draft-core/routine-steps";
 import type { AgentRunToolset, ComputerPolicy, StepParentKind } from "draft-core/run-spec";
 import type { AnyDraftToolPermission } from "draft-core/tools";
-import type { SandboxDeploymentConfig } from "../metaharness/sandbox";
+import type { SandboxDeploymentConfig, SandboxRunBundle } from "../metaharness/sandbox";
 import type { launchWithCredentials } from "../metaharness/sandbox/launch-with-credentials";
-import type { ValidatedRunBundle } from "../synthesis/context-version-files";
 import type { AgentRunRow } from "../types/tables";
 
 /** The run of a routine that has steps. It starts no agent itself. */
@@ -52,7 +51,7 @@ export interface WorkflowKind {
   /** The runs of one step. None means the step is skipped. Called once, when the steps before it are done. */
   plan(ctx: WorkflowContext & { step: RoutineStep; outputs: StepOutputs }): Promise<PlannedRun[]>;
   /** The files and prompt one step run is launched with. */
-  prepareRun(ctx: WorkflowContext & { step: RoutineStep; run: AgentRunRow; outputs: StepOutputs }): Promise<{ bundle: ValidatedRunBundle; prompt: string }>;
+  prepareRun(ctx: WorkflowContext & { step: RoutineStep; run: AgentRunRow; outputs: StepOutputs }): Promise<{ bundle: SandboxRunBundle; prompt: string }>;
   /** Ends the routine's run after its last step. */
   finish(ctx: WorkflowContext & { steps: RoutineStep[]; outputs: StepOutputs; runs: AgentRunRow[] }): Promise<void>;
   /** Fails the routine's run. False when it had already ended. */

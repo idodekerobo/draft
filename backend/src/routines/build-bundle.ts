@@ -113,6 +113,8 @@ export function buildRoutineBundle(input: {
   agentRunId: string;
   audience: ContextAudience;
   documents: Record<string, { content: string }>;
+  /** More files, by path. A step run reads what earlier steps produced from input/steps/. */
+  extraFiles?: Readonly<Record<string, string>>;
 }): SandboxRunBundle {
   const files: Record<string, { content: string }> = {};
   for (const [path, document] of Object.entries(visibleContext(input.audience, input.documents))) {
@@ -123,6 +125,7 @@ export function buildRoutineBundle(input: {
     }
     files[`input/context/${path}`] = { content: document.content };
   }
+  for (const [path, content] of Object.entries(input.extraFiles ?? {})) files[path] = { content };
   if (Object.keys(files).length === 0) files["input/context/README.md"] = { content: "The company brain has no documents yet.\n" };
 
   return {
