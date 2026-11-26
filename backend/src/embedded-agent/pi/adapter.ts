@@ -15,7 +15,7 @@ import type {
   LiveTextPart,
   SubmitReceipt,
 } from "../adapter";
-import { AskAnswer, createAskExtension } from "./ask-tool";
+import { AskAnswer, createAskExtension, createGate, type CardRequest, type Gate } from "./ask-tool";
 import { INPUT_ENTRY_KIND, normalizeWrites } from "./normalize";
 import { PgStorage } from "./pg-storage";
 
@@ -30,7 +30,7 @@ export interface PiAgentDeps {
   models: Models;
   defaultModel: EmbeddedModelRef;
   /** Draft's tools, and any others, as pi tools. The question tool is always added. */
-  tools?: () => ToolRegistration[];
+  tools?: (context: EmbeddedAgentContext, gate: Gate) => ToolRegistration[];
   onReport?: (error: unknown) => void;
   /** How long a reader of events() waits between checks when nothing signals a commit. */
   pollMs?: number;
@@ -71,13 +71,10 @@ export class PiEmbeddedAgent implements EmbeddedAgentAdapter {
       onCommitted: () => this.#committed(),
     });
     const registry = createRegistry();
-    registry.install(
-      createAskExtension({
-        open: (ask) => this.#openAsk(ask),
-        cancel: (toolCallId) => this.#cancelAsk(toolCallId),
-      }),
-    );
-    const extra = this.#deps.tools?.() ?? [];
+    const hooks = { open: (card: CardRequest & { toolCallId: string; taskId: number }) => this.#openAsk(card), cancel: (toolCallId: string) => this.#cancelAsk(toolCallId) };
+    const gate = createGate(hooks);
+    registry.install(createAskExtension(hooks, gate));
+    const extra = this.#deps.tools?.(this.#context, gate) ?? [];
     if (extra.length > 0) registry.install(defineExtension({ name: "draft-tools", tools: extra }));
     this.#harness = await Harness.open(
       this.#storage,
@@ -240,9 +237,9 @@ export class PiEmbeddedAgent implements EmbeddedAgentAdapter {
     return payload ? { taskId: payload.taskId, resolved: payload.resolved === true } : null;
   }
 
-  async #openAsk(ask: { toolCallId: string; taskId: number; question: string; options: string[] }): Promise<void> {
+  async #openAsk(ask: CardRequest & { toolCallId: string; taskId: number }): Promise<void> {
     this.#context.assertOwner();
-    const questions = [{ question: ask.question, ...(ask.options.length ? { options: ask.options } : {}) }];
+    const questions = ask.requestKind === "question" ? [{ question: ask.question ?? "", ...(ask.options?.length ? { options: ask.options } : {}) }] : undefined;
     await this.#sideWrite(
       async (client) => {
         await client.query(
@@ -251,7 +248,7 @@ export class PiEmbeddedAgent implements EmbeddedAgentAdapter {
         );
       },
       `ask:${ask.toolCallId}`,
-      { kind: "permission_request", toolCallId: ask.toolCallId, requestKind: "question", name: ASK_NAME, input: { question: ask.question }, questions },
+      { kind: "permission_request", toolCallId: ask.toolCallId, requestKind: ask.requestKind, name: ask.name, input: ask.input, ...(questions ? { questions } : {}) },
     );
   }
 
@@ -301,8 +298,6 @@ export class PiEmbeddedAgent implements EmbeddedAgentAdapter {
     if (this.#closed) throw new Error("The embedded agent is closed");
   }
 }
-
-const ASK_NAME = "home.ask";
 
 export function createPiAgentFactory(deps: PiAgentDeps | ((context: EmbeddedAgentContext) => PiAgentDeps)): EmbeddedAgentFactory {
   return (context) => new PiEmbeddedAgent(context, typeof deps === "function" ? deps(context) : deps);

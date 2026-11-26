@@ -41,8 +41,9 @@ export const DRAFT_TOOLS = [
   { name: "people.update", access: "write" },
   { name: "people.notify", access: "write" },
   { name: "people.notification_status", access: "read" },
-  { name: "people.approve", access: "write" },
-  { name: "people.reject", access: "write" },
+  // A tool that grants or removes access needs a person to confirm each call an agent makes on their behalf.
+  { name: "people.approve", access: "write", needsApproval: true },
+  { name: "people.reject", access: "write", needsApproval: true },
   { name: "home.needs_you", access: "read" },
   { name: "notifications.list", access: "read" },
   { name: "notifications.done", access: "write" },
@@ -51,6 +52,9 @@ export const DRAFT_TOOLS = [
 ] as const;
 export type DraftToolName = (typeof DRAFT_TOOLS)[number]["name"];
 export type DraftToolAccess = (typeof DRAFT_TOOLS)[number]["access"];
+
+/** True for a tool that grants or removes access: an agent acting for a person may call it only after that person confirms the call. */
+export const toolNeedsApproval = (name: string): boolean => DRAFT_TOOLS.some((tool) => tool.name === name && "needsApproval" in tool && tool.needsApproval === true);
 
 export const isDraftToolName = (name: unknown): name is DraftToolName =>
   DRAFT_TOOLS.some((tool) => tool.name === name);
@@ -175,6 +179,8 @@ export type CallerOrigin =
 /** Who is calling a tool. Each surface proves this its own way, then hands the gateway this value. */
 export type ToolCaller = {
   workspaceId: WorkspaceId;
+  /** The person who confirmed this exact call on an approval card. Only the backend sets it, after the card is answered. */
+  approvedBy?: UserId;
   /** Whose private data the call may use. Null means the workspace's shared data only. A person is their own userId. */
   onBehalfOf: UserId | null;
   origin: CallerOrigin;
@@ -196,9 +202,9 @@ export const personCaller = (input: { userId: UserId; workspaceId: WorkspaceId; 
  * An agent run that acts with its owner's authority, as Home does. Tools check the owner's permissions as for a person,
  * and the run's own limits, audit rows and attribution apply too. Only the backend builds this, from a run it started.
  */
-export function ownerRunCaller(run: AgentRunSpec, via: UserCallSurface = "app"): ToolCaller {
+export function ownerRunCaller(run: AgentRunSpec, via: UserCallSurface = "app", approvedBy?: UserId): ToolCaller {
   if (!run.onBehalfOf) throw new Error("A run needs an owner to act with the owner's authority");
-  return { workspaceId: run.workspaceId, onBehalfOf: run.onBehalfOf, origin: { kind: "person", userId: run.onBehalfOf, via, run } };
+  return { workspaceId: run.workspaceId, onBehalfOf: run.onBehalfOf, ...(approvedBy ? { approvedBy } : {}), origin: { kind: "person", userId: run.onBehalfOf, via, run } };
 }
 
 /** The run behind a call: a run's own, or the run an owner-run caller carries. Null for a person's own call. */

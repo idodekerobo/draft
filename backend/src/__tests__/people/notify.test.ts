@@ -689,11 +689,21 @@ describe("an agent run that acts with its owner's authority (Home)", () => {
     expect(db.tables.notifications![0]).toMatchObject({ agent_run_id: RUN, sender_user_id: OWNER });
   });
 
-  it("still acts only with the owner's permissions: a member's Home cannot approve people, an admin's passes the admin check", async () => {
+  it("needs a person's approval for a tool that grants or removes access, even for an admin's Home", async () => {
     const { call } = setup();
-    const perms: AnyDraftToolPermission[] = [{ tool: "people.approve" }];
-    expect(await call(asHome(perms, OWNER), "people.approve", { personId: CORY })).toMatchObject({ status: "refused", code: "not_admin" });
-    expect(await call(asHome(perms, ADMIN), "people.approve", { personId: CORY })).not.toMatchObject({ code: "not_admin" });
+    const perms: AnyDraftToolPermission[] = [{ tool: "people.approve" }, { tool: "people.reject" }];
+    for (const tool of ["people.approve", "people.reject"]) {
+      expect(await call(asHome(perms, ADMIN), tool, { personId: CORY })).toMatchObject({ status: "denied", code: "needs_approval" });
+    }
+    // The same call after the person confirmed it on a card goes on to the tool's own checks.
+    const approved = (owner: string) => ownerRunCaller(homeRun(perms, owner), "app", parseUserId(owner));
+    expect(await call(approved(OWNER), "people.approve", { personId: CORY })).toMatchObject({ status: "refused", code: "not_admin" });
+    expect(await call(approved(ADMIN), "people.approve", { personId: CORY })).not.toMatchObject({ code: "needs_approval" });
+  });
+
+  it("still lets a person's own call to those tools through, without a card", async () => {
+    const { call } = setup();
+    expect(await call(asUser(ADMIN), "people.approve", { personId: CORY })).not.toMatchObject({ code: "needs_approval" });
   });
 
   it("adds people as pending even when it acts for an admin", async () => {

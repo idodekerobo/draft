@@ -1,4 +1,4 @@
-import { originKind, type PersonCaller, type ToolCaller } from "draft-core/tools";
+import { originKind, toolNeedsApproval, type PersonCaller, type ToolCaller } from "draft-core/tools";
 import { describeError } from "../../errors/describe-error";
 import { ToolUserError, type ToolRegistry } from "./tool-registry";
 
@@ -12,7 +12,7 @@ export type InvokeToolResult =
 
 export type ToolCallStatus = InvokeToolResult["status"];
 
-export type ToolDenialCode = "unknown_tool" | "not_permitted" | "outside_limits" | "caller_not_authorized";
+export type ToolDenialCode = "unknown_tool" | "not_permitted" | "outside_limits" | "caller_not_authorized" | "needs_approval";
 
 /** What an edge may want to tell its client when a person is refused. */
 export interface AuthorizationDenial {
@@ -113,6 +113,8 @@ export async function invokeTool(
     if (refusal) return deny("caller_not_authorized", `Not allowed to call ${toolName}`, refusal);
     // An owner-run caller keeps the owner's authority, and the limits its run was given for this tool still apply.
     if (origin.run) limits = tool.permission(origin.run)?.limits;
+    // A tool that grants or removes access needs a person's confirmation of each call an agent makes for them.
+    if (origin.run && toolNeedsApproval(toolName) && !caller.approvedBy) return deny("needs_approval", `${toolName} needs a person to approve each call`);
   }
 
   const parsed = tool.parse(rawArguments);
