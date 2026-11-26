@@ -2,7 +2,8 @@ import { SANDBOX_RUN_DIRECTORY, sandboxComputer, sandboxExecution } from "draft-
 import { describe, expect, it, mock } from "bun:test";
 import type { ChannelSendResult, NotifyChannelId, NotifyMessage } from "draft-core/notify";
 import { parseAgentRunId, parseContextVersionId, parsePersonId, parseUserId, parseWorkspaceId, parseScheduledTaskId, parseIsoTimestamp, type AgentRunSpec } from "draft-core/run-spec";
-import { personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
+import { callerRun, ownerRunCaller, personCaller, runCaller, SYNTHESIS_PERMISSIONS, type AnyDraftToolPermission, type ToolCaller } from "draft-core/tools";
+import { auditToDatabase } from "../../metaharness/runs/agent-run-store";
 import { createPeopleTools } from "../../metaharness/tools/definitions/people";
 import { invokeTool } from "../../metaharness/tools/invoke-tool";
 import { ToolRegistry } from "../../metaharness/tools/tool-registry";
@@ -645,5 +646,70 @@ describe("people.notify kind todo", () => {
     const caller = personCaller({ userId: parseUserId(OWNER), workspaceId: parseWorkspaceId(WS), via: "cli" });
     expect(await call(caller, "people.notify", { personId: IZA, text: "Send the revised quote", idempotencyKey: "t1" })).toMatchObject({ status: "ok" });
     expect(await call(caller, "people.notify", todo(SHARED))).toMatchObject({ status: "refused", code: "idempotency_conflict" });
+  });
+});
+
+describe("an agent run that acts with its owner's authority (Home)", () => {
+  const homeRun = (permissions: ReadonlyArray<AnyDraftToolPermission>, owner = OWNER): AgentRunSpec => ({
+    ...runSpec(permissions, owner),
+    kind: "interactive",
+    trigger: { type: "manual", requestedBy: parseUserId(owner) },
+  });
+  const asHome = (permissions: ReadonlyArray<AnyDraftToolPermission>, owner = OWNER): ToolCaller => ownerRunCaller(homeRun(permissions, owner));
+
+  it("is a person for authority and carries the run it came from", () => {
+    const caller = asHome(toMembers);
+    expect(String(caller.onBehalfOf)).toBe(OWNER);
+    expect(caller.origin).toMatchObject({ kind: "person", userId: OWNER });
+    expect(String(callerRun(caller)?.id)).toBe(RUN);
+    expect(callerRun(asUser())).toBeNull();
+    expect(String(callerRun(asRun(toMembers))?.id)).toBe(RUN);
+    expect(() => ownerRunCaller({ ...homeRun(toMembers), onBehalfOf: null })).toThrow();
+  });
+
+  it("applies the run's recipient limits to people.notify", async () => {
+    const { call, sent } = setup();
+    const self: AnyDraftToolPermission[] = [{ tool: "people.notify", limits: { recipients: "self" } }];
+    expect(await call(asHome(self), "people.notify", { personId: UZO, text: "x" })).toMatchObject({ status: "ok" });
+    expect(await call(asHome(self), "people.notify", { personId: IZA, text: "x" })).toMatchObject({ status: "refused", code: "not_allowed" });
+    expect(sent).toHaveLength(1);
+  });
+
+  it("stops at the run's maxPerRun", async () => {
+    const { call, db, sent } = setup();
+    for (let i = 0; i < 3; i += 1) db.tables.agent_run_tool_calls!.push({ agent_run_id: RUN, tool_name: "people.notify", status: "ok" });
+    expect(await call(asHome(toMembers), "people.notify", { personId: IZA, text: "x" })).toMatchObject({ status: "refused", code: "limit_reached" });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("links the notification to the Home run, names the Draft agent and the owner, and keeps the owner as sender", async () => {
+    const { call, db, sent } = setup();
+    await call(asHome(toMembers), "people.notify", { personId: IZA, text: "Your items." });
+    expect(sent[0]!.message.attribution).toBe("🤖 Draft agent · working for Uzo");
+    expect(db.tables.notifications![0]).toMatchObject({ agent_run_id: RUN, sender_user_id: OWNER });
+  });
+
+  it("still acts only with the owner's permissions: a member's Home cannot approve people, an admin's passes the admin check", async () => {
+    const { call } = setup();
+    const perms: AnyDraftToolPermission[] = [{ tool: "people.approve" }];
+    expect(await call(asHome(perms, OWNER), "people.approve", { personId: CORY })).toMatchObject({ status: "refused", code: "not_admin" });
+    expect(await call(asHome(perms, ADMIN), "people.approve", { personId: CORY })).not.toMatchObject({ code: "not_admin" });
+  });
+
+  it("adds people as pending even when it acts for an admin", async () => {
+    const { call, db } = setup();
+    const result = await call(asHome([{ tool: "people.create" }], ADMIN), "people.create", { displayName: "Zed Newcomer", evidence: { quote: "Zed joined the call" } });
+    expect(result).toMatchObject({ status: "ok" });
+    expect(db.tables.people!.find((row) => row.display_name === "Zed Newcomer")).toMatchObject({ status: "pending" });
+  });
+
+  it("writes its tool calls to the run's audit table, and a person's own calls stay out of it", async () => {
+    const db = fakeDb({ agent_run_tool_calls: [], agent_query_log: [], errors: [] }, { uuidTables: ["agent_run_tool_calls"] });
+    const audit = auditToDatabase(fakeClient(db));
+    const record = (caller: ToolCaller) => ({ caller, toolName: "people.notify", arguments: { personId: IZA }, status: "ok", resultSummary: "slack: sent", errorCode: null, durationMs: 5, resultBytes: 10 }) as never;
+    await audit(record(asHome(toMembers)));
+    await audit(record(asUser(OWNER)));
+    expect(db.tables.agent_run_tool_calls).toHaveLength(1);
+    expect(db.tables.agent_run_tool_calls![0]).toMatchObject({ agent_run_id: RUN, tool_name: "people.notify", status: "ok" });
   });
 });

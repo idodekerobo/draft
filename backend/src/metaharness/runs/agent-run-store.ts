@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { ACTIVE_AGENT_RUN_STATUSES, AGENT_RUN_KINDS, AGENT_RUN_SYSTEM_REASONS, executionProblem, isNativeTool, parseAgentEventId, parseAgentRunId, parseContextVersionId, parseHostId, parseInstructionFileId, parseIsoTimestamp, parseScheduledTaskId, parseSkillId, parseConnectionId, parseUserId, parseWorkspaceId, type AgentRunKind, type AgentRunSpec } from "draft-core/run-spec";
-import { DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
+import { callerRun, DRAFT_TOOLS, type AnyDraftToolPermission } from "draft-core/tools";
 import { isAdapterId, isHarnessId, type AdapterId, type HarnessId } from "draft-core/harnesses";
 import { recordError } from "../../errors/record-error";
 import { allowOncePer } from "../../errors/throttle";
@@ -197,7 +197,7 @@ export function auditToDatabase(client: SupabaseClient, sessionId?: string): (re
     } catch (error) {
       // The caller still logs and ignores this, so the failure is recorded here, once a minute per tool.
       if (allowOncePer(`audit:${record.toolName}`, AUDIT_ERROR_WINDOW_MS)) {
-        await recordError({ client, workspaceId: record.caller.workspaceId, agentRunId: record.caller.origin.kind === "run" ? record.caller.origin.run.id : null, operation: "audit", code: "tool_audit_failed", message: "A tool call's audit row could not be saved", detail: { tool: record.toolName }, error });
+        await recordError({ client, workspaceId: record.caller.workspaceId, agentRunId: callerRun(record.caller)?.id ?? null, operation: "audit", code: "tool_audit_failed", message: "A tool call's audit row could not be saved", detail: { tool: record.toolName }, error });
       }
       throw error;
     }
@@ -209,7 +209,8 @@ const AUDIT_ERROR_WINDOW_MS = 60_000;
 function writeAudit(client: SupabaseClient, sessionId?: string): (record: ToolCallRecord) => Promise<void> {
   return async (record) => {
     const { origin } = record.caller;
-    if (origin.kind === "person") {
+    const run = callerRun(record.caller);
+    if (origin.kind === "person" && !run) {
       if (origin.via !== "cli" && origin.via !== "mcp") return;
       const command = origin.via === "mcp" ? `mcp.${record.toolName}` : record.toolName;
       await recordAgentQueryLog(client, {
@@ -226,7 +227,7 @@ function writeAudit(client: SupabaseClient, sessionId?: string): (record: ToolCa
       });
       return;
     }
-    const { run } = origin;
+    if (!run) return;
     const { error } = await client.from("agent_run_tool_calls").insert({
       workspace_id: run.workspaceId,
       agent_run_id: run.id,

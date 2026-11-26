@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NotifyChannelId, NotifyResult } from "draft-core/notify";
 import { isNotifyChannelId, NOTIFY_CHANNELS } from "draft-core/notify";
-import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
+import { callerRun, findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import { recordError } from "../../errors/record-error";
 import { countRunToolCalls } from "../../people/limits";
 import { attributionLine, originTaskId } from "./attribution";
@@ -41,8 +41,8 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
     return messageFailure("not_allowed", why);
   }
 
-  if (caller.origin.kind === "run") {
-    const { run } = caller.origin;
+  const run = callerRun(caller);
+  if (run) {
     const permission = findToolPermission(run, "people.notify");
     if (!permission) return messageFailure("not_permitted", "This run may not notify people.");
     const limits = permission.limits as DraftToolLimits["people.notify"] | undefined;
@@ -65,7 +65,7 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
   }
 
   const origin = caller.origin;
-  const agentRunId = origin.kind === "run" ? origin.run.id : null;
+  const agentRunId = run?.id ?? null;
   const logFailure = (code: string, error: unknown) =>
     recordError({ client, workspaceId, agentRunId, operation: "delivery", code, message: `people.notify: ${code}`, detail: { personId: person.id }, error });
   try {
@@ -81,7 +81,7 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
       origin: {
         senderUserId: origin.kind === "run" ? origin.run.onBehalfOf : origin.userId,
         agentRunId,
-        scheduledTaskId: origin.kind === "run" ? await originTaskId(client, origin.run) : null,
+        scheduledTaskId: run ? await originTaskId(client, run) : null,
       },
     });
     if (!delivered.ok) return messageFailure("idempotency_conflict", "That idempotencyKey was already used with different content. Use a new key for a different message.");

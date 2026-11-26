@@ -111,6 +111,8 @@ export async function invokeTool(
     const person: PersonCaller = { ...caller, origin };
     const refusal = deps.authorizeUser ? await deps.authorizeUser(person, toolName) : { status: 403, body: { error: "forbidden" } };
     if (refusal) return deny("caller_not_authorized", `Not allowed to call ${toolName}`, refusal);
+    // An owner-run caller keeps the owner's authority, and the limits its run was given for this tool still apply.
+    if (origin.run) limits = tool.permission(origin.run)?.limits;
   }
 
   const parsed = tool.parse(rawArguments);

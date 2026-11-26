@@ -163,7 +163,13 @@ export type UserCallSurface = "mcp" | "cli" | "web_app" | "desktop_app" | "app";
 
 /** Where a call comes from: a signed-in person through one surface, or an agent run. */
 export type CallerOrigin =
-  | { kind: "person"; userId: UserId; via: UserCallSurface }
+  | {
+      kind: "person";
+      userId: UserId;
+      via: UserCallSurface;
+      /** The Draft run that uses this person's authority, such as Home's. Set only by `ownerRunCaller`. */
+      run?: AgentRunSpec;
+    }
   | { kind: "run"; run: AgentRunSpec };
 
 /** Who is calling a tool. Each surface proves this its own way, then hands the gateway this value. */
@@ -185,6 +191,18 @@ export const ANY_RUN: ReadonlyArray<AllowedOrigin> = AGENT_RUN_KINDS;
 
 export const personCaller = (input: { userId: UserId; workspaceId: WorkspaceId; via: UserCallSurface }): ToolCaller =>
   ({ workspaceId: input.workspaceId, onBehalfOf: input.userId, origin: { kind: "person", userId: input.userId, via: input.via } });
+
+/**
+ * An agent run that acts with its owner's authority, as Home does. Tools check the owner's permissions as for a person,
+ * and the run's own limits, audit rows and attribution apply too. Only the backend builds this, from a run it started.
+ */
+export function ownerRunCaller(run: AgentRunSpec, via: UserCallSurface = "app"): ToolCaller {
+  if (!run.onBehalfOf) throw new Error("A run needs an owner to act with the owner's authority");
+  return { workspaceId: run.workspaceId, onBehalfOf: run.onBehalfOf, origin: { kind: "person", userId: run.onBehalfOf, via, run } };
+}
+
+/** The run behind a call: a run's own, or the run an owner-run caller carries. Null for a person's own call. */
+export const callerRun = (caller: ToolCaller): AgentRunSpec | null => caller.origin.run ?? null;
 
 export const runCaller = (run: AgentRunSpec): ToolCaller =>
   ({ workspaceId: run.workspaceId, onBehalfOf: run.onBehalfOf, origin: { kind: "run", run } });

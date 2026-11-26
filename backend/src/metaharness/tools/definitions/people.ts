@@ -4,7 +4,7 @@ import type { MessageResult } from "../../../notify/agent/result";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { isSynthesisRun, type AgentRunSpec } from "draft-core/run-spec";
-import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
+import { callerRun, findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import type { NotifyChannelId } from "draft-core/notify";
 import { resendSettings } from "../../../config";
 import type { ResendDeps } from "../../../notify/channels/email/resend";
@@ -50,8 +50,8 @@ function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update", fa
 }
 
 async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update", fallback: number): Promise<ToolHandlerResult | null> {
-  if (caller.origin.kind !== "run") return null;
-  const { run } = caller.origin;
+  const run = callerRun(caller);
+  if (!run) return null;
   const max = runLimit(run, tool, fallback);
   if (max === undefined) return null;
   if ((await countRunToolCalls(client, run.id, tool)) < max) return null;
@@ -117,10 +117,11 @@ export function createPeopleTools(
       if (limited) return limited;
       await syncMembers(client, workspaceId);
 
-      const createdBy =
-        caller.origin.kind === "run"
-          ? ({ type: "run", runId: caller.origin.run.id, onBehalfOf: caller.origin.run.onBehalfOf } as const)
-          : ({ type: "user", userId: caller.origin.userId, isAdmin: await isAdmin(client, caller.origin.userId) } as const);
+      // A run adds people as pending, even when it acts for an admin, because a person decides who joins.
+      const run = callerRun(caller);
+      const createdBy = run
+        ? ({ type: "run", runId: run.id, onBehalfOf: run.onBehalfOf } as const)
+        : ({ type: "user", userId: (caller.origin as { userId: string }).userId, isAdmin: await isAdmin(client, (caller.origin as { userId: string }).userId) } as const);
       const result = await createPerson(client, workspaceId, createdBy, input);
       // A new pending person is news for the admins. A failed message never fails the add.
       if (result.created && result.person.status === "pending") {

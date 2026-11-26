@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ToolCaller } from "draft-core/tools";
+import { callerRun, type ToolCaller } from "draft-core/tools";
 
 const clean = (value: string) => value.replace(/[\r\n]+/g, " ").replace(/[<>]/g, "").trim().slice(0, 80);
 
@@ -29,9 +29,9 @@ async function routineTitle(client: SupabaseClient, workspaceId: string, schedul
  */
 export async function attributionLine(client: SupabaseClient, caller: ToolCaller): Promise<string> {
   const { origin } = caller;
-  if (origin.kind === "person") return `Sent by ${await userName(client, origin.userId)} through Draft`;
-
-  const { run } = origin;
+  const run = callerRun(caller);
+  if (origin.kind === "person" && !run) return `Sent by ${await userName(client, origin.userId)} through Draft`;
+  if (!run) throw new Error("A run caller has a run");
   const owner = run.onBehalfOf ? await userName(client, run.onBehalfOf) : null;
   if (run.kind === "routine" && owner) {
     // A scheduled run names its task in the trigger. An event run is tied to its task through the run's own row.
