@@ -24,6 +24,7 @@ function queryBuilder(table: string) {
   const ltes: [string, number][] = [];
   const nots: [string, unknown][] = [];
   const iss: [string, unknown][] = [];
+  const ors: Array<(row: Row) => boolean> = [];
   let insertPayload: Row | undefined;
   let updatePayload: Row | undefined;
 
@@ -35,7 +36,8 @@ function queryBuilder(table: string) {
         ins.every(([col, vs]) => vs.includes(row[col])) &&
         gts.every(([col, v]) => (row[col] as number) > v) &&
         ltes.every(([col, v]) => (row[col] as number) <= v) &&
-        nots.every(([col, v]) => (row[col] ?? null) !== v),
+        nots.every(([col, v]) => (row[col] ?? null) !== v) &&
+        ors.every((test) => test(row)),
     );
 
   const builder = {
@@ -60,6 +62,12 @@ function queryBuilder(table: string) {
     gt: (col: string, value: number) => (gts.push([col, value]), builder),
     lte: (col: string, value: number) => (ltes.push([col, value]), builder),
     not: (col: string, _operator: string, value: unknown) => (nots.push([col, value]), builder),
+    // Only the "column.eq.value,column.eq.value" form the routes use.
+    or: (filter: string) => {
+      const terms = filter.split(",").map((term) => term.split(".eq."));
+      ors.push((row) => terms.some(([col, v]) => String(row[col] ?? null) === v));
+      return builder;
+    },
     order: () => builder,
     limit: () => builder,
     async maybeSingle() {
@@ -574,6 +582,38 @@ describe("live session routes", () => {
       expect((await list.json()).sessions).toEqual([]);
       expect((await routes.EVENTS(Object.assign(new Request("http://localhost/x"), { params: { id: WS, sessionId: SESSION } }) as never)).status).toBe(404);
       expect((await routes.REOPEN(post("/x", { hostId: "host-1" }))).status).toBe(404);
+    });
+  });
+
+  describe("a Home session is its owner's alone", () => {
+    const home = (overrides: Row = {}) => session({ id: "home-1", is_home: true, session_type: "interactive", owner_user_id: "user-2", ...overrides });
+    const params = { id: WS, sessionId: "home-1" };
+    const get = () => Object.assign(new Request("http://localhost/x"), { params }) as never;
+
+    it("is left out of another person's list, and kept in the owner's", async () => {
+      tables.sessions = [home(), session({ id: "team-1", is_home: false, session_type: "interactive", owner_user_id: "user-2" }), home({ id: "mine", owner_user_id: "user-1" })];
+      const ids = ((await (await routes.LIST(post("/x", {}, { id: WS }))).json()) as { sessions: Array<{ id: string }> }).sessions.map((row) => row.id);
+      expect(ids.sort()).toEqual(["mine", "team-1"]);
+    });
+
+    it("answers not found, not forbidden, on events, delete and reopen for another person's Home", async () => {
+      tables.sessions = [home({ session_type: "interactive" })];
+      expect((await routes.EVENTS(get())).status).toBe(404);
+      expect((await routes.DELETE(post("/x", {}, params))).status).toBe(404);
+      expect((await routes.REOPEN(post("/x", { hostId: "host-1" }, params))).status).toBe(404);
+    });
+
+    it("still answers forbidden for another person's ordinary session", async () => {
+      tables.sessions = [session({ session_type: "interactive", owner_user_id: "user-2" })];
+      expect((await routes.DELETE(post("/x", {}))).status).toBe(403);
+    });
+
+    it("reads the view through the database with the viewer, which refuses another person's Home", async () => {
+      const view = await import("../../routes/sessions-view");
+      rpcResult = { data: null, error: { message: "session_not_found" } };
+      const response = await view.VIEW(Object.assign(new Request("http://localhost/x"), { params }) as never);
+      expect(response.status).toBe(404);
+      expect(rpcCalls.at(-1)).toMatchObject({ fn: "read_session_view", args: { p_session_id: "home-1", p_viewer_user_id: "user-1" } });
     });
   });
 

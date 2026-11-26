@@ -8,7 +8,7 @@ import { interactiveAdapterFor } from "draft-core/harnesses";
 import { MAX_INPUT_CHARS, deliveredText, splitAuthor } from "draft-core/live-sessions";
 import { cleanInputText, sameText } from "draft-core/harnesses/claude/live-input-text";
 import type { SessionEventRow, SessionInputRow, SessionInputState } from "../types/tables";
-import { authorize, authorizeHostMember, authorizeHostSession, errorResponse, hostIdFor, knownDbError, optionalString, readBody } from "./sessions-live-shared";
+import { authorize, authorizeHostMember, denyForeignHome, authorizeHostSession, errorResponse, hostIdFor, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type InputsRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs">;
 type PendingRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/inputs/pending">;
@@ -129,6 +129,8 @@ export const INPUTS_LIST = withAuth<InputsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  const foreignHome = await denyForeignHome(workspaceId, sessionId, caller.userId);
+  if (foreignHome) return foreignHome;
 
   const loaded = await loadViewerInputs(workspaceId, sessionId, caller.userId);
   if (!loaded.ok) return errorResponse("inputs_lookup_failed", 500, loaded.error, workspaceId, sessionId);
@@ -139,6 +141,8 @@ export const INPUTS_CREATE = withAuth<InputsRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  const foreignHome = await denyForeignHome(workspaceId, sessionId, caller.userId);
+  if (foreignHome) return foreignHome;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;
@@ -211,6 +215,8 @@ export const INPUT_ACTION = withAuth<InputRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, inputId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  const foreignHome = await denyForeignHome(workspaceId, sessionId, caller.userId);
+  if (foreignHome) return foreignHome;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;

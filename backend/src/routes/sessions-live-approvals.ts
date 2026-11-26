@@ -4,7 +4,7 @@ import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import type { SessionInputRow } from "../types/tables";
-import { authorName, authorize, authorizeHostSession, errorResponse, hostIdFor, knownDbError, optionalString, readBody } from "./sessions-live-shared";
+import { authorName, authorize, authorizeHostSession, denyForeignHome, errorResponse, hostIdFor, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
 type DecisionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/approvals/:requestId/decision">;
 type StopRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId/stop">;
@@ -66,10 +66,8 @@ export const DECISION = withAuth<DecisionRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId, requestId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
-  const { data: target, error: targetError } = await serviceClient.from("sessions").select("is_home, owner_user_id").eq("id", sessionId).eq("workspace_id", workspaceId).maybeSingle();
-  if (targetError) return errorResponse("decision_failed", 500, targetError, workspaceId, sessionId);
-  const home = target as { is_home: boolean; owner_user_id: string } | null;
-  if (home?.is_home && home.owner_user_id !== caller.userId) return errorResponse("session_not_found", 404);
+  const foreignHome = await denyForeignHome(workspaceId, sessionId, caller.userId);
+  if (foreignHome) return foreignHome;
   if (!REQUEST_ID.test(requestId)) return errorResponse("invalid_request_id", 400);
   const name = authorName(caller.userId);
 
@@ -153,6 +151,8 @@ export const STOP = withAuth<StopRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  const foreignHome = await denyForeignHome(workspaceId, sessionId, caller.userId);
+  if (foreignHome) return foreignHome;
   const sleeping = await refuseIfSleeping(workspaceId, sessionId);
   if (sleeping) return sleeping;
 
@@ -192,6 +192,8 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
   const { id: workspaceId, sessionId } = req.params;
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  const foreignHome = await denyForeignHome(workspaceId, sessionId, caller.userId);
+  if (foreignHome) return foreignHome;
 
   const parsed = await readBody(req);
   if (!parsed.ok) return parsed.response;

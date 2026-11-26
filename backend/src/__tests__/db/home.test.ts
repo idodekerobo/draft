@@ -75,6 +75,29 @@ describeWithDatabase("home privacy", () => {
     expect(ownerEvents).toHaveLength(1);
   });
 
+  test("the database itself refuses another person's Home: no view, no input; the owner and ordinary sessions work", async () => {
+    const { workspaceId } = await createWorkspace();
+    const owner = await addMember(workspaceId);
+    const mate = await addMember(workspaceId);
+    const home = await addSession(workspaceId, owner.userId, true);
+    const normal = await addSession(workspaceId, owner.userId, false);
+
+    const view = async (sessionId: string, viewer: string | null) =>
+      await db()`select read_session_view(${workspaceId}, ${sessionId}, null, null, null, null, null, 50, true, ${viewer}) as page`;
+    await expect(view(home, mate.userId)).rejects.toThrow("session_not_found");
+    await expect(view(home, null)).rejects.toThrow("session_not_found");
+    expect(await view(home, owner.userId)).toHaveLength(1);
+    expect(await view(normal, mate.userId)).toHaveLength(1);
+
+    const send = async (sessionId: string, author: string) =>
+      await db()`select create_session_input(${sessionId}, ${workspaceId}, ${author}, null, 'message', '{"text":"hi"}'::jsonb)`;
+    await expect(send(home, mate.userId)).rejects.toThrow("session_not_found");
+    await send(home, owner.userId);
+    await send(normal, mate.userId);
+    const inputs = await db()<{ session_id: string }[]>`select session_id from session_inputs where workspace_id = ${workspaceId}`;
+    expect(inputs.map((row) => row.session_id).sort()).toEqual([home, normal].sort());
+  });
+
   test("a person has one open Home session", async () => {
     const { workspaceId } = await createWorkspace();
     const owner = await addMember(workspaceId);

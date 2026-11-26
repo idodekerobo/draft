@@ -77,13 +77,14 @@ class Query implements PromiseLike<{ data: unknown; error: unknown }> {
     this.filters.push((r) => (operator === "is" ? (r[column] ?? null) !== value : r[column] !== value));
     return this;
   }
-  /** Supports the `col.is.null` and `col.neq.value` terms. A NULL column matches only the `is.null` term, as SQL does. */
+  /** Supports the `col.is.null`, `col.neq.value` and `col.eq.value` terms. A NULL column matches only the `is.null` term, as SQL does. */
   or(expression: string) {
     const terms = expression.split(",").map((term) => {
       const [column = "", operator = "", ...rest] = term.split(".");
       const value = rest.join(".");
       if (operator === "is") return (r: Row) => (r[column] ?? null) === null;
       if (operator === "neq") return (r: Row) => r[column] != null && r[column] !== value;
+      if (operator === "eq") return (r: Row) => r[column] != null && String(r[column]) === value;
       throw new Error(`fake-client cannot evaluate the or-term ${term}`);
     });
     this.filters.push((r) => terms.some((term) => term(r)));

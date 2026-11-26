@@ -1,8 +1,10 @@
 -- A scoped transcript page and, on request, current state from one MVCC snapshot.
+-- A Home session is its owner's alone: any other viewer, or none, sees it as not found.
 create or replace function read_session_view(
   p_workspace_id uuid, p_session_id uuid, p_agent_id text default null,
   p_before bigint default null, p_after bigint default null, p_around bigint default null,
-  p_through bigint default null, p_limit integer default 200, p_state boolean default true
+  p_through bigint default null, p_limit integer default 200, p_state boolean default true,
+  p_viewer_user_id uuid default null
 ) returns jsonb
 language plpgsql stable security definer set search_path = public
 as $$
@@ -24,6 +26,7 @@ begin
   if num_nonnulls(p_before, p_after, p_around) > 1 then raise exception 'invalid_cursor'; end if;
   select * into s from sessions where id = p_session_id and workspace_id = p_workspace_id and deleted_at is null;
   if not found then raise exception 'session_not_found'; end if;
+  if s.is_home and s.owner_user_id is distinct from p_viewer_user_id then raise exception 'session_not_found'; end if;
   h := least(s.last_seq, coalesce(p_through, s.last_seq));
   if p_around is not null then
     select nullif(payload->>'agent_id', '') into a from session_events
@@ -143,5 +146,5 @@ begin
   return response || jsonb_build_object('snapshot', jsonb_build_object('session', to_jsonb(s), 'approvals', approvals, 'agents', agents));
 end;
 $$;
-revoke all on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) from public, anon, authenticated;
-grant execute on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean) to service_role;
+revoke all on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean, uuid) from public, anon, authenticated;
+grant execute on function read_session_view(uuid, uuid, text, bigint, bigint, bigint, bigint, integer, boolean, uuid) to service_role;

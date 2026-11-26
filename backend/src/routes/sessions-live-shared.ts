@@ -9,7 +9,7 @@ import { loadDisplayNames } from "./session-display-names";
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export const SESSION_COLUMNS =
-  "id, workspace_id, owner_user_id, session_type, harness, model, reasoning_effort, native_session_id, previous_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, resume_request_id, last_failure, last_event_at, last_seen, last_seq, open_approval_count, host_id, host_name, harness_version, raw_storage_path, raw_uploaded_at, permission_mode, approval_mode, execution_target, adapter_id, seed";
+  "id, workspace_id, owner_user_id, session_type, harness, model, reasoning_effort, native_session_id, previous_session_id, title, folder_name, git_remote, status, started_at, ended_at, end_reason, resume_request_id, last_failure, last_event_at, last_seen, last_seq, open_approval_count, host_id, host_name, harness_version, raw_storage_path, raw_uploaded_at, permission_mode, approval_mode, execution_target, adapter_id, seed, is_home";
 
 export function errorResponse(error: string, status = 500, detail?: unknown, workspaceId?: string, sessionId?: string): Response {
   if (status >= 500) {
@@ -85,10 +85,27 @@ async function loadSession(workspaceId: string, sessionId: string): Promise<Owne
   return { ok: true, session: data };
 }
 
+/**
+ * A Home session is its owner's alone. Anyone else gets the answer for a session that does not exist, so a teammate
+ * cannot tell that a Home is there. A missing session passes: the route's own lookup answers for it.
+ */
+export async function denyForeignHome(workspaceId: string, sessionId: string, userId: string): Promise<Response | null> {
+  const { data, error } = await serviceClient
+    .from("sessions")
+    .select("is_home, owner_user_id")
+    .eq("id", sessionId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle<{ is_home: boolean; owner_user_id: string }>();
+  if (error) return errorResponse("session_lookup_failed", 500, error, workspaceId, sessionId);
+  return data?.is_home && data.owner_user_id !== userId ? errorResponse("session_not_found", 404) : null;
+}
+
 export async function loadOwnedSession(workspaceId: string, sessionId: string, userId: string): Promise<OwnedSession> {
   const loaded = await loadSession(workspaceId, sessionId);
   if (!loaded.ok) return loaded;
-  if (loaded.session.owner_user_id !== userId) return { ok: false, response: errorResponse("not_session_owner", 403) };
+  if (loaded.session.owner_user_id !== userId) {
+    return { ok: false, response: loaded.session.is_home ? errorResponse("session_not_found", 404) : errorResponse("not_session_owner", 403) };
+  }
   return loaded;
 }
 

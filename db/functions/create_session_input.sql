@@ -2,6 +2,7 @@
 -- display name, taken by the backend from the JWT. An ended session takes no input,
 -- and a routine session never does: nothing is listening for it.
 -- A null p_author_name is filled with the author's display name, or their email.
+-- A Home session takes input only from its owner; anyone else sees it as not found.
 create or replace function create_session_input(
   p_session_id uuid,
   p_workspace_id uuid,
@@ -18,15 +19,20 @@ as $$
 declare
   v_status text;
   v_type text;
+  v_home boolean;
+  v_owner uuid;
   v_row session_inputs%rowtype;
   v_name text;
 begin
-  select status, session_type into v_status, v_type
+  select status, session_type, is_home, owner_user_id into v_status, v_type, v_home, v_owner
   from sessions
   where id = p_session_id and workspace_id = p_workspace_id
   for share;
 
   if not found then
+    raise exception 'session_not_found';
+  end if;
+  if v_home and v_owner is distinct from p_author_user_id then
     raise exception 'session_not_found';
   end if;
   if v_type = 'routine' then

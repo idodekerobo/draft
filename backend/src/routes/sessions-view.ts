@@ -31,8 +31,9 @@ export const VIEW = withAuth<ViewRequest>(async (req, caller) => {
   if (!query) return errorResponse("invalid_cursor", 400);
   const denied = await authorize(workspaceId, caller.userId);
   if (denied) return denied;
+  // read_session_view checks the viewer itself: a Home session is its owner's alone.
   const { data, error } = await serviceClient.rpc("read_session_view", {
-    p_workspace_id: workspaceId, p_session_id: sessionId, p_agent_id: query.agentId,
+    p_workspace_id: workspaceId, p_session_id: sessionId, p_agent_id: query.agentId, p_viewer_user_id: caller.userId,
     p_before: query.before ?? null, p_after: query.after ?? null, p_around: query.around ?? null,
     p_through: query.through ?? null, p_limit: query.limit ?? 200, p_state: query.state,
   });

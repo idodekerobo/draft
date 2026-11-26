@@ -17,7 +17,7 @@ import { latestNativeTitle } from "draft-core/harnesses/claude/native-title";
 import type { SessionEventRow, SessionRow } from "../types/tables";
 import { loadDisplayNames } from "./session-display-names";
 import { failQueuedInputs, loadViewerInputs, matchConsumedInputs } from "./sessions-live-inputs";
-import { SESSION_COLUMNS, authorize, authorizeHostMember, authorizeHostSession, authorizeOwned, errorResponse, hostIdFor, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
+import { SESSION_COLUMNS, authorize, authorizeHostMember, authorizeHostSession, authorizeOwned, errorResponse, denyForeignHome, hostIdFor, knownDbError, loadOwnedSession, optionalString, readBody } from "./sessions-live-shared";
 
 type WorkspaceRequest = Bun.BunRequest<"/workspaces/:id/live-sessions">;
 type SessionRequest = Bun.BunRequest<"/workspaces/:id/live-sessions/:sessionId">;
@@ -68,6 +68,8 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
     .eq("workspace_id", req.params.id)
     .eq("session_type", "interactive")
     .is("deleted_at", null)
+    // Other people's Home sessions are dropped here, before the limit, so they cannot push out the caller's own.
+    .or(`is_home.eq.false,owner_user_id.eq.${caller.userId}`)
     .order("started_at", { ascending: false })
     .limit(LIST_LIMIT);
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);
@@ -188,7 +190,7 @@ export const EVENTS = withHostAuth<EventsRequest>(async (req, caller) => {
   const limit = Math.min(MAX_EVENTS_PAGE, Math.max(1, Number(params.get("limit")) || EVENTS_PAGE_SIZE));
 
   const [denied, { data: session, error: sessionError }, { data: events, error: eventsError }, viewerInputs] = await Promise.all([
-    caller.kind === "user" ? authorize(workspaceId, caller.userId) : null,
+    caller.kind === "user" ? authorize(workspaceId, caller.userId).then((denied) => denied ?? denyForeignHome(workspaceId, sessionId, caller.userId)) : null,
     serviceClient.from("sessions").select(SESSION_COLUMNS).eq("id", sessionId).eq("workspace_id", workspaceId).is("deleted_at", null).maybeSingle<SessionRow>(),
     serviceClient
       .from("session_events")

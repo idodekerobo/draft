@@ -293,6 +293,8 @@ export interface SessionRow {
   id: string;
   workspace_id: string;
   owner_user_id: string;
+  /** The owner's Home session. Only the owner may see or touch it. */
+  is_home?: boolean;
   session_type: "interactive" | "routine";
   harness: string;
   model: string | null;

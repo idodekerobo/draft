@@ -63,6 +63,8 @@ export function createSessionTools(client: SupabaseClient) {
         .eq("workspace_id", user.workspaceId)
         .eq("session_type", "interactive")
         .is("deleted_at", null)
+        // Another person's Home is dropped here, before the page limit.
+        .or(`is_home.eq.false,owner_user_id.eq.${user.userId}`)
         .order("started_at", { ascending: false })
         .order("id", { ascending: false });
       if (filters.provider) query = query.eq("harness", filters.provider);
@@ -96,14 +98,16 @@ export function createSessionTools(client: SupabaseClient) {
     handler: async ({ input, caller }) => {
       const user = requireUser(caller, "sessions.read");
       const { data: session, error: sessionError } = await client.from("sessions")
-        .select("id, harness, model, title, status, started_at, ended_at, end_reason, last_event_at, folder_name, git_remote, harness_version")
+        .select("id, harness, model, title, status, started_at, ended_at, end_reason, last_event_at, folder_name, git_remote, harness_version, is_home, owner_user_id")
         .eq("id", input.session_id)
         .eq("workspace_id", user.workspaceId)
         .eq("session_type", "interactive")
         .is("deleted_at", null)
         .maybeSingle();
       if (sessionError) throw new Error("App session read failed.");
-      if (!session) return refuse("session_not_found", "Draft app session not found.");
+      // A Home session is its owner's alone, and anyone else is told it does not exist.
+      const { is_home: isHome, owner_user_id: ownerUserId, ...visible } = (session ?? {}) as Record<string, unknown>;
+      if (!session || (isHome && ownerUserId !== user.userId)) return refuse("session_not_found", "Draft app session not found.");
 
       const after = input.after_seq ?? 0;
       const limit = input.limit ?? READ_MAX_LIMIT;
@@ -119,7 +123,7 @@ export function createSessionTools(client: SupabaseClient) {
       const page = rows.slice(0, limit);
       return {
         status: "ok" as const,
-        output: { session, events: page, next_after_seq: rows.length > limit ? page.at(-1)?.seq ?? null : null },
+        output: { session: visible, events: page, next_after_seq: rows.length > limit ? page.at(-1)?.seq ?? null : null },
       };
     },
   });

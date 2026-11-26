@@ -17,6 +17,8 @@ export async function TITLE(req: TitleRequest): Promise<Response> {
     .select("title")
     .eq("id", sessionId)
     .eq("session_type", "interactive")
+    // A Home session is private, so its title is not shared by link.
+    .eq("is_home", false)
     .is("deleted_at", null)
     .maybeSingle<{ title: string | null }>();
   if (error) return Response.json({ error: "title_lookup_failed" }, { status: 500 });
