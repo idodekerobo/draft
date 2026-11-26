@@ -4,7 +4,7 @@ import type { SynthesisFinalResult } from "./types";
 /** The agent's answer cannot be accepted. Final: the run fails. Any other error is a database problem and may be retried. */
 export class InvalidSynthesisResultError extends Error {}
 
-function parseFinalResult(raw: unknown): SynthesisFinalResult {
+export function parseFinalResult(raw: unknown): SynthesisFinalResult {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new InvalidSynthesisResultError("synthesis result must be a JSON object");
   }

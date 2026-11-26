@@ -54,6 +54,4 @@ export interface LaunchSynthesisRunOptions {
 
 export interface LaunchSynthesisRunResult {
   runId: string;
-  machineId: string;
-  bundleHash: string;
 }

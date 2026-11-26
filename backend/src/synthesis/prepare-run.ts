@@ -8,6 +8,7 @@ import { recordError } from "../errors/record-error";
 import { getLatestSynthesisRun } from "./latest-run";
 import { buildSynthesisRunSpec } from "./run-spec";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
+import { SYNTHESIS_PROMPT_VERSION } from "draft-core/synthesis-steps";
 import type { LaunchSynthesisRunOptions } from "./types";
 import type {
   SourceItemRow,
@@ -15,9 +16,9 @@ import type {
   WorkspaceRow,
 } from "../types/tables";
 
-// Bumped whenever the rendered prompt/schema contract (task #4) changes in a
-// way that should be distinguishable in agent_runs.prompt_version history.
-const PROMPT_VERSION = "synthesis-v2";
+// Bumped whenever the rendered prompt/schema contract changes in a way that
+// should be distinguishable in agent_runs.prompt_version history.
+const PROMPT_VERSION = SYNTHESIS_PROMPT_VERSION;
 
 // Postgres unique_violation, raised here by agent_runs_one_active_synthesis
 // or agent_runs_workspace_id_idempotency_key_key.
@@ -222,31 +223,8 @@ export async function prepareRun(
     throw runError;
   }
 
-  if (options.sourceItemIds.length > 0) {
-    const sourceItemsById = new Map(
-      sourceItems.map((item) => [item.id, item]),
-    );
-
-    const membershipRows = options.sourceItemIds.map((sourceItemId, position) => {
-      const sourceItem = sourceItemsById.get(sourceItemId);
-      // Eligibility was checked before creating the run row.
-      if (!sourceItem) throw new Error(`Missing source item ${sourceItemId}`);
-      return {
-        workspace_id: options.workspaceId,
-        agent_run_id: runId,
-        source_item_id: sourceItemId,
-        position,
-        source_item_version: sourceItem.external_version,
-        content_hash: sourceItem.content_hash,
-      };
-    });
-
-    const { error: membershipError } = await client
-      .from("agent_run_source_items")
-      .insert(membershipRows);
-    if (membershipError) throw new RunPreparationFailedError(runId, membershipError);
-  }
-
+  // The run holds no source membership yet. Each capture run records the sources it reads, and the run of the
+  // whole synthesis takes the ones whose capture succeeded when it finishes. See synthesis/workflow.ts.
   return runId;
 }
 

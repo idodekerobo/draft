@@ -16,6 +16,7 @@
     "./run-spec":             "./src/run-spec.ts",
     "./run-usage":            "./src/run-usage.ts",
     "./routine-steps":        "./src/routine-steps.ts",
+    "./synthesis-steps":      "./src/synthesis-steps.ts",
     "./routines":             "./src/routines.ts",
     "./routine-triggers":     "./src/routine-triggers.ts",
     "./tools":                "./src/tools.ts",

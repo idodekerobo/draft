@@ -104,8 +104,8 @@ function createFakeClient() {
 }
 
 let accessResult: Response | null = null;
-type LaunchOutcome = { ok: true; runId: string; machineId: string } | { ok: false; error: Error };
-let launchOutcome: LaunchOutcome = { ok: true, runId: "run-1", machineId: "machine-1" };
+type LaunchOutcome = { ok: true; runId: string } | { ok: false; error: Error };
+let launchOutcome: LaunchOutcome = { ok: true, runId: "run-1" };
 let launchCalls: Array<{ workspaceId: string; sourceItemIds: string[] }> = [];
 
 mock.module("../../auth/withAuth", () => ({
@@ -126,7 +126,7 @@ process.env.SUPABASE_URL = "https://project.supabase.co";
 mock.module("../../synthesis/orchestrate-run", () => ({
   launchSynthesisRun: async (options: { workspaceId: string; sourceItemIds: string[] }) => {
     launchCalls.push({ workspaceId: options.workspaceId, sourceItemIds: options.sourceItemIds });
-    if (launchOutcome.ok) return { runId: launchOutcome.runId, machineId: launchOutcome.machineId, bundleHash: "hash" };
+    if (launchOutcome.ok) return { runId: launchOutcome.runId };
     throw launchOutcome.error;
   },
 }));
@@ -138,7 +138,7 @@ beforeEach(() => {
   state.connections = [];
   state.items = [];
   itemUpsertShouldFail = null;
-  launchOutcome = { ok: true, runId: "run-1", machineId: "machine-1" };
+  launchOutcome = { ok: true, runId: "run-1" };
   launchCalls = [];
 });
 
@@ -226,8 +226,9 @@ describe("POST /workspaces/:id/source-items", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json() as { ok: boolean; inserted: number; runId?: string; machineId?: string };
-    expect(body).toMatchObject({ ok: true, inserted: 2, runId: "run-1", machineId: "machine-1" });
+    const body = await response.json() as { ok: boolean; inserted: number; runId?: string };
+    expect(body).toMatchObject({ ok: true, inserted: 2, runId: "run-1" });
+    expect(body).not.toHaveProperty("machineId");
     expect(launchCalls).toHaveLength(1);
     expect(launchCalls[0]?.workspaceId).toBe(workspaceId);
     expect(launchCalls[0]?.sourceItemIds).toEqual(state.items.map((item) => item.id));

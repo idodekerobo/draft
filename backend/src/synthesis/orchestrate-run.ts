@@ -1,24 +1,24 @@
-import { launchWithCredentials, completeRunCredentials } from "../metaharness/sandbox/launch-with-credentials";
+import { completeRunCredentials } from "../metaharness/sandbox/launch-with-credentials";
 import { loadBuiltInConfig } from "../routines/built-in-config";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { checkRunAllowed, RunNotAllowedError } from "./check-run-allowed";
 import { authenticateSandboxCallbackRequest } from "../metaharness/sandbox";
-import { loadValidatedRunBundle, PILOT_RUN_BUNDLE_LIMITS } from "./load-run-bundle";
 import { finalizeSynthesisResult, InvalidSynthesisResultError } from "./finalize-result";
 import { failSynthesisRun } from "./handle-run-failure";
 import {
-  markRunLaunched,
   OccurrenceAlreadyDispatchedError,
   prepareRun,
   RunPreparationFailedError,
 } from "./prepare-run";
-import { renderSynthesisPrompt } from "./render-prompt";
-import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
+import { synthesisSteps } from "draft-core/synthesis-steps";
+import { advanceWorkflow } from "../routine-steps/advance";
+import { saveStepsOnParent } from "../routine-steps/step-run-spec";
+import { markAgentRunRunning } from "../metaharness/runs/lifecycle";
+import { guidanceOf, stepPrompt } from "./steps/prompts";
+import { synthesisWorkflow } from "./workflow";
 import { saveRunUsage } from "../metaharness/runs/save-run-usage";
 import { syncMembers } from "../people/sync-members";
-import { buildSynthesisRunSpec } from "./run-spec";
 import type { LaunchSynthesisRunOptions, LaunchSynthesisRunResult } from "./types";
-import { saveAgentRunSpec } from "../metaharness/runs/agent-run-store";
 import { recordError } from "../errors/record-error";
 
 /**
@@ -54,10 +54,10 @@ export async function recordLaunchFailure(input: {
 }
 
 /**
- * Launch half of the loop: prepare the run row, load + validate its bundle from
- * Postgres, resolve the credential, render the prompt, and launch the sandbox.
- * Returns once the Fly Machine is created — it does not wait for the sandbox to
- * finish. Completion arrives later via completeSynthesisRunCallback.
+ * Starts a synthesis run. It prepares the run row, saves the run's steps (capture, reconcile and organize) and the
+ * sources it was started for on that row, and hands it to the step engine, which starts the first step runs.
+ * Returns once those are started; it does not wait for them. The run ends when its last step run reports. The run
+ * itself starts no agent.
  */
 export async function launchSynthesisRun(
   options: LaunchSynthesisRunOptions,
@@ -89,41 +89,24 @@ export async function launchSynthesisRun(
       recordError({ client, workspaceId: options.workspaceId, operation: "ingestion", message: "People sync failed before synthesis", code: "people_sync_failed", error }),
     );
 
-    stage = "bundle";
-    const bundle = await loadValidatedRunBundle({
-      runId,
-      client: options.client,
-      limits: PILOT_RUN_BUNDLE_LIMITS,
+    // The steps are saved on the run so editing the guidance cannot change a run that has started.
+    stage = "plan";
+    const guidance = guidanceOf(settings.prompt);
+    const steps = synthesisSteps({
+      harness: settings.harness,
+      model: settings.model,
+      prompts: { capture: stepPrompt("capture", guidance), reconcile: stepPrompt("reconcile", guidance), organize: stepPrompt("organize", guidance) },
+    });
+    await saveStepsOnParent(client, runId, steps, {
+      sourceItemIds: options.sourceItemIds,
+      ...(options.dimensions?.length ? { dimensions: options.dimensions } : {}),
     });
 
-    stage = "prompt";
-    const { prompt, jsonSchema } = await renderSynthesisPrompt(bundle, options.dimensions, settings.prompt);
+    stage = "start";
+    await markAgentRunRunning(client, runId);
+    await advanceWorkflow({ client, config: options.config, workflow: synthesisWorkflow }, runId);
 
-    stage = "sandbox";
-    const spec = buildSynthesisRunSpec({
-      runId,
-      workspaceId: options.workspaceId,
-      triggerType: options.triggerType,
-      scheduledTaskId: options.scheduledTaskId,
-      occurrenceAt: options.occurrenceAt,
-      retryOfRunId: options.retryOfRunId,
-      contextVersionId: bundle.baseContextVersionId,
-      resultSchema: jsonSchema,
-      permissions: SYNTHESIS_PERMISSIONS,
-      settings,
-    });
-    await saveAgentRunSpec(client, spec);
-    const receipt = await launchWithCredentials({
-      spec,
-      bundle,
-      prompt: { kind: "text", text: prompt },
-      config: options.config,
-    }, client);
-
-    stage = "mark_launched";
-    await markRunLaunched(runId, receipt, options.client);
-
-    return { runId, machineId: receipt.machineId, bundleHash: receipt.bundleHash };
+    return { runId };
   } catch (caught) {
     // Not a failure -- another dispatch already claimed this occurrence.
     if (caught instanceof OccurrenceAlreadyDispatchedError) throw caught;

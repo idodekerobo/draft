@@ -58,8 +58,11 @@ export function stepsOfParent(parent: Pick<ParentRun, "result_json">): RoutineSt
   return parsed.success ? (parsed.data as RoutineStep[]) : null;
 }
 
-/** Saves the steps on the parent. Done once, when the run starts. */
-export async function saveStepsOnParent(client: SupabaseClient, parentRunId: string, steps: ReadonlyArray<RoutineStep>): Promise<void> {
-  const { error } = await client.from("agent_runs").update({ result_json: { steps } }).eq("id", parentRunId);
+/**
+ * Saves the steps on the parent, with whatever else the routine's workflow needs to plan them (for synthesis, the
+ * source items it was started for). Done once, when the run starts.
+ */
+export async function saveStepsOnParent(client: SupabaseClient, parentRunId: string, steps: ReadonlyArray<RoutineStep>, extra: Record<string, unknown> = {}): Promise<void> {
+  const { error } = await client.from("agent_runs").update({ result_json: { ...extra, steps } }).eq("id", parentRunId);
   if (error) throw error;
 }

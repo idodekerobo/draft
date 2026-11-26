@@ -87,7 +87,7 @@ export const POST = withAuth<SynthesisRunsRequest>(async (req, caller) => {
       config: loadSandboxDeploymentConfig(),
       dimensions: body.dimensions,
     });
-    return Response.json({ ok: true, runId: result.runId, machineId: result.machineId });
+    return Response.json({ ok: true, runId: result.runId });
   } catch (err) {
     if (err instanceof WorkspaceRunAlreadyActiveError) {
       return errorResponse("run_already_active", 409, err);

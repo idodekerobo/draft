@@ -361,23 +361,11 @@ describe("prepareRun", () => {
     expect(calls.runInserts).toHaveLength(0);
   });
 
-  it("assigns position 0..n-1 to source items in the given order and pulls version/hash from source_items", async () => {
+  it("checks the sources are active, and saves no source membership: each capture run records its own", async () => {
     const { client, calls } = createFakeClient({
       sourceItems: [
-        {
-          id: ids.sourceA,
-          workspace_id: ids.workspace,
-          lifecycle_status: "active",
-          external_version: "3",
-          content_hash: "hash-a",
-        },
-        {
-          id: ids.sourceB,
-          workspace_id: ids.workspace,
-          lifecycle_status: "active",
-          external_version: "7",
-          content_hash: "hash-b",
-        },
+        { id: ids.sourceA, workspace_id: ids.workspace, lifecycle_status: "active", external_version: "3", content_hash: "hash-a" },
+        { id: ids.sourceB, workspace_id: ids.workspace, lifecycle_status: "active", external_version: "7", content_hash: "hash-b" },
       ],
     });
 
@@ -389,23 +377,8 @@ describe("prepareRun", () => {
     });
 
     expect(runId).toBe((calls.runInserts[0] as { id: string }).id);
-    expect(calls.membershipInserts).toHaveLength(2);
-    expect(calls.membershipInserts[0]).toMatchObject({
-      workspace_id: ids.workspace,
-      agent_run_id: expect.any(String),
-      source_item_id: ids.sourceB,
-      position: 0,
-      source_item_version: "7",
-      content_hash: "hash-b",
-    });
-    expect(calls.membershipInserts[1]).toMatchObject({
-      workspace_id: ids.workspace,
-      agent_run_id: expect.any(String),
-      source_item_id: ids.sourceA,
-      position: 1,
-      source_item_version: "3",
-      content_hash: "hash-a",
-    });
+    // The run consumes a source only when the capture run that read it succeeds. See synthesis/workflow.ts.
+    expect(calls.membershipInserts).toHaveLength(0);
   });
 
   it("rejects superseded source items before creating a run", async () => {

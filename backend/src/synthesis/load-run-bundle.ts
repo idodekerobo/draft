@@ -1,5 +1,6 @@
 import { parseWorkspaceId } from "draft-core/run-spec";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadSourceItemsByIds } from "./load-source-items";
 import {
   buildValidatedRunBundle,
   type RunBundleLimits,
@@ -21,6 +22,10 @@ export const PILOT_RUN_BUNDLE_LIMITS: Readonly<RunBundleLimits> = {
 export interface LoadRunBundleOptions {
   /** Select a specific immutable run; when omitted, select the newest run. */
   runId?: string;
+  /** The kinds of run to look in. A synthesis run by default; a step run of synthesis asks for `step`. */
+  runKinds?: string[];
+  /** More files for the bundle, under input/steps/. */
+  extraFiles?: Readonly<Record<string, string>>;
   limits?: RunBundleLimits;
   client?: SupabaseClient;
 }
@@ -54,11 +59,9 @@ export async function loadValidatedRunBundle(
 ): Promise<ValidatedRunBundle> {
   const client =
     options.client ?? (await import("../db/client")).serviceClient;
-  let runQuery = client
-    .from("agent_runs")
-    .select("id, workspace_id, base_context_version_id, prompt_version")
-    .eq("kind", "synthesis")
-    .order("created_at", { ascending: false });
+  const kinds = options.runKinds ?? ["synthesis"];
+  const runs = client.from("agent_runs").select("id, workspace_id, base_context_version_id, prompt_version");
+  let runQuery = (kinds.length === 1 ? runs.eq("kind", kinds[0]!) : runs.in("kind", kinds)).order("created_at", { ascending: false });
   if (options.runId !== undefined) runQuery = runQuery.eq("id", options.runId);
 
   const { data: runData, error: runError } = await runQuery.limit(1).single();
@@ -98,20 +101,12 @@ export async function loadValidatedRunBundle(
   const baseVersion = versionResult.data as WorkspaceContextVersionRow;
   const memberships = (membershipResult.data ?? []) as Membership[];
 
-  let sourcesById = new Map<string, Source>();
-  if (memberships.length > 0) {
-    // Filtered by workspace_id, not by the membership id list itself -- an
-    // .in() over that list put every id in the request URL, which stops
-    // working once a run's membership set gets large enough (~600+ ids).
-    const sourceResult = await client
-      .from("source_items")
-      .select("id, workspace_id, external_version, content_markdown, content_hash")
-      .eq("workspace_id", run.workspace_id);
-    if (sourceResult.error) throw sourceResult.error;
-    sourcesById = new Map(
-      ((sourceResult.data ?? []) as Source[]).map((source) => [source.id, source]),
-    );
-  }
+  const sourcesById = await loadSourceItemsByIds<Source>(
+    client,
+    run.workspace_id,
+    memberships.map((membership) => membership.source_item_id),
+    "id, workspace_id, external_version, content_markdown, content_hash",
+  );
 
   const sources: RunBundleSource[] = memberships.map((membership) => {
     const item = sourcesById.get(membership.source_item_id);
@@ -134,6 +129,7 @@ export async function loadValidatedRunBundle(
       name: person.display_name,
       status: person.status,
     })),
+    extraFiles: options.extraFiles,
     limits: options.limits ?? { ...PILOT_RUN_BUNDLE_LIMITS },
   });
 }

@@ -85,8 +85,15 @@ export interface BuildRunBundleInput {
   sources: RunBundleSource[];
   /** The workspace's people. Becomes input/people.json when there are any. */
   people?: ReadonlyArray<RosterEntry>;
+  /**
+   * More files for the run, by path. A step run reads what the steps before it produced from
+   * input/steps/<step key>/<run id>.json.
+   */
+  extraFiles?: Readonly<Record<string, string>>;
   limits: RunBundleLimits;
 }
+
+export const STEP_FILE_PREFIX = "input/steps/";
 
 export function sha256(content: string | Uint8Array): string {
   return createHash("sha256").update(content).digest("hex");
@@ -315,6 +322,10 @@ export function buildValidatedRunBundle(
       .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
       .map(({ id, name, status }) => ({ id, name, status }));
     addFile(files, "input/people.json", `${JSON.stringify({ people: roster }, null, 2)}\n`, limits);
+  }
+  for (const [path, content] of Object.entries(input.extraFiles ?? {})) {
+    if (!path.startsWith(STEP_FILE_PREFIX) || path.includes("..") || path.includes("\\")) throw new Error(`extra file must be under ${STEP_FILE_PREFIX}: ${path}`);
+    addFile(files, path, content, limits);
   }
   addFile(files, "input/run.json", runMetadataBytes(input, sources), limits);
   files.sort(([left], [right]) => left.localeCompare(right));

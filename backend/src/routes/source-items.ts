@@ -166,7 +166,6 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
       inserted: insertedIds.length,
       skipped,
       runId: result.runId,
-      machineId: result.machineId,
     });
   } catch (err) {
     const synthesisError = err instanceof WorkspaceRunAlreadyActiveError

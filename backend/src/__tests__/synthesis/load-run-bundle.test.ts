@@ -19,11 +19,12 @@ const ids = {
 };
 
 /**
- * Fake Supabase client whose "source_items" table has no .in() method at
- * all -- any query still shaped as .in("id", ids) throws, which is what
- * caught this regression (the URL-length "Bad Request" was invisible to
- * unit tests that stub .in() to just work).
+ * Fake Supabase client. Its "source_items" table takes an .in("id", ids) filter only for a short list: a long one
+ * put every id in the request URL and returned "Bad Request" in production, which unit tests that stub .in() to
+ * just work never saw. A bundle with more sources must be read in chunks.
  */
+const MAX_IDS_PER_REQUEST = 100;
+const inRequests: number[] = [];
 function createFakeClient() {
   const contentA = "hello from source A";
   const sourceItemsTable = [
@@ -126,7 +127,14 @@ function createFakeClient() {
             if (column !== "workspace_id" || value !== ids.workspace) {
               throw new Error(`unexpected filter on source_items: ${column}=${value}`);
             }
-            return Promise.resolve({ data: sourceItemsTable, error: null });
+            return {
+              in: async (inColumn: string, wanted: string[]) => {
+                if (inColumn !== "id") throw new Error(`unexpected in-filter on source_items: ${inColumn}`);
+                if (wanted.length > MAX_IDS_PER_REQUEST) throw new Error(`an .in() list of ${wanted.length} ids is too long for a URL`);
+                inRequests.push(wanted.length);
+                return { data: sourceItemsTable.filter((item) => wanted.includes(item.id)), error: null };
+              },
+            };
           },
         }),
       };
@@ -148,11 +156,15 @@ function createFakeClient() {
 }
 
 describe("loadValidatedRunBundle", () => {
-  it("resolves source items by workspace_id instead of an .in() id list", async () => {
+  it("reads only the run's own source items, in requests that stay short", async () => {
+    inRequests.length = 0;
     const client = createFakeClient();
     const bundle = await loadValidatedRunBundle({ runId: ids.run, client });
     expect(bundle.runId).toBe(ids.run);
     expect(Object.keys(bundle.files)).toContain("input/sources/0000-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.md");
+    // One membership, so one short request. The unrelated source of the same workspace is not read.
+    expect(inRequests).toEqual([1]);
+    expect(Object.keys(bundle.files).filter((path) => path.startsWith("input/sources/"))).toHaveLength(1);
   });
 
   it("puts the workspace's people, without contact data, in the bundle as a roster", async () => {
