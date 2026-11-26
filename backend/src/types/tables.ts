@@ -392,6 +392,7 @@ export interface AgentRunRow {
   parent_run_id: string | null;
   step_key: string | null;
   result_json: unknown | null;
+  step_item: { key: string; type: string; [field: string]: unknown } | null;
   scheduled_task_id: string | null;
   started_at: string | null;
   completed_at: string | null;

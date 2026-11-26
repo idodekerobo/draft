@@ -53,6 +53,8 @@ create table agent_runs (
   parent_run_id            uuid,
   step_key                 text,
   result_json              jsonb,
+  -- What a step run works on: { key, type, ... }. A retry of a failed step run has the same key.
+  step_item                jsonb,
   scheduled_task_id        uuid,
   started_at               timestamptz,
   completed_at             timestamptz,

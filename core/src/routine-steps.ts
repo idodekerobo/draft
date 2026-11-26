@@ -24,6 +24,11 @@ export interface RoutineStep {
   output: StepOutput;
   /** Keys of earlier steps whose outputs this step reads. */
   inputsFrom?: string[];
+  /**
+   * When true, the step passes if at least one of its runs succeeded, and the items of the runs that failed stay
+   * undone. Left out, any run that fails after its retries fails the routine's run.
+   */
+  allowPartial?: boolean;
 }
 
 export const MAX_ROUTINE_STEPS = 10;
@@ -59,6 +64,7 @@ export const RoutineStepInput = z.object({
   fanOut: fanOutSchema,
   output: outputSchema,
   inputsFrom: z.array(z.string().regex(STEP_KEY_PATTERN)).max(MAX_ROUTINE_STEPS).optional(),
+  allowPartial: z.boolean().optional(),
 }).strict();
 
 export const RoutineStepsInput = z.array(RoutineStepInput).min(1).max(MAX_ROUTINE_STEPS);

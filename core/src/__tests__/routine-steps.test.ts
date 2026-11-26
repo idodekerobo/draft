@@ -85,6 +85,12 @@ describe("checkRoutineSteps", () => {
     expect(checkRoutineSteps([step({ model: "haiku" })], { ...context, harness: "codex" })).toEqual({ ok: false, problem: { code: "bad_model", key: "draft_reply" } });
   });
 
+  it("keeps the allowPartial flag", () => {
+    const result = checkRoutineSteps([step({ allowPartial: true })], context);
+    expect(result.ok && result.steps[0]!.allowPartial).toBe(true);
+    expect(checkRoutineSteps([{ ...step(), allowPartial: "yes" }], context)).toEqual({ ok: false, problem: { code: "invalid_shape" } });
+  });
+
   it("allows source batches only when the routine consumes sources", () => {
     const batches = step({ fanOut: { over: "source_batches", maxTokensPerBatch: 50_000 } });
     expect(checkRoutineSteps([batches], context)).toEqual({ ok: false, problem: { code: "fan_out_not_allowed", key: "draft_reply" } });

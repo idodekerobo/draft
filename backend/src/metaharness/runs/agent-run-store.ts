@@ -84,6 +84,8 @@ export interface NewAgentRun {
   /** For a step run: the run it belongs to, and which step it is. */
   parentRunId?: string;
   stepKey?: string;
+  /** For a step run: what it works on. */
+  stepItem?: Record<string, unknown>;
   /** For a step run that retries a failed one. Other runs name this through a `retry` trigger. */
   retryOfRunId?: string;
 }
@@ -114,6 +116,7 @@ export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): 
     retry_of_run_id: spec.trigger.type === "retry" ? spec.trigger.retryOf : run.retryOfRunId ?? null,
     parent_run_id: run.parentRunId ?? null,
     step_key: run.stepKey ?? null,
+    step_item: run.stepItem ?? null,
     idempotency_key: run.idempotencyKey,
     prompt_version: run.promptVersion ?? null,
     session_id: run.sessionId ?? null,

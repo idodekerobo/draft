@@ -30,7 +30,7 @@ export async function sweepStaleSynthesisRuns(
   // post-update ("failed") status, not the original one.
   let selectQuery = client
     .from("agent_runs")
-    .select("id, workspace_id, status")
+    .select("id, workspace_id, status, result_json")
     .eq("kind", "synthesis")
     .in("status", ACTIVE_WRITER_STATUSES)
     .lt("created_at", cutoffIso);
@@ -39,7 +39,11 @@ export async function sweepStaleSynthesisRuns(
   }
   const { data: candidateData, error: selectError } = await selectQuery;
   if (selectError) throw selectError;
-  const candidates = (candidateData ?? []) as SweptRun[];
+  // A run that has steps carries them in result_json. It is swept by what its step runs are doing, not by its
+  // age: a healthy workflow outlives the cutoff. See routine-steps/sweep.ts.
+  const candidates = ((candidateData ?? []) as Array<SweptRun & { result_json?: unknown }>)
+    .filter((run) => run.result_json == null)
+    .map(({ id, workspace_id, status }) => ({ id, workspace_id, status }));
   if (candidates.length === 0) return [];
 
   const swept: SweptRun[] = [];

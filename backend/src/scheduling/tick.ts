@@ -6,6 +6,8 @@ import type { ScheduledTaskRow } from "../types/tables";
 import { recordError } from "../errors/record-error";
 import { sweepStaleSynthesisRuns } from "../synthesis/reconcile-stale-runs";
 import { retryFailedSynthesisRuns } from "../synthesis/retry-failed-runs";
+import { advanceStuckWorkflows, failStrandedParents, sweepStaleStepRuns } from "../routine-steps/sweep";
+import "../routine-steps/register-workflows";
 import { failStaleRoutineSessions } from "../routines/fail-stale-routine-sessions";
 import { drainEventInbox } from "../events/drain";
 import { expireIdleCloudSessions } from "../cloud-sessions/expire";
@@ -102,6 +104,18 @@ export async function runSchedulingTick(options: RunSchedulingTickOptions): Prom
     await sweepStaleSynthesisRuns(options.client);
   } catch (sweepError) {
     await recordTickStepError(options.client, "Stale synthesis run sweep failed", sweepError);
+  }
+  try {
+    // Step runs: end the stale ones, give every routine run with steps one pass of the engine (it starts queued runs a
+    // busy login held back, and finishes a run whose last callback never moved it on), then fail the ones with nothing left to wait for.
+    if (options.config) {
+      const { client, config } = options;
+      await sweepStaleStepRuns(client, config, { now: new Date(now) });
+      await advanceStuckWorkflows(client, config);
+      await failStrandedParents(client, config, { now: new Date(now) });
+    }
+  } catch (sweepError) {
+    await recordTickStepError(options.client, "Step run sweep failed", sweepError);
   }
   try {
     const { error } = await options.client.rpc("sweep_stale_sessions");
