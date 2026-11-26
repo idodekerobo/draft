@@ -13,6 +13,8 @@ export * from "./activity/ActivityPanel";
 export * from "./activity/RunDetailView";
 export * from "./activity/run-detail-types";
 export * from "./home/HomeView";
+export type { HomeThreadApi } from "./home/HomeThread";
+export type { HomeModel } from "./home/HomeModelPicker";
 export * from "./home/NeedsYouPanel";
 export * from "./home/types";
 export * from "./query";

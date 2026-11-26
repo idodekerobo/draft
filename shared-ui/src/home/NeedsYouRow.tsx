@@ -28,7 +28,7 @@ function label(row: Row): { tag: string; text: string; detail?: string } {
 }
 
 /** One thing that needs the person, with the actions that fit its kind. */
-export function NeedsYouRow({ row, handlers, highlighted = false, leaving = false }: { row: Row; handlers: RowHandlers; highlighted?: boolean; leaving?: boolean }) {
+export function NeedsYouRow({ row, handlers, highlighted = false, leaving = false, fresh = false }: { row: Row; handlers: RowHandlers; highlighted?: boolean; leaving?: boolean; fresh?: boolean }) {
   const { tag, text, detail } = label(row);
   const { busy } = handlers;
   // Fixed by saving the login again, which closes the notice, so it has Reconnect and no Done.
@@ -49,7 +49,7 @@ export function NeedsYouRow({ row, handlers, highlighted = false, leaving = fals
     <li ref={element} className={`ui-home-row${leaving ? " ui-home-row--leaving" : ""}`} data-kind={row.kind} aria-current={highlighted ? "true" : undefined} data-highlighted={highlighted ? "true" : undefined}>
       <span className="ui-home-row__tag">{tag}</span>
       <div className="ui-home-row__text">
-        <span className="ui-home-row__title">{text}</span>
+        <span className="ui-home-row__title">{text}{fresh && <span className="ui-home-row__fresh">Updated just now</span>}</span>
         {detail && <span className="ui-home-row__detail">{detail}</span>}
       </div>
       <div className="ui-home-row__actions">

@@ -13,6 +13,7 @@ import type { NotificationAction } from "./types";
 
 const VISIBLE_ROWS = 3;
 const UNDO_MS = 5_000;
+const FRESH_MS = 10_000;
 const COLLAPSE_KEY = "draft.home.needsYouCollapsed";
 
 function readCollapsed(): boolean {
@@ -118,10 +119,36 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
 
   const showChecklist = Boolean(data.getStarted && !data.getStarted.firstTodo);
   const rowId = (row: (typeof data.rows)[number]) => (row.kind === "notification" ? row.notification.id : row.id);
-  const shown = expanded ? data.rows : data.rows.slice(0, VISIBLE_ROWS);
-  const linked = highlightId ? data.rows.find((row) => rowId(row) === highlightId) : undefined;
+
+  // While the pointer is over the list nothing moves under it: the rows hold still and come up to date when it leaves.
+  const [hovered, setHovered] = useState(false);
+  const held = useRef(data.rows);
+  if (!hovered) held.current = data.rows;
+  const allRows = hovered ? held.current : data.rows;
+
+  // A row that appears or changes after the first load says so for a few seconds, so a change Draft made is not silent.
+  const seen = useRef<Map<string, string> | null>(null);
+  const [freshUntil, setFreshUntil] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const signatures = new Map(data.rows.map((row) => [rowId(row), JSON.stringify(row)]));
+    const previous = seen.current;
+    seen.current = signatures;
+    if (!previous) return;
+    const changed = [...signatures].filter(([id, signature]) => previous.get(id) !== signature).map(([id]) => id);
+    if (changed.length > 0) setFreshUntil((current) => ({ ...current, ...Object.fromEntries(changed.map((id) => [id, Date.now() + FRESH_MS])) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.rows]);
+  useEffect(() => {
+    if (hovered || Object.keys(freshUntil).length === 0) return;
+    const timer = setTimeout(() => setFreshUntil((current) => Object.fromEntries(Object.entries(current).filter(([, until]) => until > Date.now()))), FRESH_MS);
+    return () => clearTimeout(timer);
+  }, [freshUntil, hovered]);
+  const isFresh = (id: string) => (freshUntil[id] ?? 0) > Date.now();
+
+  const shown = expanded ? allRows : allRows.slice(0, VISIBLE_ROWS);
+  const linked = highlightId ? allRows.find((row) => rowId(row) === highlightId) : undefined;
   const rows = linked && !shown.includes(linked) ? [...shown, linked] : shown;
-  const hidden = data.rows.length - rows.length;
+  const hidden = allRows.length - rows.length;
 
   return (
     <section className={`ui-home-panel${showChecklist ? " ui-home-panel--first-run" : ""}`} aria-labelledby="needs-you-title">
@@ -138,11 +165,11 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
       {data.count === 0 && !data.partial && <p className="ui-muted">Nothing needs you right now.</p>}
       {!collapsed && data.count > 0 && (
         <>
-          <ul className="ui-rows ui-home-rows">
-            {rows.map((row) => <NeedsYouRow key={`${row.kind}:${row.id}`} row={row} highlighted={rowId(row) === highlightId} leaving={leaving === rowId(row)} handlers={handlers(rowId(row))} />)}
+          <ul className="ui-rows ui-home-rows" onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+            {rows.map((row) => <NeedsYouRow key={`${row.kind}:${row.id}`} row={row} fresh={isFresh(rowId(row))} highlighted={rowId(row) === highlightId} leaving={leaving === rowId(row)} handlers={handlers(rowId(row))} />)}
           </ul>
           {hidden > 0 && <button type="button" className="ui-link ui-home-more" onClick={() => setExpanded(true)}>{hidden} more</button>}
-          {expanded && data.rows.length > VISIBLE_ROWS && <button type="button" className="ui-link ui-home-more" onClick={() => setExpanded(false)}>Show fewer</button>}
+          {expanded && allRows.length > VISIBLE_ROWS && <button type="button" className="ui-link ui-home-more" onClick={() => setExpanded(false)}>Show fewer</button>}
         </>
       )}
       {showChecklist && data.getStarted && <GetStartedChecklist facts={data.getStarted} onOpenConnections={navigation.onOpenConnections} onOpenRoutines={navigation.onOpenRoutines} />}

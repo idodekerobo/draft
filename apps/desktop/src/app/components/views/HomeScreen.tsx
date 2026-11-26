@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { BackButton, HomeView, SessionView } from "draft-shared-ui";
 import { liveSessionsApi } from "../../liveSessionsApi";
+import { rpc } from "../../rpc";
 import { useWebAppUrl } from "../../hooks/useWebAppUrl";
 import { useWorkspaceKey } from "../../DesktopQueryProvider";
 
@@ -9,11 +10,12 @@ export function HomeScreen({ onOpenSessions, onOpenConnections, onOpenRoutines }
   const workspaceId = useWorkspaceKey();
   const webAppUrl = useWebAppUrl();
   const [run, setRun] = useState<string | null>(null);
+  const thread = useMemo(() => ({ api: liveSessionsApi, home: { loadSession: () => rpc.request.getHomeSession(), loadModels: () => rpc.request.getHomeModels() } }), []);
   if (run) return <SessionView api={liveSessionsApi} sessionId={run} shareBaseUrl={webAppUrl} back={<BackButton onClick={() => setRun(null)} />} />;
   return (
     <div className="activity">
       <div className="ui-page">
-        <HomeView workspaceId={workspaceId} onOpenSession={onOpenSessions} onOpenRun={setRun} onOpenConnections={onOpenConnections} onOpenRoutines={onOpenRoutines} />
+        <HomeView workspaceId={workspaceId} thread={thread} onOpenSession={onOpenSessions} onOpenRun={setRun} onOpenConnections={onOpenConnections} onOpenRoutines={onOpenRoutines} />
       </div>
     </div>
   );

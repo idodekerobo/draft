@@ -53,9 +53,24 @@ const COPIED_MS = 1_500;
 
 const prefersReducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
+/** How the session view looks and acts as the Home thread: Draft's agent, in the owner's own session, beside Needs you. */
+export interface HomeThreadOptions {
+  /** Where the model picker goes in the message box. */
+  modelControl?: ReactNode;
+  /** Shown above the message box, such as why Draft cannot reply. */
+  notice?: ReactNode;
+  /** Prompts offered to someone who has not said anything yet. Choosing one sends it. */
+  suggestions?: readonly string[];
+  /** Called with the newest event's seq, so the page can show an unread dot on a tab. */
+  onSeq?: (seq: number) => void;
+  placeholder?: string;
+}
+
 interface SessionViewProps {
   api: LiveSessionsApi;
   sessionId: string;
+  /** Show the session as the Home thread: no header, link or team strip, and Draft's own states. */
+  home?: HomeThreadOptions;
   /** The "Sessions" crumb, for apps where the list is not always beside the session. */
   back?: ReactNode;
   menuItems?: (session: LiveSession) => SessionMenuItem[];
@@ -201,6 +216,7 @@ function LoadedSession(props: SessionViewProps) {
 function SessionContents({
   api,
   sessionId,
+  home,
   back,
   menuItems,
   onDeleted,
@@ -477,10 +493,10 @@ function SessionContents({
   const skipQuestions = useCallback(async () => void (await Promise.all(openQuestions.map((q) => skipRequest(q.requestId).catch(() => {})))), [openQuestions, skipRequest]);
   const sendMessage = useCallback(
     async (text: string) => {
-      if (canAnswer && !sleeping) await skipQuestions();
+      if (!home && canAnswer && !sleeping) await skipQuestions();
       return inputs.send(text);
     },
-    [canAnswer, sleeping, skipQuestions, inputs],
+    [home, canAnswer, sleeping, skipQuestions, inputs],
   );
   const modes = harnessModes(session.harness ?? "claude", session.model);
   const permissionSwitch = useSwitching(session.permission_mode);
@@ -622,8 +638,25 @@ function SessionContents({
   const readOnly = session.session_type === "routine";
   const running = !readOnly && (session.status === "live" || session.status === "starting");
   const banner = sessionBanner(session, devOnly);
+  const lastSeq = session.last_seq ?? 0;
+  useEffect(() => {
+    if (home?.onSeq) home.onSeq(lastSeq);
+  }, [home, lastSeq]);
+  const welcomeOnly = Boolean(home?.suggestions?.length) && logItems.filter((item) => item.type === "user").length === 0;
   return (
-    <div className="ui-session">
+    <div className={home ? "ui-session ui-session--home" : "ui-session"}>
+      {home ? (
+        <header className="ui-session__header ui-session__header--home">
+          <h2 className="ui-session__title">Draft</h2>
+          <div className="ui-session__actions">
+            {running && (
+              <button type="button" className="ui-btn" disabled={stopping} title="Stop (Esc in the message box)" onClick={() => void stop()}>
+                {stopping ? "Stopping…" : "Stop"}
+              </button>
+            )}
+          </div>
+        </header>
+      ) : (
       <header className="ui-session__header">
         <Crumbs back={back}>
           <div className="ui-session__heading">
@@ -651,11 +684,12 @@ function SessionContents({
           <SessionMenu items={menu.itemsFor(session)} onSelect={menu.choose} />
         </div>
       </header>
+      )}
       {menu.dialog}
       {stream.updateError && <p className="ui-muted ui-session__notice" role="status">{stream.updateError} <button type="button" className="ui-link" onClick={() => void refresh()}>Retry</button></p>}
-      {banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
-      <SessionLinks session={session} onOpenSession={onOpenSession} />
-      <CloudStartNoticeView session={session} />
+      {!home && banner && <p className={`ui-session__banner ui-session__banner--${session.status === "host_offline" ? "offline" : "warning"}`} role="status">{banner}</p>}
+      {!home && <SessionLinks session={session} onOpenSession={onOpenSession} />}
+      {!home && <CloudStartNoticeView session={session} />}
       {actionError && <p className="ui-error ui-session__notice" role="alert">{actionError}</p>}
       {toolsNotice && (session.status === "live" || session.status === "starting") && <p className="ui-muted ui-session__notice" role="status">{toolsNotice}</p>}
       {notice && <p className="ui-error ui-session__notice" role="alert">{notice}</p>}
@@ -685,6 +719,13 @@ function SessionContents({
             />
           </DisclosureState.Provider>
           </AgentTranscripts.Provider>
+          {home && welcomeOnly && (
+            <div className="ui-session__suggestions" role="group" aria-label="Things you can ask">
+              {home.suggestions!.map((prompt) => (
+                <button key={prompt} type="button" className="ui-btn ui-session__suggestion" onClick={() => void sendMessage(prompt).catch(() => {})}>{prompt}</button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       {(!isAtBottom || history?.focused) && (
@@ -692,7 +733,8 @@ function SessionContents({
       )}
       <div className="ui-session__footer">
         <div className="ui-session__column">
-          {session.status !== "ended" && <TeamStrip members={team} onShow={showAgent} />}
+          {!home && session.status !== "ended" && <TeamStrip members={team} onShow={showAgent} />}
+          {home?.notice && <div className="ui-session__notice ui-session__home-notice" role="status">{home.notice}</div>}
           {readOnly ? (
             <p className="ui-muted ui-session__notice">This run follows its routine on its own. It cannot take messages.</p>
           ) : (
@@ -707,7 +749,7 @@ function SessionContents({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={modeControl} onCycleMode={modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended" || resuming || Boolean(resumeError)} resuming={resuming} resumeRetryable={session.last_failure?.retryable} resumeFailure={resumeError ?? (session.status === "ended" ? session.last_failure?.message : null)} preserveDraft={resuming || Boolean(resumeError) || Boolean(session.last_failure)} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={agentControl} onResume={canResume || resuming || (resumeError && session.mine && !isDraftCloudSession(session)) ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={home ? undefined : modeControl} onCycleMode={!home && modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended" || resuming || Boolean(resumeError)} resuming={resuming} resumeRetryable={session.last_failure?.retryable} resumeFailure={resumeError ?? (session.status === "ended" ? session.last_failure?.message : null)} preserveDraft={resuming || Boolean(resumeError) || Boolean(session.last_failure)} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={home ? home.modelControl : agentControl} placeholder={home?.placeholder} onResume={canResume || resuming || (resumeError && session.mine && !isDraftCloudSession(session)) ? resume : undefined} />
             </>
           )}
         </div>

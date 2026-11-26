@@ -289,6 +289,12 @@ export type AppRPCType = {
       /** The AI lab the workspace picked for Draft's agent, and whether the caller may change it. Throws when there is no workspace. */
       getModelProvider: { params: void; response: { provider: string; canEdit: boolean; providers: Array<{ id: string; label: string; enabled: boolean }> } };
 
+      /** The person's own Home session, made on first use, and whether Draft can reply now. */
+      getHomeSession: { params: void; response: { id: string; model: string | null; canReply: boolean } };
+
+      /** The models the person can pick for Home. */
+      getHomeModels: { params: void; response: Array<{ id: string; name: string }> };
+
       /** Changes the workspace's AI lab. Throws when the caller is not an admin. */
       setModelProvider: { params: { provider: string }; response: void };
 

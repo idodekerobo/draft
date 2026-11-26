@@ -329,6 +329,19 @@ const rpc = BrowserView.defineRPC<AppRPCType>({
 
       getWebAppUrl: async () => process.env.DRAFT_APP_URL ?? "https://app.draftai.us",
 
+      getHomeSession: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("no_workspace");
+        const body = await fetchServerJSON<{ session: { id: string; model: string | null }; can_reply: boolean }>(`workspaces/${workspaceId}/home/session`);
+        return { id: body.session.id, model: body.session.model, canReply: body.can_reply };
+      },
+
+      getHomeModels: async () => {
+        const workspaceId = getCachedWorkspaceId();
+        if (!workspaceId) throw new Error("no_workspace");
+        return (await fetchServerJSON<{ models: Array<{ id: string; name: string }> }>(`workspaces/${workspaceId}/home/models`)).models;
+      },
+
       getModelProvider: async () => {
         const workspaceId = getCachedWorkspaceId();
         if (!workspaceId) throw new Error("no_workspace");
