@@ -14,6 +14,8 @@ export interface EmbeddedModelRef {
 export interface EmbeddedInput {
   text: string;
   authorUserId: string;
+  /** When the agent is already working: wait for the turn to end (`queue`, the default) or join it (`steer`). */
+  whenBusy?: "queue" | "steer";
 }
 
 /**
@@ -80,9 +82,29 @@ export interface EmbeddedAgentAdapter {
 
   /** Committed events after `afterSeq`, then new ones as they commit, until the adapter closes. */
   events(afterSeq?: number): AsyncIterable<EmbeddedEvent>;
+  /** Calls `listener` after each commit, so the host can project it now instead of waiting for its next sweep. Returns how to stop. */
+  onCommit(listener: () => void): () => void;
   /** Provisional reply text, for the live view. Nothing in it is kept. */
   liveText(): AsyncIterable<LiveTextPart>;
 }
 
+/** What the host gives an adapter when it opens one agent. */
+export interface EmbeddedAgentContext {
+  sessionId: string;
+  workspaceId: string;
+  ownerUserId: string;
+  /** This process's claim on the agent: every write the adapter makes is fenced by it. */
+  owner: string;
+  epoch: number;
+  /** The system prompt for the agent. */
+  instructions: string;
+  /** Throws when this process no longer owns the agent. An external effect calls it first. */
+  assertOwner(): void;
+  /** Checks the database that this process still owns the agent at its epoch. For effects that cannot be undone. */
+  stillOwner(): Promise<boolean>;
+  /** The run of the current work episode, opened if none is. Tools act through it. */
+  currentRun(): Promise<import("draft-core/run-spec").AgentRunSpec>;
+}
+
 /** Makes the adapter for one agent. The Home host calls this once for each Home it opens. */
-export type EmbeddedAgentFactory = (context: { storageScope: string }) => EmbeddedAgentAdapter;
+export type EmbeddedAgentFactory = (context: EmbeddedAgentContext) => EmbeddedAgentAdapter;

@@ -31,10 +31,16 @@ export class FakeEmbeddedAgent implements EmbeddedAgentAdapter {
   private opened = false;
   private closed = false;
   private wakeReaders: Array<() => void> = [];
+  private commitListeners = new Set<() => void>();
   private liveReaders = new Set<{ queue: LiveTextPart[]; wake: () => void }>();
 
   async open(): Promise<void> {
     this.opened = true;
+  }
+
+  onCommit(listener: () => void): () => void {
+    this.commitListeners.add(listener);
+    return () => this.commitListeners.delete(listener);
   }
 
   async close(): Promise<void> {
@@ -109,6 +115,11 @@ export class FakeEmbeddedAgent implements EmbeddedAgentAdapter {
     return outcome;
   }
 
+  /** What has committed so far, without waiting. For tests that stand in for the projector. */
+  committed(): readonly EmbeddedEvent[] {
+    return this.log;
+  }
+
   async *events(afterSeq = 0): AsyncIterable<EmbeddedEvent> {
     let next = afterSeq;
     while (true) {
@@ -175,6 +186,7 @@ export class FakeEmbeddedAgent implements EmbeddedAgentAdapter {
   private commit(sourceId: string, body: EmbeddedEventBody): void {
     this.log.push({ seq: this.log.length + 1, sourceId, at: new Date().toISOString(), body });
     for (const wake of this.wakeReaders.splice(0)) wake();
+    for (const listener of this.commitListeners) listener();
   }
 
   private publishLive(part: LiveTextPart): void {

@@ -1,8 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import type { EmbeddedAgentAdapter, EmbeddedAgentFactory, EmbeddedEvent } from "../../embedded-agent/adapter";
+import type { EmbeddedAgentAdapter, EmbeddedAgentContext, EmbeddedAgentFactory, EmbeddedEvent } from "../../embedded-agent/adapter";
 
 const OWNER = "33333333-3333-4333-8333-333333333333";
 const input = (text: string) => ({ text, authorUserId: OWNER });
+
+/** A context for an adapter under test, with no database behind it. */
+export const testContext = (overrides: Partial<EmbeddedAgentContext> = {}): EmbeddedAgentContext => ({
+  sessionId: "22222222-2222-4222-8222-222222222222",
+  workspaceId: "11111111-1111-4111-8111-111111111111",
+  ownerUserId: OWNER,
+  owner: "test-owner",
+  epoch: 1,
+  instructions: "",
+  assertOwner: () => {},
+  stillOwner: async () => true,
+  currentRun: async () => {
+    throw new Error("no run in this test");
+  },
+  ...overrides,
+});
 
 /** Reads events until `done` says enough, or fails after a second. */
 export async function collect(agent: EmbeddedAgentAdapter, done: (events: EmbeddedEvent[]) => boolean, afterSeq = 0): Promise<EmbeddedEvent[]> {
@@ -30,7 +46,7 @@ export function describeEmbeddedAgentContract(name: string, factory: EmbeddedAge
   describe(`${name}: the embedded agent contract`, () => {
     let agent: EmbeddedAgentAdapter;
     beforeEach(async () => {
-      agent = factory({ storageScope: "contract-test" });
+      agent = factory(testContext());
       await agent.open();
     });
     afterEach(async () => {
@@ -84,6 +100,19 @@ export function describeEmbeddedAgentContract(name: string, factory: EmbeddedAge
       await agent.submit(input(scripts.plainReply), "req-1");
       const events = await collect(agent, settledFor("req-1"));
       expect(events.find((event) => event.body.kind === "assistant_text")!.body).toMatchObject({ model });
+    });
+
+    it("tells a listener after each commit, until it stops listening", async () => {
+      let calls = 0;
+      const stop = agent.onCommit(() => void calls++);
+      await agent.submit(input(scripts.plainReply), "req-1");
+      await collect(agent, settledFor("req-1"));
+      expect(calls).toBeGreaterThan(0);
+      stop();
+      const before = calls;
+      await agent.submit(input(scripts.plainReply), "req-2");
+      await collect(agent, settledFor("req-2"));
+      expect(calls).toBe(before);
     });
 
     it("refuses work after it is closed, and closing twice is fine", async () => {

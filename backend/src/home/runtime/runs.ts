@@ -38,19 +38,21 @@ export function runRowOf(spec: AgentRunSpec, sessionId: string): Record<string, 
  * Opens the run of a work episode, or joins the one already open, and returns its id. The database takes the session lock for
  * both this and settling, so an input never joins a run that is closing.
  */
-export async function openHomeRun(client: SupabaseClient, session: HomeSessionRef, instructions: string): Promise<string> {
-  const spec = buildHomeRunSpec({
-    runId: randomUUID(),
+export async function openHomeRun(client: SupabaseClient, session: HomeSessionRef, instructions: string): Promise<{ id: string; spec: AgentRunSpec }> {
+  const input = {
     workspaceId: session.workspaceId,
     ownerUserId: session.ownerUserId,
     sessionId: session.id,
     model: session.model,
     contextVersionId: await resolveBaseContextVersionId(client, session.workspaceId),
     instructions,
-  });
-  const { data, error } = await client.rpc("open_home_run", { p_session_id: session.id, p_row: runRowOf(spec, session.id) });
+  };
+  const proposed = buildHomeRunSpec({ ...input, runId: randomUUID() });
+  const { data, error } = await client.rpc("open_home_run", { p_session_id: session.id, p_row: runRowOf(proposed, session.id) });
   if (error) throw error;
-  return data as string;
+  // The run may be one that was already open, so the spec is made again under its id.
+  const id = data as string;
+  return { id, spec: id === proposed.id ? proposed : buildHomeRunSpec({ ...input, runId: id }) };
 }
 
 /** Ends the run when no work is pending. False means work is still pending and the run stays open. */
