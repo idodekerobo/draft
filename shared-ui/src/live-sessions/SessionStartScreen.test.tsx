@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { SessionStartScreen, type StartRequest, type StartResult } from "./SessionStartScreen";
+import { SessionStartScreen, clearSessionStartValues, type StartRequest, type StartResult } from "./SessionStartScreen";
 import { EnvChecklist } from "./EnvChecklist";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); clearSessionStartValues(); });
 
 function setup(recent: string[] = ["/work/marigold", "/work/other"]) {
   const onStart = mock(async (_request: StartRequest) => ({ ok: true }) as { ok: true } | { ok: false; error: string });
@@ -13,6 +13,16 @@ function setup(recent: string[] = ["/work/marigold", "/work/other"]) {
 }
 
 describe("SessionStartScreen", () => {
+  it("restores the selected mode after leaving and returning", () => {
+    const props = { recentFolders: ["/work/marigold"], onBrowse: async () => null, onStart: async () => ({ ok: true } as const) };
+    const view = render(<SessionStartScreen {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Mode: Harness default" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /^Auto/ }));
+    view.unmount();
+    render(<SessionStartScreen {...props} />);
+    expect(screen.getByRole("button", { name: "Mode: Auto" })).toBeTruthy();
+  });
+
   it("lets Claude start in Auto before its first message", async () => {
     const { onStart } = setup();
     fireEvent.click(screen.getByRole("button", { name: "Mode: Harness default" }));

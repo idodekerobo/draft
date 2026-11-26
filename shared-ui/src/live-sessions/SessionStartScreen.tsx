@@ -99,6 +99,10 @@ type Source = (typeof SOURCES)[number]["value"];
 
 const startValues = new Map<string, unknown>();
 
+export function clearSessionStartValues() {
+  startValues.clear();
+}
+
 function useStartValue<T>(key: string, initial: T): [T, Dispatch<SetStateAction<T>>] {
   const [value, setValue] = useState<T>(() => startValues.has(key) ? startValues.get(key) as T : initial);
   const update: Dispatch<SetStateAction<T>> = (next) => {
