@@ -36,6 +36,11 @@ create table credentials (
     references session_projects(id, workspace_id)
 );
 
+-- One login per workspace for each harness provider, across all statuses (see save_harness_credential).
+create unique index credentials_one_harness_login_idx
+  on credentials (workspace_id, provider)
+  where provider in ('claude_code', 'codex_chatgpt_auth');
+
 alter table credentials enable row level security;
 
 grant select on table credentials to service_role;
