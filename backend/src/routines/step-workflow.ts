@@ -5,6 +5,7 @@ import { loadVersionDocuments } from "../metaharness/context/context-store";
 import { specFromRow } from "../metaharness/runs/agent-run-store";
 import { currentDocumentPaths } from "../routine-steps/context-documents";
 import { registerWorkflow } from "../routine-steps/registry";
+import { stepFiles } from "../routine-steps/step-files";
 import { TEXT_STEP_SCHEMA } from "../routine-steps/step-run-spec";
 import type { ParentRun, StepOutputs, WorkflowKind } from "../routine-steps/types";
 import { needsDraftToolServer } from "../metaharness/sandbox/run-manifest";
@@ -81,9 +82,7 @@ export const routineWorkflow: WorkflowKind = {
     const { data, error } = await client.from("workspaces").select("organization_id").eq("id", parent.workspace_id).single();
     if (error) throw error;
     const documents = await loadVersionDocuments(client, run.base_context_version_id);
-    const extraFiles = Object.fromEntries(
-      Object.entries(outputs).flatMap(([key, list]) => list.map((entry) => [`input/steps/${key}/${entry.run.id}.json`, `${JSON.stringify(entry.result, null, 2)}\n`] as const)),
-    );
+    const extraFiles = stepFiles(outputs);
     const bundle = buildRoutineBundle({ organizationId: (data as { organization_id: string }).organization_id, workspaceId: parent.workspace_id, agentRunId: run.id, audience: runCaller(spec), documents, extraFiles });
 
     const extras = extrasOf(parent);

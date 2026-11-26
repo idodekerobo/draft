@@ -17,8 +17,7 @@ import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
 import { RoutineLeaseBusyError, launchRoutineRun, toPromptEvent, type LaunchRoutineRun } from "./launch-routine-run";
 import { hasSteps } from "draft-core/routine-steps";
-import { advanceWorkflow } from "../routine-steps/advance";
-import { saveStepsOnParent } from "../routine-steps/step-run-spec";
+import { startWorkflow } from "../routine-steps/start";
 import type { EngineDeps } from "../routine-steps/types";
 import { routineWorkflow, type RoutineRunExtras } from "./step-workflow";
 import { buildRoutineRunSpec } from "./run-spec";
@@ -168,9 +167,11 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
         startedAt: new Date().toISOString(),
         startedBy: events?.length ? { type: "event", events: events.map(toPromptEvent) } : { type: manual ? "manual" : "schedule" },
       };
-      await saveStepsOnParent(client, run.id, routine.steps!, extras as unknown as Record<string, unknown>);
-      await markAgentRunRunning(client, run.id);
-      await advanceWorkflow({ client, config, workflow: routineWorkflow, launch: options.launchStep }, run.id);
+      await startWorkflow({ client, config, workflow: routineWorkflow, launch: options.launchStep }, {
+        parentRunId: run.id,
+        steps: routine.steps!,
+        extras: extras as unknown as Record<string, unknown>,
+      });
       return { status: "started", sessionId, runId: run.id };
     }
 

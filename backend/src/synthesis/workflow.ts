@@ -5,6 +5,7 @@ import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
 import type { CaptureEntry, ReconcileConflict } from "./steps/definitions";
 import { currentDocumentPaths } from "../routine-steps/context-documents";
 import { registerWorkflow } from "../routine-steps/registry";
+import { stepFiles } from "../routine-steps/step-files";
 import type { PlannedRun, StepOutputs, WorkflowKind } from "../routine-steps/types";
 import { CONTEXT_HISTORY_SCAN, documentsLastChanged } from "../services/context-history";
 import type { AgentRunRow } from "../types/tables";
@@ -79,13 +80,6 @@ async function planReconcile(client: SupabaseClient, parent: AgentRunRow, filter
   const runs: PlannedRun[] = documents.map((path) => ({ item: { key: `doc:${path}`, type: "document" as const, path } }));
   if (unknown.length > 0) runs.push({ item: { key: "new-documents", type: "new_documents" as const } });
   return runs;
-}
-
-/** The files an earlier step's runs left for a later one to read. */
-function stepFiles(outputs: StepOutputs): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(outputs).flatMap(([key, list]) => list.map((entry) => [`input/steps/${key}/${entry.run.id}.json`, `${JSON.stringify(entry.result, null, 2)}\n`] as const)),
-  );
 }
 
 async function prepareStepRun(ctx: Parameters<WorkflowKind["prepareRun"]>[0]): Promise<{ bundle: Awaited<ReturnType<typeof loadValidatedRunBundle>>; prompt: string }> {

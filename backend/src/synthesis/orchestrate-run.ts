@@ -11,9 +11,7 @@ import {
   RunPreparationFailedError,
 } from "./prepare-run";
 import { synthesisSteps } from "./steps/definitions";
-import { advanceWorkflow } from "../routine-steps/advance";
-import { saveStepsOnParent } from "../routine-steps/step-run-spec";
-import { markAgentRunRunning } from "../metaharness/runs/lifecycle";
+import { startWorkflow } from "../routine-steps/start";
 import { guidanceOf, stepPrompt } from "./steps/prompts";
 import { synthesisWorkflow } from "./workflow";
 import { saveRunUsage } from "../metaharness/runs/save-run-usage";
@@ -89,7 +87,6 @@ export async function launchSynthesisRun(
       recordError({ client, workspaceId: options.workspaceId, operation: "ingestion", message: "People sync failed before synthesis", code: "people_sync_failed", error }),
     );
 
-    // The steps are saved on the run so editing the guidance cannot change a run that has started.
     stage = "plan";
     const guidance = guidanceOf(settings.prompt);
     const steps = synthesisSteps({
@@ -97,14 +94,13 @@ export async function launchSynthesisRun(
       model: settings.model,
       prompts: { capture: stepPrompt("capture", guidance), reconcile: stepPrompt("reconcile", guidance), organize: stepPrompt("organize", guidance) },
     });
-    await saveStepsOnParent(client, runId, steps, {
-      sourceItemIds: options.sourceItemIds,
-      ...(options.dimensions?.length ? { dimensions: options.dimensions } : {}),
-    });
 
     stage = "start";
-    await markAgentRunRunning(client, runId);
-    await advanceWorkflow({ client, config: options.config, workflow: synthesisWorkflow, launch: options.launchStep }, runId);
+    await startWorkflow({ client, config: options.config, workflow: synthesisWorkflow, launch: options.launchStep }, {
+      parentRunId: runId,
+      steps,
+      extras: { sourceItemIds: options.sourceItemIds, ...(options.dimensions?.length ? { dimensions: options.dimensions } : {}) },
+    });
 
     return { runId };
   } catch (caught) {

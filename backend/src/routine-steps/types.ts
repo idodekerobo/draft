@@ -6,6 +6,9 @@ import type { SandboxDeploymentConfig, SandboxRunBundle } from "../metaharness/s
 import type { launchWithCredentials } from "../metaharness/sandbox/launch-with-credentials";
 import type { AgentRunRow } from "../types/tables";
 
+/** The kinds of run that can have steps. */
+export const STEP_PARENT_KINDS: StepParentKind[] = ["synthesis", "routine"];
+
 /** The run of a routine that has steps. It starts no agent itself. */
 export type ParentRun = AgentRunRow & { kind: StepParentKind };
 

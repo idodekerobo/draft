@@ -6,11 +6,10 @@ import { advanceWorkflow } from "./advance";
 import { emitParentRunFinished } from "./parent-finished";
 import { workflowFor } from "./registry";
 import { failStepRun } from "./step-failure";
-import { STALE_STEP_AFTER_MS, type EngineDeps, type ParentRun, type WorkflowKind } from "./types";
+import { STALE_STEP_AFTER_MS, STEP_PARENT_KINDS, type EngineDeps, type ParentRun, type WorkflowKind } from "./types";
 
 type Resolve = (kind: StepParentKind) => WorkflowKind;
 const ACTIVE_NOT_QUEUED = ACTIVE_AGENT_RUN_STATUSES.filter((status) => status !== "queued");
-const PARENT_KINDS = ["synthesis", "routine"];
 
 export interface SweepOptions {
   now?: Date;
@@ -23,7 +22,7 @@ export interface SweepOptions {
 
 /** A parent run that has steps carries them in `result_json`, so a run without it is a plain run. */
 async function activeParents(client: SupabaseClient, workspaceId?: string): Promise<ParentRun[]> {
-  let query = client.from("agent_runs").select("*").in("kind", PARENT_KINDS).in("status", ACTIVE_AGENT_RUN_STATUSES).not("result_json", "is", null);
+  let query = client.from("agent_runs").select("*").in("kind", STEP_PARENT_KINDS).in("status", ACTIVE_AGENT_RUN_STATUSES).not("result_json", "is", null);
   if (workspaceId) query = query.eq("workspace_id", workspaceId);
   const { data, error } = await query;
   if (error) throw error;

@@ -6,7 +6,7 @@ import { isActiveRun, launchStepRun } from "./launch-step-run";
 import { emitParentRunFinished } from "./parent-finished";
 import { buildStepRunSpec, stepsOfParent } from "./step-run-spec";
 import { hasAttemptsLeft, retryNotBefore } from "./step-failure";
-import { STEP_RUN_CONCURRENCY, type EngineDeps, type ParentRun, type PlannedRun, type StepItem, type StepOutputs } from "./types";
+import { STEP_PARENT_KINDS, STEP_RUN_CONCURRENCY, type EngineDeps, type ParentRun, type PlannedRun, type StepItem, type StepOutputs } from "./types";
 import type { AgentRunRow } from "../types/tables";
 import { randomUUID } from "node:crypto";
 
@@ -14,13 +14,12 @@ export type AdvanceState = "inactive" | "waiting" | "finished" | "failed";
 
 const UNIQUE_VIOLATION = "23505";
 const MAX_PASSES = 6;
-const PARENT_KINDS = ["synthesis", "routine"];
 
 const isFailed = (run: AgentRunRow): boolean => ["failed", "stale", "cancelled"].includes(run.status);
 const isUnfinished = (run: AgentRunRow): boolean => run.status === "queued" || isActiveRun(run);
 
 async function loadParent(client: SupabaseClient, parentRunId: string): Promise<ParentRun | null> {
-  const { data, error } = await client.from("agent_runs").select("*").eq("id", parentRunId).in("kind", PARENT_KINDS).maybeSingle();
+  const { data, error } = await client.from("agent_runs").select("*").eq("id", parentRunId).in("kind", STEP_PARENT_KINDS).maybeSingle();
   if (error) throw error;
   return (data as ParentRun | null) ?? null;
 }
