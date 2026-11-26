@@ -641,12 +641,14 @@ describe("built-in routine editing", () => {
       const routine = agentRoutine({ taskType, agent: null, builtIn: { harness: "claude", model: "haiku", prompt: "Original instructions." } });
       const { updateRoutine } = setup({ routines: [routine], initialOpenId: routine.id });
       const editor = await screen.findByRole("dialog");
-      expect(within(editor).getByLabelText("What should it do?")).toBeTruthy();
+      // The context update's text is guidance for its steps. A summary's is still the request.
+      const field = () => within(editor).getByLabelText(taskType === "synthesize_workspace" ? /^Guidance/ : "What should it do?");
+      expect(field()).toBeTruthy();
       expect(within(editor).getByRole("button", { name: "Agent and model" })).toBeTruthy();
       expect(within(editor).queryByRole("textbox", { name: "Name" })).toBeNull();
       expect(within(editor).queryByRole("button", { name: "Delete routine" })).toBeNull();
       expect(within(editor).queryByText("Runs", { selector: "h3" })).toBeNull();
-      fireEvent.change(within(editor).getByLabelText("What should it do?"), { target: { value: "Focus on customer decisions." } });
+      fireEvent.change(field(), { target: { value: "Focus on customer decisions." } });
       fireEvent.click(within(editor).getByRole("button", { name: "Save changes" }));
       await waitFor(() => expect(updateRoutine).toHaveBeenCalledWith("digest", { prompt: "Focus on customer decisions." }));
     });

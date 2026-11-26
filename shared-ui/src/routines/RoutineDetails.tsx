@@ -4,6 +4,8 @@ import { defaultRoutineBuiltInTools } from "draft-core/routines";
 import type { HarnessId } from "draft-core/harnesses";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { AgentFields, isDisconnected, type AgentStatuses, type AgentValue } from "./AgentFields";
+import { StepsEditor, stepsProblem } from "./StepsEditor";
+import { SynthesisSteps } from "./SynthesisSteps";
 import { Select } from "../controls/Select";
 import { AbilityFields, RoutinePreview, capabilitiesOf, capabilitiesValid, capabilityChanges, type CapabilityValue } from "./CapabilityFields";
 import { Dialog } from "./Dialog";
@@ -12,7 +14,7 @@ import { RoutineError } from "./errors";
 import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import { RoutineRuns } from "./RoutineRuns";
 import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions } from "./schedule-fields";
-import type { AgentRoutineEdit, OpenRun, Routine, RoutineAgentStatus, RoutineEventName, RoutinePatch, RoutinePreset, RoutineRule, RoutinesResponse, RoutineWeekday } from "./types";
+import type { AgentRoutineEdit, OpenRun, Routine, RoutineAgentStatus, RoutineEventName, RoutinePatch, RoutinePreset, RoutineRule, RoutineStepEdit, RoutinesResponse, RoutineWeekday } from "./types";
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
 export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave, onDelete, onOpenRun, agents = {}, connectedProviders, gmailConnected, onConnect, renderAgentSetup, refreshAgents, returnFocusTo }: {
@@ -47,6 +49,8 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
     [routine],
   );
   const [agent, setAgent] = useState<AgentValue | null>(original);
+  const originalSteps = useMemo<RoutineStepEdit[]>(() => routine.agent?.steps ?? [], [routine]);
+  const [steps, setSteps] = useState<RoutineStepEdit[]>(originalSteps);
   const originalCapabilities = useMemo(() => capabilitiesOf(routine.agent), [routine]);
   const [capabilities, setCapabilities] = useState<CapabilityValue>(originalCapabilities);
   // Each harness has its own built-in tools: a new harness starts with all of its own, and going back restores the saved ones.
@@ -54,6 +58,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   useEffect(() => {
     if (!agent || toolsHarness.current === agent.harness) return;
     toolsHarness.current = agent.harness;
+    setSteps((current) => current.map((entry) => ({ ...entry, model: null })));
     const tools = agent.harness === original?.harness ? originalCapabilities.builtInTools : defaultRoutineBuiltInTools(agent.harness);
     setCapabilities((current) => ({ ...current, builtInTools: tools }));
   }, [agent, original, originalCapabilities]);
@@ -98,6 +103,9 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
     if (agent.harness !== original.harness || agent.model !== original.model || agent.effort !== original.effort) agentEdit.reasoningEffort = agent.effort;
     if (routine.agent) Object.assign(agentEdit, capabilityChanges(originalCapabilities, capabilities));
   }
+  // A new harness has other models, so a step that named one starts from the default again, as the server does.
+  const stepsChanged = !!routine.agent && JSON.stringify(steps) !== JSON.stringify(originalSteps);
+  if (stepsChanged) agentEdit.steps = steps.length > 0 ? steps : null;
   // The rule sets the schedule (null when it is off) and the triggers. Parts that did not change are left out.
   const rule: RoutineRule = {};
   const scheduleSent = mode === "schedule" && (originalMode !== "schedule" || scheduleDirty);
@@ -108,7 +116,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
   if (nextEvents.length !== originalEvents.length || nextEvents.some((event) => !originalEvents.includes(event))) rule.events = nextEvents;
   const ruleDirty = Object.keys(rule).length > 0;
   const agentDirty = Object.keys(agentEdit).length > 0;
-  const agentValid = !agent || (agent.title.trim() !== "" && agent.prompt.trim() !== "" && capabilitiesValid(capabilities));
+  const agentValid = !agent || (agent.title.trim() !== "" && agent.prompt.trim() !== "" && capabilitiesValid(capabilities) && stepsProblem(steps) === null);
   const blocked = !!agent && !!original && agent.harness !== original.harness && isDisconnected(agents[agent.harness]);
   const scheduleOk = !scheduleSent || (preset !== "custom" && (!usesTime || time !== ""));
   const canSave = editable && (agentDirty || ruleDirty) && scheduleOk && agentValid && !blocked && !saving && !deleting;
@@ -261,6 +269,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
                   refreshAgents={refreshAgents}
                   fieldError={fieldError}
                 />
+                <StepsEditor steps={steps} onChange={setSteps} harness={agent.harness} goal={agent.prompt} disabled={busy} fieldError={fieldError} />
                 <WhenFields
                   mode={mode}
                   onModeChange={setMode}
@@ -298,11 +307,17 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
           <div className="ui-routine-form__edit">
             <div className="ui-routines__fields">
               <AgentFields value={agent} onChange={setAgent} disabled={!editable || busy} hideName agents={agents} blocked={blocked}
+                {...(isSynthesis ? {
+                  promptLabel: "Guidance",
+                  promptHelp: "Added to every step of a context update. Say what matters to your team.",
+                  promptPlaceholder: "Treat anything about pricing as important. Ignore internal scheduling.",
+                } : {})}
                 renderAgentSetup={renderAgentSetup} refreshAgents={refreshAgents} fieldError={fieldError} />
             </div>
+            {isSynthesis && <SynthesisSteps harness={agent.harness} model={agent.model} />}
             {scheduleFields}
             {scheduleNotices}
-            <p className="ui-routines__notice">Changes apply to the whole team on the next run. Required inputs and output formats are managed by Draft.</p>
+            <p className="ui-routines__notice">Changes apply to the whole team on the next run. {isSynthesis ? "The instructions for each step are managed by Draft." : "Required inputs and output formats are managed by Draft."}</p>
           </div>
           <aside className="ui-routine-preview" aria-label="What this routine will do">
             <h3 className="ui-routines__subheading">What it will do</h3>
@@ -310,6 +325,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
               <li>{routine.enabled ? (preset === "custom" ? routine.scheduleDescription : `${scheduleSentence({ preset, time, weekday })} (${zoneLabel(effectiveTimezone)})`) : "Paused. It won’t run until it’s resumed."}</li>
               {nextRun && <li>Next run {formatAbsolute(nextRun.toISOString(), effectiveTimezone)}</li>}
               <li>Runs on {agentLabel(agent)}</li>
+              {isSynthesis && <li>Runs in three steps: capture, reconcile, then organize</li>}
               <li>{routine.routineDescription}</li>
             </ul>
           </aside>
