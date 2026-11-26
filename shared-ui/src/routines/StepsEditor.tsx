@@ -8,6 +8,10 @@ import type { RoutineStepEdit } from "./types";
 export const MAX_STEPS = 10;
 const KEY_MAX = 32;
 
+/** Once a routine has steps, its own text box is the goal of the whole routine, and the steps do the work. */
+export const STEPS_GOAL_LABEL = "What is this routine for?";
+export const STEPS_GOAL_HELP = "The goal of the whole routine. Each step below does part of the work.";
+
 /** A step key: lowercase letters, numbers and underscores, starting with a letter. */
 export function sanitizeStepKey(text: string): string {
   const cleaned = text.toLowerCase().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "");

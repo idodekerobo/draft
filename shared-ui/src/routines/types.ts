@@ -163,4 +163,6 @@ export interface CreateRoutineInput {
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
   builtInTools?: string[];
+  /** Ordered steps. Left out, the routine runs as one agent. */
+  steps?: RoutineStepEdit[];
 }
