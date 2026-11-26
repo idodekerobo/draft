@@ -196,6 +196,7 @@ async function launched(input: Record<string, unknown>) {
         get: async () => ({ id: "m1", state: "started" }) as never,
         start: async () => undefined,
         stop: async () => undefined,
+        listByMetadata: async () => [],
         waitForState: async () => ({ id: "m1", state: "started" }) as never,
         forceDelete: async () => undefined,
         createVolume: async () => {

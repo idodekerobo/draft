@@ -97,6 +97,7 @@ function fakeFlyClient(overrides: {
     get: async (machineId: string): Promise<FlyMachine> => ({ id: machineId, state: "started" }),
     start: async () => undefined,
     stop: notCalled,
+    listByMetadata: notCalled,
     waitForState:
       overrides.waitForState ??
       (async (machineId: string): Promise<FlyMachine> => ({ id: machineId, state: "started" })),
