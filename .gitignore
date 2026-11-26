@@ -79,3 +79,4 @@ apps/web/public/multiplayer-coding-demo-poster.jpg
 # Built by `bun run build:runner` in backend
 backend/src/sandbox/image/runner.mjs
 backend/src/sandbox/image/host.mjs
+backend/src/sandbox/image/computer.mjs
