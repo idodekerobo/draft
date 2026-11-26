@@ -7,7 +7,6 @@ import { recordError } from "../errors/record-error";
 import { sweepStaleSynthesisRuns } from "../routines/built-in/synthesis/reconcile-stale-runs";
 import { retryFailedSynthesisRuns } from "../routines/built-in/synthesis/retry-failed-runs";
 import { advanceStuckWorkflows, failStrandedParents, sweepStaleStepRuns } from "../routines/workflow/sweep";
-import "../routines/workflow/register-workflows";
 import { failStaleRoutineSessions } from "../routines/fail-stale-routine-sessions";
 import { drainEventInbox } from "../events/drain";
 import { expireIdleCloudSessions } from "../cloud-sessions/expire";

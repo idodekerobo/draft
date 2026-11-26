@@ -4,7 +4,6 @@ import { SANDBOX_RUN_DIRECTORY, sandboxComputer } from "draft-core/run-spec";
 import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
 import type { CaptureEntry, ReconcileConflict } from "./steps/definitions";
 import { currentDocumentPaths } from "../../workflow/context-documents";
-import { registerWorkflow } from "../../workflow/registry";
 import { stepFiles } from "../../workflow/step-files";
 import type { PlannedRun, StepOutputs, WorkflowKind } from "../../workflow/types";
 import { CONTEXT_HISTORY_SCAN, documentsLastChanged } from "../../../services/context-history";
@@ -213,5 +212,3 @@ export const synthesisWorkflow: WorkflowKind = {
     return failSynthesisRun({ client, runId: parent.id, failureCode: code, operation: "execution", reason, detail });
   },
 };
-
-registerWorkflow(synthesisWorkflow);

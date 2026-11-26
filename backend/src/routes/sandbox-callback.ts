@@ -6,7 +6,6 @@ import { completeRoutineRunCallback } from "../routines/complete-routine-callbac
 import { recordError } from "../errors/record-error";
 import { callbackKind } from "./callback-kind";
 import { completeStepRunCallback } from "../routines/workflow/complete-step-callback";
-import "../routines/workflow/register-workflows";
 
 // One callback URL for every kind of run. The x-draft-run-id header is the agent run's id, and the run's
 // kind picks the handler. The URL and the secret stay the same.

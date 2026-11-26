@@ -4,7 +4,6 @@ import { runCaller, type AnyDraftToolPermission } from "draft-core/tools";
 import { loadVersionDocuments } from "../metaharness/context/context-store";
 import { specFromRow } from "../metaharness/runs/agent-run-store";
 import { currentDocumentPaths } from "./workflow/context-documents";
-import { registerWorkflow } from "./workflow/registry";
 import { stepFiles } from "./workflow/step-files";
 import { TEXT_STEP_SCHEMA } from "./workflow/step-run-spec";
 import type { ParentRun, StepOutputs, WorkflowKind } from "./workflow/types";
@@ -127,7 +126,5 @@ export const routineWorkflow: WorkflowKind = {
     });
   },
 };
-
-registerWorkflow(routineWorkflow);
 
 export { TEXT_STEP_SCHEMA };
