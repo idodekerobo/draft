@@ -52,6 +52,9 @@ When you add a concept, add it here first.
 - **Adapter**: one way Draft runs a harness, such as `claude-terminal`, `codex-app-server`, `claude-print` or
   `codex-exec`. It names its supported targets, its capabilities, how its output becomes events, and the built-in tools
   it knows. `AdapterId`; `AdapterDefinition` in `core/src/harnesses/adapters.ts`.
+- **Embedded agent**: an agent whose loop runs inside Draft's backend (execution target `backend`), such as Home's. Its
+  crash-resume state is in `embedded_agent_records`, `embedded_agent_documents` and `embedded_agent_state`; its transcript
+  is ordinary session events. "Draft agent" is a display label only. `EmbeddedAgentAdapter` in `backend/src/embedded-agent/`.
 - **Metaharness**: Draft's backend layer that starts, runs and governs any harness: runs, the tool gateway, context,
   sandbox launch. `backend/src/metaharness/`.
 - **Driver**: the per-session object an adapter uses on a host to drive a running harness (`HarnessDriver`). Used by the
