@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CredentialRules } from "draft-core/harnesses/types";
+import { claudeCredentialRules } from "../cloud-sessions/claude-credential";
 import { CURRENT_CREDENTIAL_KEY_VERSION, CredentialError, decryptCredentialPayload, encryptCredentialPayload } from "./crypto";
 
 /** The columns of a credentials row that the status check and the decrypt need. */
@@ -55,6 +56,10 @@ export async function resolveCredential(client: SupabaseClient, workspaceId: str
   if (!row) throw new CredentialError(`Workspace ${workspaceId} has no ${rules.label}`, "missing");
   return { credentialId: row.id, secret: secretFromRow(row, rules.label) };
 }
+
+/** Reads the workspace's login for model calls made by Draft itself, such as Home. Throws a `CredentialError` when it is missing, revoked or expired. */
+export const resolveModelCredential = (client: SupabaseClient, workspaceId: string): Promise<{ credentialId: string; secret: string }> =>
+  resolveCredential(client, workspaceId, claudeCredentialRules);
 
 /** Keeps the login a run sent back when the harness refreshed it. A file that is unreadable or unchanged is ignored. */
 export async function saveRefreshed(client: SupabaseClient, workspaceId: string, rules: CredentialRules, sentBack: unknown): Promise<boolean> {
