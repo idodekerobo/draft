@@ -7,6 +7,7 @@ import { writeContext, type ContextConflict } from "../../context/context-store"
 import { canSeeContextPath, visibleContext } from "../../context/visible-context";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { callerWorkspaceId, requireRun, requireUser } from "./shared";
+import { isSynthesisRun } from "draft-core/run-spec";
 
 /** After this many conflicted writes in one run, the gateway stops taking more and tells the agent to report instead. */
 export const MAX_CONFLICTED_WRITES = 5;
@@ -164,7 +165,7 @@ export function createContextTools(client: SupabaseClient) {
         baseVersionId: run.inputs.contextVersionId,
         changes: input.changes,
         summary: input.summary,
-        reason: run.kind === "synthesis" ? "synthesis" : "agent_write",
+        reason: isSynthesisRun(run) ? "synthesis" : "agent_write",
       });
 
       if (result.status === "unchanged") return { status: "ok", output: { unchanged: true }, summary: "no change" };

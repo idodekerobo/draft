@@ -3,7 +3,7 @@ import { agentNotificationStatus } from "../../../notify/agent/status";
 import type { MessageResult } from "../../../notify/agent/result";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import type { AgentRunSpec } from "draft-core/run-spec";
+import { isSynthesisRun, type AgentRunSpec } from "draft-core/run-spec";
 import { findToolPermission, type DraftToolLimits, type ToolCaller } from "draft-core/tools";
 import type { NotifyChannelId } from "draft-core/notify";
 import { resendSettings } from "../../../config";
@@ -46,7 +46,7 @@ const identitySchema = z.object({
 /** The most times a run may use a tool, from the permission that was fixed when the run started. */
 function runLimit(run: AgentRunSpec, tool: "people.create" | "people.update", fallback: number): number | undefined {
   const limits = findToolPermission(run, tool)?.limits as DraftToolLimits[typeof tool] | undefined;
-  return limits?.maxPerRun ?? (run.kind === "synthesis" ? undefined : fallback);
+  return limits?.maxPerRun ?? (isSynthesisRun(run) ? undefined : fallback);
 }
 
 async function overRunLimit(client: SupabaseClient, caller: ToolCaller, tool: "people.create" | "people.update", fallback: number): Promise<ToolHandlerResult | null> {
@@ -222,7 +222,7 @@ export function createPeopleTools(
     name: "people.approve",
     mcp: true,
     description: "Approve a pending or rejected person so they become an active teammate who can be messaged. Available to workspace admins and synthesis runs with this permission.",
-    allowedOrigins: ["person", "synthesis"],
+    allowedOrigins: ["person", "synthesis", "step"],
     input: z.object({ personId: z.string().uuid() }),
     handler: async ({ input, caller }) => decide(caller, input.personId, "active"),
   });
@@ -231,13 +231,13 @@ export function createPeopleTools(
     name: "people.reject",
     mcp: true,
     description: "Turn away a pending person. Draft remembers the name so it is not added again. Available to workspace admins and synthesis runs with this permission.",
-    allowedOrigins: ["person", "synthesis"],
+    allowedOrigins: ["person", "synthesis", "step"],
     input: z.object({ personId: z.string().uuid(), reason: z.string().max(500).optional() }),
     handler: async ({ input, caller }) => decide(caller, input.personId, "rejected", input.reason),
   });
 
   async function decide(caller: ToolCaller, personId: string, to: "active" | "rejected", reason?: string): Promise<ToolHandlerResult> {
-    const synthesis = caller.origin.kind === "run" && caller.origin.run.kind === "synthesis" ? caller.origin.run : null;
+    const synthesis = caller.origin.kind === "run" && isSynthesisRun(caller.origin.run) ? caller.origin.run : null;
     let userId: string | null = null;
     if (!synthesis) {
       const user = requireUser(caller, to === "active" ? "people.approve" : "people.reject");

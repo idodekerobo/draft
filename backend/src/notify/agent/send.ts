@@ -11,6 +11,7 @@ import { deliverNotification } from "../delivery/deliver";
 import { htmlToText, renderEmail, MAX_EMAIL_HTML_CHARS } from "../channels/email/render";
 import type { NotifyChannel } from "../delivery/types";
 import { messageFailure, type MessageResult } from "./result";
+import { isSynthesisRun } from "draft-core/run-spec";
 
 export const agentMessageSchema = z.object({
   personId: z.string().uuid().describe("The id of one active workspace teammate, from people.find. Never an email address."),
@@ -44,7 +45,7 @@ export async function sendAgentMessage(client: SupabaseClient, channels: Record<
     const recipients = limits?.recipients ?? "self";
     const allowed = recipients === "members" || (recipients === "self" ? run.onBehalfOf !== null && person.userId === run.onBehalfOf : recipients.includes(person.id));
     if (!allowed) return messageFailure("not_allowed", recipients === "self" ? "This run may only message the person it works for." : "This run may not message that person.");
-    const max = limits?.maxPerRun ?? (run.kind === "synthesis" ? undefined : 10);
+    const max = limits?.maxPerRun ?? (isSynthesisRun(run) ? undefined : 10);
     if (max !== undefined && (await countRunToolCalls(client, run.id, "people.notify")) >= max) return messageFailure("limit_reached", `This run has used people.notify ${max} times, which is its limit. Stop and report what is left.`);
   }
 

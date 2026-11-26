@@ -389,6 +389,9 @@ export interface AgentRunRow {
   needs_input_resolved_by: string | null;
   transcript_json: unknown[] | null;
   usage_json: RunUsage | null;
+  parent_run_id: string | null;
+  step_key: string | null;
+  result_json: unknown | null;
   scheduled_task_id: string | null;
   started_at: string | null;
   completed_at: string | null;

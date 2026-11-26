@@ -87,6 +87,29 @@ describe("agent run store", () => {
     expect(inserts[0].row).toMatchObject({ execution: { target: { type: "backend", packageVersion: "1.0.0" }, adapterId: "pi-durable-sdk" }, computer: { type: "sandbox" } });
   });
 
+  it("saves a step run with its parent and step key, and reads its trigger back", async () => {
+    const { client, inserts } = fakeClient();
+    const parentId = parseAgentRunId("99999999-9999-4999-8999-999999999999");
+    const step: AgentRunSpec = { ...spec, kind: "step", trigger: { type: "step", parentRunId: parentId, parentKind: "synthesis" } };
+    await createAgentRun(client, { spec: step, idempotencyKey: "k-step", parentRunId: parentId, stepKey: "capture", status: "queued" });
+    expect(inserts[0].row).toMatchObject({ kind: "step", parent_run_id: parentId, step_key: "capture", retry_of_run_id: null, trigger: { type: "step", parentRunId: parentId, parentKind: "synthesis" } });
+    expect(specFromRow(rowFrom(inserts[0].row))).toEqual(step);
+  });
+
+  it("names the failed run that a step retry repeats", async () => {
+    const { client, inserts } = fakeClient();
+    const parentId = parseAgentRunId("99999999-9999-4999-8999-999999999999");
+    const step: AgentRunSpec = { ...spec, kind: "step", trigger: { type: "step", parentRunId: parentId, parentKind: "routine" } };
+    await createAgentRun(client, { spec: step, idempotencyKey: "k-retry", parentRunId: parentId, stepKey: "capture", retryOfRunId: "88888888-8888-4888-8888-888888888888", attempt: 2 });
+    expect(inserts[0].row).toMatchObject({ retry_of_run_id: "88888888-8888-4888-8888-888888888888", attempt: 2 });
+  });
+
+  it("leaves the parent and step key empty on other runs", async () => {
+    const { client, inserts } = fakeClient();
+    await createAgentRun(client, { spec, idempotencyKey: "k-plain" });
+    expect(inserts[0].row).toMatchObject({ parent_run_id: null, step_key: null });
+  });
+
   it("refuses to save a spec whose adapter cannot run on its target", async () => {
     const { client, inserts } = fakeClient();
     await expect(createAgentRun(client, { spec: { ...spec, execution: { target: { type: "sandbox" }, adapterId: "codex-app-server" } }, idempotencyKey: "k-bad" })).rejects.toThrow("cannot run on a sandbox target");

@@ -5,7 +5,7 @@ create table agent_runs (
   id                       uuid primary key default gen_random_uuid(),
   workspace_id             uuid not null references workspaces(id) on delete cascade,
   kind                     text not null
-                             check (kind in ('interactive', 'routine', 'synthesis', 'summarization')),
+                             check (kind in ('interactive', 'routine', 'synthesis', 'summarization', 'step')),
   trigger                  jsonb not null,
   -- The user whose connections and context the run may use. The actor is always the run itself.
   on_behalf_of_user_id     uuid references users(id) on delete set null,
@@ -49,6 +49,10 @@ create table agent_runs (
   transcript_json          jsonb,
   -- What the harness reported for the run: inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd (or null).
   usage_json               jsonb,
+  -- A step run points at the run of its routine. step_key names the step; result_json is the step's structured output.
+  parent_run_id            uuid,
+  step_key                 text,
+  result_json              jsonb,
   scheduled_task_id        uuid,
   started_at               timestamptz,
   completed_at             timestamptz,
@@ -64,11 +68,16 @@ create table agent_runs (
   foreign key (session_id, workspace_id)
     references sessions(id, workspace_id) on delete set null (session_id),
   foreign key (scheduled_task_id, workspace_id)
-    references scheduled_tasks(id, workspace_id) on delete restrict
+    references scheduled_tasks(id, workspace_id) on delete restrict,
+  foreign key (parent_run_id, workspace_id)
+    references agent_runs(id, workspace_id) on delete restrict,
+  -- Every step run has a parent, and nothing else does.
+  check ((kind = 'step') = (parent_run_id is not null))
 );
 
 create index agent_runs_workspace_created_idx on agent_runs (workspace_id, created_at desc);
 create index agent_runs_session_idx on agent_runs (session_id) where session_id is not null;
+create index agent_runs_parent_idx on agent_runs (parent_run_id) where parent_run_id is not null;
 
 -- One active synthesis per workspace: the correctness guard for context commits.
 create unique index agent_runs_one_active_synthesis

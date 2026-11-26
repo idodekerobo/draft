@@ -14,6 +14,7 @@ const triggerSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("system"), reason: z.enum(AGENT_RUN_SYSTEM_REASONS) }),
   z.object({ type: z.literal("manual"), requestedBy: z.string().transform(parseUserId) }),
   z.object({ type: z.literal("retry"), retryOf: z.string().transform(parseAgentRunId) }),
+  z.object({ type: z.literal("step"), parentRunId: z.string().transform(parseAgentRunId), parentKind: z.enum(["synthesis", "routine"]) }),
 ]);
 
 const nativeToolSchema = z
@@ -80,6 +81,11 @@ export interface NewAgentRun {
   promptVersion?: string;
   sessionId?: string;
   scheduledTaskId?: string;
+  /** For a step run: the run it belongs to, and which step it is. */
+  parentRunId?: string;
+  stepKey?: string;
+  /** For a step run that retries a failed one. Other runs name this through a `retry` trigger. */
+  retryOfRunId?: string;
 }
 
 /** Saves the run and its spec. The spec is read back from this row by `loadActiveAgentRunSpec`. */
@@ -105,7 +111,9 @@ export async function createAgentRun(client: SupabaseClient, run: NewAgentRun): 
     output: spec.output,
     status: run.status ?? "queued",
     attempt: run.attempt ?? 1,
-    retry_of_run_id: spec.trigger.type === "retry" ? spec.trigger.retryOf : null,
+    retry_of_run_id: spec.trigger.type === "retry" ? spec.trigger.retryOf : run.retryOfRunId ?? null,
+    parent_run_id: run.parentRunId ?? null,
+    step_key: run.stepKey ?? null,
     idempotency_key: run.idempotencyKey,
     prompt_version: run.promptVersion ?? null,
     session_id: run.sessionId ?? null,
