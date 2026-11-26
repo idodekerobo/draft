@@ -3,6 +3,7 @@ import { MAX_DECISION_MESSAGE_CHARS } from "draft-core/live-sessions";
 import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
+import { isHomeModel } from "../home/models";
 import type { SessionInputRow } from "../types/tables";
 import { authorName, authorize, authorizeHostSession, denyForeignHome, errorResponse, hostIdFor, knownDbError, optionalString, readBody } from "./sessions-live-shared";
 
@@ -213,6 +214,18 @@ export const MODE = withAuth<ModeRequest>(async (req, caller) => {
   if (session.session_type === "routine") return errorResponse("routine_read_only", 409);
   if (session.status === "ended") return errorResponse("session_ended", 409);
   if (session.execution_target === "sandbox" && session.status === "sleeping") return errorResponse("session_sleeping", 409);
+
+  // Home runs in the backend on pi, whose models are not a harness's. It takes a model change and nothing else.
+  if (session.execution_target === "backend") {
+    if (permissionMode !== undefined || approvalMode !== undefined || reasoningEffort !== undefined) return errorResponse("invalid_mode", 400);
+    if (session.owner_user_id !== caller.userId) return errorResponse("not_owner", 403);
+    if (typeof model !== "string" || !isHomeModel(model)) return errorResponse("unknown_model", 400);
+    const { error: homeError } = await serviceClient.rpc("create_session_input", {
+      p_session_id: sessionId, p_workspace_id: workspaceId, p_author_user_id: caller.userId, p_author_name: await name, p_kind: "set_mode", p_payload: { model },
+    });
+    if (homeError) return knownDbError(homeError.message) ?? errorResponse("mode_failed", 500, homeError, workspaceId, sessionId);
+    return Response.json({ ok: true }, { status: 201 });
+  }
 
   const modes = harnessModes(session.harness, model === undefined ? session.model : typeof model === "string" ? model : null);
   const payload: Record<string, string | null> = {};

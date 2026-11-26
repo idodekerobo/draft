@@ -86,3 +86,21 @@ describe("a Home session for its owner", () => {
     expect(response.status).toBe(200);
   });
 });
+
+describe("changing Home's model", () => {
+  it("lets the owner pick one of pi's models, saves it as an input, and refuses other models and other settings", async () => {
+    caller = { userId: OWNER, accessToken: "t" };
+    db.tables.sessions![0]!.execution_target = "backend";
+    const mode = (body: object) => approvals.MODE(request("POST", {}, body));
+    expect((await mode({ model: "claude-sonnet-5-5" })).status).toBe(201);
+    expect(db.rpcCalls.at(-1)).toMatchObject({ name: "create_session_input", args: { p_kind: "set_mode", p_payload: { model: "claude-sonnet-5-5" } } });
+    expect((await mode({ model: "not-a-model" })).status).toBe(400);
+    expect((await mode({ permissionMode: "auto" })).status).toBe(400);
+    expect((await mode({ model: "claude-sonnet-5-5", reasoningEffort: "high" })).status).toBe(400);
+  });
+
+  it("is not changed by a teammate", async () => {
+    db.tables.sessions![0]!.execution_target = "backend";
+    expect((await approvals.MODE(request("POST", {}, { model: "claude-sonnet-5-5" }))).status).toBe(404);
+  });
+});

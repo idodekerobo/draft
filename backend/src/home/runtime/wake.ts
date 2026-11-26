@@ -17,15 +17,12 @@ export async function wakeHomeSession(sessionId: string): Promise<void> {
   }
 }
 
-type SessionHandler = (req: Bun.BunRequest<string> & { params: { sessionId: string } }) => Response | Promise<Response>;
-
 /** After a route that saved an input answers well, wakes Home for that session, without making the caller wait for it. */
-export function wakingHome<H extends (req: never) => Response | Promise<Response>>(handler: H): H {
-  return (async (req: Parameters<H>[0]) => {
+export function wakingHome<R>(handler: (req: R) => Response | Promise<Response>): (req: R) => Promise<Response> {
+  return async (req) => {
     const response = await handler(req);
-    const sessionId = (req as unknown as { params?: { sessionId?: string } }).params?.sessionId;
+    const sessionId = (req as { params?: { sessionId?: string } }).params?.sessionId;
     if (response.ok && sessionId) void wakeHomeSession(sessionId);
     return response;
-  }) as unknown as H;
+  };
 }
-export type { SessionHandler };

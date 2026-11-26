@@ -37,5 +37,16 @@ export function workspaceCredentialStore(client: SupabaseClient, workspaceId: st
   };
 }
 
+/** The models a person can pick for Home on a lab: the lab's own, without the dated copies of an alias. */
+export function homeModelCatalog(providerId: string = ANTHROPIC): Array<{ id: string; name: string }> {
+  return builtinModels()
+    .getModels(providerId)
+    .filter((model) => !/-\d{8}$/.test(model.id))
+    .map((model) => ({ id: model.id, name: model.name ?? model.id }));
+}
+
+/** Whether Home can run on this model id. */
+export const isHomeModel = (id: string, providerId: string = ANTHROPIC): boolean => homeModelCatalog(providerId).some((model) => model.id === id);
+
 /** pi's model catalog, authenticated with the workspace's Claude login. */
 export const homeModels = (client: SupabaseClient, workspaceId: string) => builtinModels({ credentials: workspaceCredentialStore(client, workspaceId) });

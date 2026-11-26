@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SessionRow } from "../types/tables";
+import { DRAFT_AGENT_LABEL } from "./runtime/project";
 import { DEFAULT_HOME_MODEL, HOME_ADAPTER_ID } from "./runtime/spec";
 
 const UNIQUE_VIOLATION = "23505";
@@ -50,5 +51,19 @@ export async function ensureHomeSession(client: SupabaseClient, input: { workspa
   }
   const created = await findHome(client, input.workspaceId, input.ownerUserId);
   if (!created) throw new Error("The Home session was not saved");
+  await writeWelcome(client, created);
   return created;
+}
+
+/** What Home says first to a person who has never talked to it. It is the first thing Draft writes into the transcript. */
+export const WELCOME_TEXT = "Hi, I'm Draft. I can read what your team knows, tell you what needs you, and act for you. Ask me anything about your work.";
+
+async function writeWelcome(client: SupabaseClient, session: SessionRow): Promise<void> {
+  // A welcome that fails to save is not worth failing Home for: the person can still talk to it.
+  await client.rpc("append_backend_session_events", {
+    p_session_id: session.id,
+    p_workspace_id: session.workspace_id,
+    p_events: [{ source_id: "welcome", kind: "assistant_text", payload: { text: WELCOME_TEXT, author_label: DRAFT_AGENT_LABEL, adapter_id: HOME_ADAPTER_ID, welcome: true } }],
+    p_outbox_keys: [],
+  });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ensureHomeSession } from "../../home/session";
+import { ensureHomeSession, WELCOME_TEXT } from "../../home/session";
 import { fakeClient, fakeDb } from "../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -30,5 +30,14 @@ describe("a person's Home session", () => {
     const mine = await ensureHomeSession(fakeClient(d), { workspaceId: WS, ownerUserId: OWNER });
     const theirs = await ensureHomeSession(fakeClient(d), { workspaceId: WS, ownerUserId: MATE });
     expect(theirs.id).not.toBe(mine.id);
+  });
+
+  it("writes the welcome as the first thing Draft says, once", async () => {
+    const d = db();
+    await ensureHomeSession(fakeClient(d), { workspaceId: WS, ownerUserId: OWNER });
+    await ensureHomeSession(fakeClient(d), { workspaceId: WS, ownerUserId: OWNER });
+    const welcomes = d.rpcCalls.filter((call) => call.name === "append_backend_session_events");
+    expect(welcomes).toHaveLength(1);
+    expect(welcomes[0]!.args.p_events).toEqual([{ source_id: "welcome", kind: "assistant_text", payload: expect.objectContaining({ text: WELCOME_TEXT, author_label: "Draft agent", welcome: true }) }]);
   });
 });

@@ -64,6 +64,7 @@ export const routes = {
   "/context-exports/:token": { GET: workspaceContextExport.redeemGET },
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
   "/workspaces/:id/home/session": { GET: withCors(homeSession.GET), OPTIONS },
+  "/workspaces/:id/home/models": { GET: withCors(homeSession.MODELS), OPTIONS },
   "/workspaces/:id/model-provider": { GET: withCors(workspaceModelProvider.GET), PUT: withCors(workspaceModelProvider.PUT), OPTIONS },
   "/workspaces/:id/codex-credential": { GET: withCors(codexCredential.GET), PUT: withCors(codexCredential.PUT), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },
