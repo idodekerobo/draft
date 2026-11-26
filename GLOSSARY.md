@@ -14,6 +14,10 @@ When you add a concept, add it here first.
   makes a new run each time it wakes. A routine session has exactly one run.
 - **Routine**: a scheduled job a person sees and manages. One `scheduled_tasks` row. An agent routine starts runs;
   built-in routines (for example "Update company context") run Draft jobs.
+- **Routine step**: one stage in a routine's ordered step list. A step starts one or more step runs, either once or
+  once per item it fans out over. Code: `RoutineStep`; UI: "step". Not: a tool call or a turn.
+- **Step run**: a run started by a routine step. `agent_runs.parent_run_id` points to the run of the routine that
+  started it.
 - **Start reason**: why a run started: `schedule`, `event` or `manual`. Stored `agent_runs.trigger.type` values
   `cron` and `system` mean a schedule start and a system start; they are not rewritten.
 - **Runtime**: what a person picks when starting a session: "This computer" (`local`) or "Draft Cloud" (`cloud`).
@@ -81,6 +85,13 @@ When you add a concept, add it here first.
   `synced_google_drive_folders`.
 - **Context**: the company brain: synthesized documents by dimension, versioned in `workspace_context_versions`.
 - **Synthesis**: the run that updates context. UI: "Context update".
+- **Capture (synthesis)**: the synthesis step that reads new source items in batches and returns memory entries with
+  source citations. It writes nothing itself.
+- **Reconcile (synthesis)**: the synthesis step that checks one stable context document against new evidence and
+  rewrites it when the evidence supports a change.
+- **Organize (synthesis)**: the last synthesis step. It merges capture output into memory, merges duplicate documents,
+  and sends conflicts to `needs_input`. "Organizer" names only the agent that runs it.
+- **Stable context**: every context dimension except memory; the current-state business map.
 - **Summarization**: the run that summarizes captured sessions. UI: "Session summaries".
 - **Skill**: a saved company procedure. Table `skills`.
 
