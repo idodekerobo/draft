@@ -114,6 +114,18 @@ test("a proposed teammate can be approved or rejected from Home", async () => {
   expect(screen.queryByRole("button", { name: /Not mine/ })).toBeNull();
 });
 
+test("a stopped login shows Reconnect, not Done, and opens Connections", async () => {
+  const row: NeedsYouRow = {
+    kind: "notification", id: "c1", createdAt: "2026-11-25T10:00:00Z",
+    notification: { id: "c1", kind: "connection_attention", subject: "Your Claude login stopped working", text: "Reconnect it so Home keeps working.", link: null, needsAction: true, state: "open", refType: "credential", refId: "cred-1", createdAt: "2026-11-25T10:00:00Z", actedAt: null },
+  };
+  const nav = renderHome({ count: 1, rows: [row] });
+  await screen.findByText("Your Claude login stopped working");
+  expect(screen.queryByRole("button", { name: /Done/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  expect(nav.onOpenConnections).toHaveBeenCalled();
+});
+
 test("until the first to-do, a Get started checklist shows progress and links to the next step", async () => {
   const nav = renderHome({ count: 0, rows: [], getStarted: { meetingSource: true, routine: false, firstTodo: false } });
   await screen.findByText("Get started");
