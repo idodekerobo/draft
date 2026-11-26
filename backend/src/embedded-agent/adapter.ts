@@ -55,10 +55,12 @@ export interface EmbeddedAnswer {
   answers?: Readonly<Record<string, string>>;
 }
 
-/** A piece of reply text on its way to the screen. It is provisional: committed events are the record. */
+/** The next piece of the reply being written, on its way to the screen. It is provisional: committed events are the record. */
 export interface LiveTextPart {
   requestId: string;
+  /** Only the text added since the last part. */
   text: string;
+  /** The reply is finished; no more parts follow for it. */
   done: boolean;
 }
 

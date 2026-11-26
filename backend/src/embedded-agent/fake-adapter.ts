@@ -173,7 +173,7 @@ export class FakeEmbeddedAgent implements EmbeddedAgentAdapter {
     }
     const reply = text.startsWith("reply:") ? text.slice(6).trim() : `echo: ${text}`;
     this.publishLive({ requestId, text: reply, done: false });
-    this.publishLive({ requestId, text: reply, done: true });
+    this.publishLive({ requestId, text: "", done: true });
     this.commit(`reply:${requestId}`, { kind: "assistant_text", text: reply, model: this.model });
     this.settle(requestId, "completed");
   }

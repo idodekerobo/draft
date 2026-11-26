@@ -20,7 +20,11 @@ export const testContext = (overrides: Partial<EmbeddedAgentContext> = {}): Embe
   ...overrides,
 });
 
-/** Reads events until `done` says enough, or fails after a second. */
+let collectTimeoutMs = 1000;
+/** An adapter on a remote database needs longer than the default second to commit. */
+export const setCollectTimeout = (ms: number) => void (collectTimeoutMs = ms);
+
+/** Reads events until `done` says enough, or fails after the timeout. */
 export async function collect(agent: EmbeddedAgentAdapter, done: (events: EmbeddedEvent[]) => boolean, afterSeq = 0): Promise<EmbeddedEvent[]> {
   const events: EmbeddedEvent[] = [];
   const reading = (async () => {
@@ -29,7 +33,7 @@ export async function collect(agent: EmbeddedAgentAdapter, done: (events: Embedd
       if (done(events)) return;
     }
   })();
-  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${events.length} events`)), 1000));
+  const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${events.length} events`)), collectTimeoutMs));
   await Promise.race([reading, timeout]);
   return events;
 }
@@ -42,22 +46,31 @@ export const settledFor = (requestId: string) => (events: EmbeddedEvent[]) =>
  * What every embedded agent adapter must do, whatever the engine. The fake runs it now; the pi adapter runs it when it exists.
  * `scripts.plainReply` is a message that makes the agent answer in text; `scripts.hold` makes a turn that runs until interrupted.
  */
-export function describeEmbeddedAgentContract(name: string, factory: EmbeddedAgentFactory, scripts: { plainReply: string; hold: string }) {
+export function describeEmbeddedAgentContract(
+  name: string,
+  factory: EmbeddedAgentFactory,
+  scripts: { plainReply: string; hold: string; model?: { provider: string; model: string } },
+  setup?: () => Promise<{ context: EmbeddedAgentContext; cleanup: () => Promise<void> }>,
+) {
   describe(`${name}: the embedded agent contract`, () => {
     let agent: EmbeddedAgentAdapter;
+    let cleanup: () => Promise<void> = async () => {};
     beforeEach(async () => {
-      agent = factory(testContext());
+      const made = (await setup?.()) ?? { context: testContext(), cleanup: async () => {} };
+      cleanup = made.cleanup;
+      agent = factory(made.context);
       await agent.open();
     });
     afterEach(async () => {
       await agent.close();
+      await cleanup();
     });
 
     it("answers a message with the person's message, a reply and a settled turn, in committed order", async () => {
       await agent.submit(input(scripts.plainReply), "req-1");
       const events = await collect(agent, settledFor("req-1"));
       expect(kinds(events)).toEqual(["user_message", "assistant_text", "turn_settled"]);
-      expect(events.map((event) => event.seq)).toEqual([1, 2, 3]);
+      expect(events.every((event, index) => index === 0 || event.seq > events[index - 1]!.seq)).toBe(true);
       expect(events[0]!.body).toMatchObject({ requestId: "req-1", authorUserId: OWNER });
       expect(events[2]!.body).toMatchObject({ outcome: "completed" });
       expect(new Set(events.map((event) => event.sourceId)).size).toBe(events.length);
@@ -74,10 +87,11 @@ export function describeEmbeddedAgentContract(name: string, factory: EmbeddedAge
 
     it("lets a reader resume after the last event it saw", async () => {
       await agent.submit(input(scripts.plainReply), "req-1");
-      await collect(agent, settledFor("req-1"));
+      const first = await collect(agent, settledFor("req-1"));
       await agent.submit(input(scripts.plainReply), "req-2");
-      const later = await collect(agent, settledFor("req-2"), 3);
-      expect(later.map((event) => event.seq)).toEqual([4, 5, 6]);
+      const later = await collect(agent, settledFor("req-2"), first.at(-1)!.seq);
+      expect(kinds(later)).toEqual(["user_message", "assistant_text", "turn_settled"]);
+      expect(later[0]!.body).toMatchObject({ requestId: "req-2" });
     });
 
     it("stops a running turn on interrupt, once per control id", async () => {
@@ -94,7 +108,7 @@ export function describeEmbeddedAgentContract(name: string, factory: EmbeddedAge
     });
 
     it("applies a model change for the next request, once per control id", async () => {
-      const model = { provider: "anthropic", model: "claude-test" };
+      const model = scripts.model ?? { provider: "anthropic", model: "claude-test" };
       expect(await agent.setModel("model-1", model)).toEqual({ controlId: "model-1", applied: true });
       expect(await agent.setModel("model-1", { provider: "x", model: "y" })).toEqual({ controlId: "model-1", applied: true });
       await agent.submit(input(scripts.plainReply), "req-1");

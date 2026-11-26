@@ -57,6 +57,8 @@ export interface PgStorageOptions {
   epoch: number;
   /** Draft's rows for one stored batch, written to the outbox with it. */
   outbox?: (writes: readonly StorageWrite[], seq: number) => readonly OutboxRow[];
+  /** Called after a commit is stored, so the host can project it now. */
+  onCommitted?: () => void;
 }
 
 /** The claim moved on or expired: this process may not write. pi treats it like any commit failure, which is final. */
@@ -133,6 +135,7 @@ export class PgStorage implements Storage {
   readonly #owner: string;
   readonly #epoch: number;
   readonly #outbox: PgStorageOptions["outbox"];
+  readonly #onCommitted: PgStorageOptions["onCommitted"];
   #nextId: number;
   #closed = false;
   #closing: Promise<void> | undefined;
@@ -145,6 +148,7 @@ export class PgStorage implements Storage {
     this.#owner = options.owner;
     this.#epoch = options.epoch;
     this.#outbox = options.outbox;
+    this.#onCommitted = options.onCommitted;
     this.#nextId = nextId;
   }
 
@@ -202,6 +206,13 @@ export class PgStorage implements Storage {
     }
     this.#nextId = Math.max(this.#nextId, candidateNextId);
     for (const [index, seq] of seqs.entries()) receive(index, seq);
+    if (seqs.length > 0) {
+      try {
+        this.#onCommitted?.();
+      } catch {
+        // A listener must never change what a stored commit returns.
+      }
+    }
     return refused === undefined ? { kind: "stored", stored: seqs.length } : { kind: "refused", stored: seqs.length, refused: refused.error };
   }
 

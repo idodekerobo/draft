@@ -66,6 +66,6 @@ describe("the fake adapter's scripts", () => {
     })();
     await agent.submit(input("hello"), "r1");
     await reading;
-    expect(parts.at(-1)).toMatchObject({ text: "echo: hello", done: true });
+    expect(parts.map((part) => [part.text, part.done])).toEqual([["echo: hello", false], ["", true]]);
   });
 });
