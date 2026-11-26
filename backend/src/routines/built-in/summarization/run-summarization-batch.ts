@@ -1,5 +1,7 @@
 import { releaseCodexLeaseForRun } from "../../../credentials/codex-credential";
 import { loadBuiltInConfig, type BuiltInRoutineConfig } from "../../built-in-config";
+import { checkRunAllowed } from "../../check-run-allowed";
+import { recordError } from "../../../errors/record-error";
 import { launchWithCredentials, reserveCodexRunLogin, RoutineLeaseBusyError } from "../../../metaharness/sandbox/launch-with-credentials";
 import { randomUUID } from "node:crypto";
 import type { AgentRunSpec } from "draft-core/run-spec";
@@ -33,12 +35,26 @@ export interface LaunchSummarizationBatchResult {
   sessionCount: number;
 }
 
-// Returns null when nothing is eligible, mirroring
+// Returns null when nothing is eligible or the workspace may not run now, mirroring
 // dispatchSynthesizeWorkspace's empty-queue short-circuit.
 export async function launchSummarizationBatch(
   options: LaunchSummarizationBatchOptions,
 ): Promise<LaunchSummarizationBatchResult | null> {
   const settings = await loadBuiltInConfig(options.client, options.workspaceId, "summarize_sessions");
+  // Before any session is claimed: a claim counts an attempt, and a session is skipped for good after three.
+  const admission = await checkRunAllowed(options.workspaceId, options.client, settings.harness, "summarization");
+  if (!admission.ok) {
+    await recordError({
+      client: options.client,
+      workspaceId: options.workspaceId,
+      scheduledTaskId: options.schedule.scheduledTaskId,
+      operation: "scheduling",
+      message: `Summarization run denied by admission gate: ${admission.reason}`,
+      code: "summarization_admission_denied",
+      detail: { reason: admission.reason },
+    });
+    return null;
+  }
   const agentRunId = randomUUID();
   await reportExpiredSummaryLeases(options.workspaceId, options.client);
   if (settings.harness === "codex") {
