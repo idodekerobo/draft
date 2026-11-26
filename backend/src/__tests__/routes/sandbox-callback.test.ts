@@ -1,17 +1,29 @@
-import { beforeAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it, mock } from "bun:test";
 
 const digest = `registry.fly.io/draft@sha256:${"a".repeat(64)}`;
 
 // loadSandboxDeploymentConfig() (called with no arguments by the route) reads
 // straight from process.env, so the required sandbox env vars must be present
 // before the route module is imported.
-beforeAll(() => {
+const REPLACED_MODULES = [
+  "../../routines/built-in/synthesis/orchestrate-run",
+  "../../routines/built-in/summarization/complete-summarization-callback",
+];
+const realModules = new Map<string, Record<string, unknown>>();
+
+beforeAll(async () => {
   process.env.FLY_API_TOKEN = "fly-token";
   process.env.FLY_APP_NAME = "draft-sandbox";
   process.env.FLY_SANDBOX_IMAGE = digest;
   process.env.FLY_REGION = "iad";
   process.env.DRAFT_API_BASE_URL = "https://api.example.test";
   process.env.SANDBOX_CALLBACK_SECRET = "signing-secret";
+  // Bun replaces a module for every test file in the run, so the real one is put back when this file ends.
+  for (const path of REPLACED_MODULES) realModules.set(path, { ...(await import(path)) });
+});
+
+afterAll(() => {
+  for (const [path, real] of realModules) mock.module(path, () => real);
 });
 
 function callbackRequest(runId = "run-1"): Request {
@@ -26,7 +38,7 @@ describe("POST /sandbox/callback", () => {
   it("returns 401 (no leaked detail) when completeSynthesisRunCallback throws SandboxCallbackRequestError", async () => {
     const { SandboxCallbackRequestError } = await import("../../metaharness/sandbox/callback-request");
 
-    mock.module("../../synthesis/orchestrate-run", () => ({
+    mock.module("../../routines/built-in/synthesis/orchestrate-run", () => ({
       completeSynthesisRunCallback: async () => {
         throw new SandboxCallbackRequestError("Callback authentication failed");
       },
@@ -41,7 +53,7 @@ describe("POST /sandbox/callback", () => {
   });
 
   it("returns 500 (no leaked detail) when completeSynthesisRunCallback throws an unexpected error", async () => {
-    mock.module("../../synthesis/orchestrate-run", () => ({
+    mock.module("../../routines/built-in/synthesis/orchestrate-run", () => ({
       completeSynthesisRunCallback: async () => {
         throw new Error("db connection refused at 10.0.0.5:5432 with credentials xyz");
       },
@@ -59,7 +71,7 @@ describe("POST /sandbox/callback", () => {
   });
 
   it("returns whatever completeSynthesisRunCallback returns on success", async () => {
-    mock.module("../../synthesis/orchestrate-run", () => ({
+    mock.module("../../routines/built-in/synthesis/orchestrate-run", () => ({
       completeSynthesisRunCallback: async () => new Response(null, { status: 204 }),
     }));
 
@@ -70,7 +82,7 @@ describe("POST /sandbox/callback", () => {
   });
 
   it("returns 500 with no leaked detail when required sandbox env vars are missing", async () => {
-    mock.module("../../synthesis/orchestrate-run", () => ({
+    mock.module("../../routines/built-in/synthesis/orchestrate-run", () => ({
       completeSynthesisRunCallback: async () => new Response(null, { status: 204 }),
     }));
 
@@ -88,12 +100,12 @@ describe("POST /sandbox/callback", () => {
   });
 
   it("routes a summarize:-prefixed run id to completeSummarizationRunCallback", async () => {
-    mock.module("../../synthesis/orchestrate-run", () => ({
+    mock.module("../../routines/built-in/synthesis/orchestrate-run", () => ({
       completeSynthesisRunCallback: async () => {
         throw new Error("should not be called for a summarization run id");
       },
     }));
-    mock.module("../../summarization/complete-summarization-callback", () => ({
+    mock.module("../../routines/built-in/summarization/complete-summarization-callback", () => ({
       SUMMARIZATION_RUN_ID_PREFIX: "summarize:",
       completeSummarizationRunCallback: async () => new Response(null, { status: 204 }),
     }));

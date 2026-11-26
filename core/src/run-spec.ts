@@ -55,7 +55,7 @@ export function parseIsoTimestamp(raw: string): IsoTimestamp {
   return raw as IsoTimestamp;
 }
 
-export const AGENT_RUN_KINDS = ["interactive", "routine", "synthesis", "summarization"] as const;
+export const AGENT_RUN_KINDS = ["interactive", "routine", "synthesis", "summarization", "step"] as const;
 export type AgentRunKind = (typeof AGENT_RUN_KINDS)[number];
 
 export const AGENT_RUN_STATUSES = [
@@ -87,7 +87,12 @@ export type AgentRunTrigger =
   | { type: "webhook"; provider: AgentRunWebhookProvider; eventId: string }
   | { type: "event"; eventIds: ReadonlyArray<AgentEventId> }
   | { type: "manual"; requestedBy: UserId }
-  | { type: "retry"; retryOf: AgentRunId };
+  | { type: "retry"; retryOf: AgentRunId }
+  /** A step run, started by the engine for the run of a routine with steps. The parent is that run. */
+  | { type: "step"; parentRunId: AgentRunId; parentKind: StepParentKind };
+
+/** The kinds of run that can have step runs. */
+export type StepParentKind = Extract<AgentRunKind, "synthesis" | "routine">;
 
 /** The trigger of a run that a schedule started. Both values come from the database and are checked here. */
 export function cronTrigger(scheduledTaskId: string, occurrenceAt: string): AgentRunTrigger {
@@ -194,6 +199,11 @@ export type AgentRunOutput =
   | { type: "text" }
   | { type: "structured"; schema: JsonSchema }
   | { type: "none" };
+
+/** True for a synthesis run and for a step run of one. Both get the permissions and limits synthesis has. */
+export function isSynthesisRun(run: Pick<AgentRunSpec, "kind" | "trigger">): boolean {
+  return run.kind === "synthesis" || (run.kind === "step" && run.trigger.type === "step" && run.trigger.parentKind === "synthesis");
+}
 
 export interface AgentRunSpec {
   id: AgentRunId;

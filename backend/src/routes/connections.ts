@@ -38,7 +38,7 @@ import { ingestGranolaNote } from "../ingestion/granola/normalize";
 import type { ConnectionProvider } from "../types/enums";
 import type { ConnectionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
-import { registerSessionSummaryTask } from "../summarization/register-session-summaries";
+import { registerSessionSummaryTask } from "../routines/built-in/summarization/register-session-summaries";
 
 // Providers where a workspace may hold more than one live connection at
 // once (one per connecting teammate). Every other provider stays a

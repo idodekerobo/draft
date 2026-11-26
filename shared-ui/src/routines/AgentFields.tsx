@@ -21,12 +21,17 @@ export const isDisconnected = (status: RoutineAgentStatus | undefined): status i
   status === "not_connected" || status === "needs_reconnect";
 
 /** The fields shared by the new routine dialog and the routine editor. Render them inside `.ui-routines__fields`. */
-export function AgentFields({ value, onChange, disabled, autoFocus, agents, blocked, renderAgentSetup, refreshAgents, fieldError, hideName = false }: {
+export function AgentFields({ value, onChange, disabled, autoFocus, agents, blocked, renderAgentSetup, refreshAgents, fieldError, hideName = false, promptLabel = "What should it do?", promptHelp, promptPlaceholder = "Summarize what changed in the product this week and flag anything that looks at risk." }: {
   value: AgentValue;
   onChange: (value: AgentValue) => void;
   disabled: boolean;
   autoFocus?: boolean;
   hideName?: boolean;
+  /** The label of the text box. A built-in routine's is its guidance, not a request. */
+  promptLabel?: string;
+  /** A line under the label that says what the text is for. */
+  promptHelp?: string;
+  promptPlaceholder?: string;
   agents: AgentStatuses;
   /** True when the chosen agent cannot run the routine yet. The connect help shows then. */
   blocked: boolean;
@@ -46,12 +51,13 @@ export function AgentFields({ value, onChange, disabled, autoFocus, agents, bloc
         {fieldError("title")}
       </label>}
       <label className="ui-routines__field ui-routines__field--wide">
-        What should it do?
+        {promptLabel}
+        {promptHelp && <span className="ui-routines__secondary">{promptHelp}</span>}
         <textarea
           value={prompt}
           rows={5}
           maxLength={20000}
-          placeholder="Summarize what changed in the product this week and flag anything that looks at risk."
+          placeholder={promptPlaceholder}
           disabled={disabled}
           onChange={(event) => onChange({ ...value, prompt: event.target.value })}
         />

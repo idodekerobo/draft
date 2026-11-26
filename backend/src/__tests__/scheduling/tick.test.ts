@@ -5,7 +5,7 @@ import type { expireIdleCloudSessions } from "../../cloud-sessions/expire";
 import type { reconcileCloudSessions } from "../../cloud-sessions/reconcile";
 import type { SandboxDeploymentConfig } from "../../metaharness/sandbox";
 import type { ScheduledTaskRow } from "../../types/tables";
-import { createFakeRunsClient, fakeRun } from "../synthesis/fake-runs-client";
+import { createFakeRunsClient, fakeRun } from "../routines/built-in/synthesis/fake-runs-client";
 
 const NOW = "2026-08-05T10:00:30.000Z";
 const OCCURRENCE = "2026-08-05T10:00:00.000Z";

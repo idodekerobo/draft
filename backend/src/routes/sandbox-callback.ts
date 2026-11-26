@@ -1,17 +1,20 @@
 import { SandboxCallbackRequestError } from "../metaharness/sandbox/callback-request";
 import { loadSandboxDeploymentConfig } from "../metaharness/sandbox/config";
-import { completeSynthesisRunCallback } from "../synthesis/orchestrate-run";
-import { completeSummarizationRunCallback } from "../summarization/complete-summarization-callback";
+import { completeSynthesisRunCallback } from "../routines/built-in/synthesis/orchestrate-run";
+import { completeSummarizationRunCallback } from "../routines/built-in/summarization/complete-summarization-callback";
 import { completeRoutineRunCallback } from "../routines/complete-routine-callback";
 import { recordError } from "../errors/record-error";
 import { callbackKind } from "./callback-kind";
+import { completeStepRunCallback } from "../routines/workflow/complete-step-callback";
 
 // One callback URL for every kind of run. The x-draft-run-id header is the agent run's id, and the run's
 // kind picks the handler. The URL and the secret stay the same.
 export async function POST(request: Request): Promise<Response> {
   let callbackSecret: string;
+  let sandboxConfig: ReturnType<typeof loadSandboxDeploymentConfig>;
   try {
-    callbackSecret = loadSandboxDeploymentConfig().callbackSecret;
+    sandboxConfig = loadSandboxDeploymentConfig();
+    callbackSecret = sandboxConfig.callbackSecret;
   } catch (error) {
     void recordError({
       workspaceId: null,
@@ -30,6 +33,7 @@ export async function POST(request: Request): Promise<Response> {
     const kind = await callbackKind(runIdHeader, serviceClient);
     if (kind === "routine") return await completeRoutineRunCallback(request, callbackSecret);
     if (kind === "summarization") return await completeSummarizationRunCallback(request, callbackSecret);
+    if (kind === "step") return await completeStepRunCallback(request, sandboxConfig);
     return await completeSynthesisRunCallback(request, callbackSecret);
   } catch (error) {
     if (error instanceof SandboxCallbackRequestError) {

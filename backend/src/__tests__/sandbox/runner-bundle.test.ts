@@ -13,6 +13,7 @@ const ALLOWED_MODULES = [
   /^core\/src\/harnesses\/(?:[^/]+\/)?adapters\.ts$/,
   /^core\/src\/run-manifest\.ts$/,
   /^core\/src\/run-spec\.ts$/,
+  /^core\/src\/run-usage\.ts$/,
 ];
 const FORBIDDEN_TEXT = ["@supabase", "serviceClient", "zod", "SUPABASE_SERVICE_ROLE_KEY"];
 

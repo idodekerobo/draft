@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** Shape of one row from GET /workspaces/:id/synthesis-runs. */
 export interface SynthesisRunSummary {
@@ -18,6 +18,8 @@ export interface SynthesisRunSummary {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+  /** How many step runs the run started. Zero or missing for a run that has no steps. */
+  stepCount?: number;
 }
 
 /** A one-time routine that has not run yet. Mirrors backend UpcomingRoutine. */
@@ -77,16 +79,24 @@ function formatDuration(run: SynthesisRunSummary): string | null {
   return Number.isFinite(ms) && ms >= 0 ? `${(ms / 1000).toFixed(1)}s` : null;
 }
 
-export function ActivityList({ runs, onFixInConnections, onOpenRun, onOpenRoutine, onOpenCreatedOnce, onRunAgain, runningRoutineId }: {
+export function ActivityList({ runs, onFixInConnections, onOpenRun, onOpenSteps, focusStepsFor, onOpenRoutine, onOpenCreatedOnce, onRunAgain, runningRoutineId }: {
   runs: SynthesisRunSummary[];
   onFixInConnections: () => void;
   onOpenRun?: (sessionId: string) => void;
+  /** Opens a run's steps. The button shows only for a run that has steps. */
+  onOpenSteps?: (runId: string) => void;
+  /** The run whose steps were just closed. Its button takes focus back. */
+  focusStepsFor?: string | null;
   onOpenRoutine?: (routineId: string) => void;
   onOpenCreatedOnce?: (routineId: string) => void;
   onRunAgain?: (routineId: string) => void;
   runningRoutineId?: string | null;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const stepButtons = useRef(new Map<string, HTMLButtonElement>());
+  useEffect(() => {
+    if (focusStepsFor) stepButtons.current.get(focusStepsFor)?.focus();
+  }, [focusStepsFor]);
   if (runs.length === 0) return <p className="ui-muted">No activity yet. Draft will list your workspace runs here.</p>;
 
   return (
@@ -107,6 +117,9 @@ export function ActivityList({ runs, onFixInConnections, onOpenRun, onOpenRoutin
             <div className="ui-activity-row__actions">
               {state === "failed" && run.kind !== "routine" && (
                 <button type="button" className="ui-link ui-activity-row__action" onClick={onFixInConnections}>Fix in Connections</button>
+              )}
+              {!!run.stepCount && onOpenSteps && (
+                <button type="button" ref={(element) => { if (element) stepButtons.current.set(run.id, element); else stepButtons.current.delete(run.id); }} className="ui-link ui-activity-row__action" aria-label={`View steps of ${primaryLine(run)}`} onClick={() => onOpenSteps(run.id)}>View steps</button>
               )}
               {run.kind === "routine" && run.sessionId && onOpenRun && (
                 <button type="button" className="ui-link ui-activity-row__action" onClick={() => onOpenRun(run.sessionId!)}>Open run</button>

@@ -15,7 +15,7 @@ Sign-in asks for the `read` and `write` OAuth scopes. Your agent works in your t
 | Tool | Purpose |
 | --- | --- |
 | `context.list` | List the workspace's available context dimensions. |
-| `context.read` | Read one or more dimensions, or all current workspace documents. Pass `period` (with `dimensions: ["memory"]`) to read one day/week/month document from the chronological memory log instead of the whole thing. |
+| `context.read` | Read one or more dimensions, or all current workspace documents. Pass `period` (with `dimensions: ["memory"]`) to read one day/week/month document from the chronological memory log instead of the whole thing. Pass `paths` to read exact documents. With `paths`, `history` (1 to 20) also returns the last versions that changed each document, with when, why and by which run. `versionId`, taken from a history entry, reads the context as it was at that version. |
 | `context.export` | Return a download link to the full context as a zip of markdown files, plus the commands to fetch and unzip it. The link expires after 5 minutes and stops working if the user loses workspace access. The file bytes skip the model's context window, so prefer this over `context.read` when the user wants files on disk. |
 | `sessions.list` | `{ provider?, since?, until?, limit?, cursor? }` — list interactive Draft app conversations newest first. `provider` is the harness id, such as `codex`; continue with `next_cursor`. |
 | `sessions.read` | `{ session_id, after_seq?, limit? }` — read a Draft app session and a page of its events. Continue with `next_after_seq`. |

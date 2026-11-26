@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { sha256 } from "../../../synthesis/context-version-files";
+import { sha256 } from "../../../metaharness/context/context-version-files";
 import { writeContext } from "../../../metaharness/context/context-store";
 import { createFakeContextDb } from "./fake-context-db";
 

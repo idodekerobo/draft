@@ -1,12 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createInitialWorkspaceSynthesis } from "../../synthesis/register-workspace-synthesis";
-import { registerSessionSummaryTask } from "../../summarization/register-session-summaries";
+import { createInitialWorkspaceSynthesis } from "../../routines/built-in/synthesis/register-workspace-synthesis";
+import { registerSessionSummaryTask } from "../../routines/built-in/summarization/register-session-summaries";
 import { describe, expect, it } from "bun:test";
 import { defaultBuiltInConfig, loadBuiltInConfig, parseBuiltInConfig } from "../../routines/built-in-config";
 import { validatePatch } from "../../routines/validate-patch";
-import { buildSummarizationRunSpec } from "../../summarization/run-spec";
-import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
-import { buildSummarizationPrompt } from "../../summarization/render-prompt";
+import { buildSummarizationRunSpec } from "../../routines/built-in/summarization/run-spec";
+import { buildSynthesisRunSpec } from "../../routines/built-in/synthesis/run-spec";
+import { buildSummarizationPrompt } from "../../routines/built-in/summarization/render-prompt";
 import { fakeClient, fakeDb } from "./fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";

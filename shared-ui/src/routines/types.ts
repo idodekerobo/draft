@@ -31,6 +31,19 @@ import type { RoutineEventName, RoutineListFilter, RoutineWhen } from "draft-cor
 /** Opens one run of an agent routine. The routine tells the caller where to come back to. */
 export type OpenRun = (sessionId: string, routine: Pick<Routine, "id" | "title">) => void;
 
+/** One step of an agent routine, as the editor sends it. A step with no tool list may use what its routine may. */
+export interface RoutineStepEdit {
+  key: string;
+  prompt: string;
+  /** A model of the routine's agent; null for the default for this step. */
+  model: string | null;
+  fanOut: { over: "none" } | { over: "context_documents"; filter: "with_new_evidence" | "all_stable" };
+  output: { type: "text" } | { type: "structured"; schema: Record<string, unknown> };
+  inputsFrom?: string[];
+  allowPartial?: boolean;
+  permissions?: Array<{ tool: string; provider?: string; limits?: Record<string, unknown> }>;
+}
+
 /** Set only on agent routines. */
 export interface AgentRoutine {
   prompt: string;
@@ -54,6 +67,8 @@ export interface AgentRoutine {
   builtInTools?: string[];
   events?: RoutineEventName[];
   onSchedule?: false;
+  /** Ordered steps. A routine with none runs as one agent. */
+  steps?: RoutineStepEdit[];
 }
 
 /** One row from GET /workspaces/:id/schedules. */
@@ -117,6 +132,8 @@ export interface AgentRoutineEdit {
   postChannels?: "joined" | string[] | null;
   github?: { repos: string[]; access: "read" | "write" } | null;
   builtInTools?: string[];
+  /** Null takes the steps away, so the routine runs as one agent again. */
+  steps?: RoutineStepEdit[] | null;
 }
 
 /** When a routine runs: a schedule (null turns it off) and/or triggers. A PATCH leaves an omitted part unchanged. */

@@ -2,6 +2,7 @@ import { routineBuiltInTools } from "draft-core/routines";
 import { cloudNativeToolsFor } from "draft-core/run-spec";
 import { getHarness, isEffortFor, isKnownModel, type HarnessId } from "draft-core/harnesses";
 import { ROUTINE_EVENT_NAMES, type RoutineEventName } from "draft-core/routines";
+import { checkRoutineSteps, type RoutineStep } from "draft-core/routine-steps";
 
 export const ROUTINE_RUN_ID_PREFIX = "routine:";
 const ROUTINE_HOST_PREFIX = "fly:";
@@ -49,6 +50,11 @@ export interface AgentRoutineConfig {
    * stored, and keep what they had: a shell, plus any tool in their toolset.
    */
   builtInTools?: string[];
+  /**
+   * Ordered steps. Each starts its own step runs, and may use only what the routine may use. A routine with none
+   * runs as one agent. Checked against the routine's permissions by `checkStepPermissions`, not here.
+   */
+  steps?: RoutineStep[];
 }
 
 /** The built-in tools a routine may use, for a routine saved with or without the setting. */
@@ -59,7 +65,7 @@ export function effectiveBuiltInTools(config: Pick<AgentRoutineConfig, "harness"
   return offered.filter((tool) => legacy.includes(tool));
 }
 
-export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "toolset" | "events" | "onSchedule" | "canNotify" | "canReadGmail" | "postChannels" | "github" | "builtInTools" | "body" };
+export type AgentRoutineConfigResult = { ok: true; config: AgentRoutineConfig } | { ok: false; field: "title" | "prompt" | "harness" | "model" | "reasoningEffort" | "toolset" | "events" | "onSchedule" | "canNotify" | "canReadGmail" | "postChannels" | "github" | "builtInTools" | "steps" | "body" };
 
 const MAX_MCP_SERVERS = 10;
 const MAX_TOOLS_PER_SERVER = 50;
@@ -87,7 +93,7 @@ export function validateRoutineToolset(value: unknown, harness: HarnessId): Rout
 /** Checks field by field so a caller can say which one is wrong. */
 export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, field: "body" };
-  const { title, prompt, harness, model, reasoningEffort, toolset, events, onSchedule, canNotify, canReadGmail, postChannels, github, builtInTools } = value as Record<string, unknown>;
+  const { title, prompt, harness, model, reasoningEffort, toolset, events, onSchedule, canNotify, canReadGmail, postChannels, github, builtInTools, steps } = value as Record<string, unknown>;
   if (typeof title !== "string" || !title.trim() || title.trim().length > TITLE_MAX_CHARS) return { ok: false, field: "title" };
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return { ok: false, field: "prompt" };
   const definition = typeof harness === "string" ? getHarness(harness) : null;
@@ -109,6 +115,9 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
     const config = github as Record<string, unknown>;
     if (!Array.isArray(config.repos) || config.repos.length > 50 || !config.repos.every((repo) => typeof repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(repo)) || !["read", "write"].includes(config.access as string)) return { ok: false, field: "github" };
   }
+  // A custom routine consumes no sources, so its steps cannot fan out over them. Permissions are checked by the caller.
+  const checkedSteps = steps === undefined ? null : checkRoutineSteps(steps, { harness: harnessId, routinePermissions: null, allowSourceBatches: false });
+  if (checkedSteps && !checkedSteps.ok) return { ok: false, field: "steps" };
   return {
     ok: true,
     config: {
@@ -124,6 +133,7 @@ export function validateAgentRoutineConfig(value: unknown): AgentRoutineConfigRe
       ...(canReadGmail !== undefined ? { canReadGmail: canReadGmail as boolean } : {}),
       ...(postChannels !== undefined ? { postChannels: postChannels === "joined" ? "joined" : [...new Set((postChannels as string[]).map((channel) => channel.trim()))] } : {}),
       ...(builtInTools !== undefined ? { builtInTools: offeredTools.filter((tool) => (builtInTools as string[]).includes(tool)) } : {}),
+      ...(checkedSteps?.ok ? { steps: checkedSteps.steps } : {}),
       ...(github !== undefined ? { github: { repos: [...new Set((github as { repos: string[] }).repos)], access: (github as { access: "read" | "write" }).access } } : {}),
     },
   };

@@ -1,0 +1,134 @@
+import { createHash } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { CLAUDE_SESSION_CONNECTION_KEY } from "../../../ingestion/captured-sessions/constants";
+import { upsertConnection, upsertSourceItem } from "../../../ingestion/upsert-source-item";
+import type { CapturedSessionRow } from "../../../types/tables";
+import { recordError } from "../../../errors/record-error";
+import type { SessionSummaryPayload } from "./types";
+
+const MAX_SUMMARY_ATTEMPTS = 3;
+
+export type MaterializeSummaryResult =
+  | { ok: true; payload: SessionSummaryPayload }
+  | { ok: false; error: unknown };
+
+function sha256(content: string): string {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+export function renderSummaryContentMarkdown(payload: SessionSummaryPayload): string {
+  const decisions =
+    payload.keyDecisions.length > 0
+      ? payload.keyDecisions.map((decision) => `- ${decision}`).join("\n")
+      : "(none)";
+  return `# ${payload.project}
+
+**Who:** ${payload.who}
+
+**Outcome:** ${payload.outcome}
+
+**Key decisions:**
+${decisions}
+`;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+// The audit row of connections.search and connections.read keeps the provider, so Gmail calls are told apart from Slack's.
+const GMAIL_COMMANDS = ["connections.search", "connections.read", "mcp.connections.search", "mcp.connections.read"];
+
+// A session that searched or read Gmail may quote mail in its summary, so it stays
+// private to its owner. A failed lookup fails closed.
+async function sessionReadGmail(session: CapturedSessionRow, client: SupabaseClient): Promise<boolean> {
+  if (session.user_id === null) return false;
+  const { data, error } = await client
+    .from("agent_query_log")
+    .select("command")
+    .eq("workspace_id", session.workspace_id)
+    .eq("user_id", session.user_id)
+    .gte("occurred_at", session.started_at)
+    .lte("occurred_at", session.ended_at ?? new Date().toISOString())
+    .in("command", GMAIL_COMMANDS)
+    .eq("args_json->>provider", "gmail")
+    .limit(1);
+  if (error) {
+    await recordError({ client, workspaceId: session.workspace_id, operation: "read", code: "session_gmail_usage_lookup_failed", message: "Checking whether a session read Gmail failed; its summary stays private", detail: { captured_session_id: session.id }, error });
+    return true;
+  }
+  return (data ?? []).length > 0;
+}
+
+// The `WHERE summary_status = 'leased'` guard on every update protects
+// against a late/duplicate callback stomping a session a second worker
+// already reclaimed after lease expiry.
+export async function materializeSessionSummary(
+  session: CapturedSessionRow,
+  result: MaterializeSummaryResult,
+  client: SupabaseClient,
+): Promise<void> {
+  if (result.ok) {
+    const connection = await upsertConnection(client, {
+      workspace_id: session.workspace_id,
+      provider: "claude_session",
+      connection_key: CLAUDE_SESSION_CONNECTION_KEY,
+    });
+
+    const contentMarkdown = renderSummaryContentMarkdown(result.payload);
+    const contentHash = sha256(contentMarkdown);
+    const readGmail = await sessionReadGmail(session, client);
+
+    await upsertSourceItem(client, {
+      workspace_id: session.workspace_id,
+      connection_id: connection.id,
+      item_type: "coding_session",
+      external_id: session.external_session_id,
+      // Claude sessions have no provider revision id, so the content hash
+      // doubles as the revision marker -- mirrors ingestFirefliesMeeting's
+      // pattern for providers that give none.
+      external_version: contentHash,
+      occurred_at: session.ended_at ?? session.started_at,
+      content_markdown: contentMarkdown,
+      content_hash: contentHash,
+      representation_kind: "summary",
+      source_time_start: session.started_at,
+      source_time_end: session.ended_at ?? session.started_at,
+      time_basis: "source_event",
+      captured_session_id: session.id,
+      ...(readGmail ? { visibility: "private" as const, owner_user_id: session.user_id } : {}),
+      metadata_json: {
+        agent_session_id: session.id,
+        provider: session.provider,
+        contributor_id: session.contributor_id,
+        user_id: session.user_id,
+        verified: session.user_id !== null,
+        summary: result.payload,
+      },
+    });
+
+    const { error } = await client
+      .from("captured_sessions")
+      .update({ summary_status: "ok", summary_last_error: null })
+      .eq("id", session.id)
+      .eq("summary_status", "leased");
+    if (error) throw error;
+    return;
+  }
+
+  const nextStatus = session.summary_attempts >= MAX_SUMMARY_ATTEMPTS ? "skipped" : "failed";
+  const { error } = await client
+    .from("captured_sessions")
+    .update({
+      summary_status: nextStatus,
+      summary_last_error: errorMessage(result.error).slice(0, 2_000),
+    })
+    .eq("id", session.id)
+    .eq("summary_status", "leased");
+  if (error) throw error;
+}

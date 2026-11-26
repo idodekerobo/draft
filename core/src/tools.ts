@@ -113,17 +113,40 @@ export const ROUTINE_READ_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   { tool: "sources.search" }, { tool: "sources.list" }, { tool: "sources.read" }, { tool: "skills.list" }, { tool: "skills.read" },
 ];
 
-/** Synthesis maintains the shared context and people for the workspace. */
-export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
-  ...CONTEXT_READ_WRITE_PERMISSIONS,
+/** What a synthesis run may read: context, every source, and skills. It writes nothing with these. */
+export const SYNTHESIS_READ_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
+  { tool: "context.read" }, { tool: "context.list" },
+  { tool: "sources.search" }, { tool: "sources.list" }, { tool: "sources.read" },
+  { tool: "skills.list" }, { tool: "skills.read" },
+];
+
+/** The people tools a synthesis step may use to keep the roster right. None of them sends a message. */
+const SYNTHESIS_PEOPLE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
   { tool: "people.find" },
   { tool: "people.create" },
   { tool: "people.update" },
-  { tool: "people.notify", limits: { recipients: "members" } },
   { tool: "people.notification_status" },
   { tool: "people.approve" },
   { tool: "people.reject" },
 ];
+
+/** Synthesis maintains the shared context and people for the workspace. */
+export const SYNTHESIS_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [
+  ...CONTEXT_READ_WRITE_PERMISSIONS,
+  ...SYNTHESIS_READ_PERMISSIONS.filter((permission) => permission.tool !== "context.read"),
+  ...SYNTHESIS_PEOPLE_PERMISSIONS.slice(0, 3),
+  { tool: "people.notify", limits: { recipients: "members" } },
+  ...SYNTHESIS_PEOPLE_PERMISSIONS.slice(3),
+];
+
+/**
+ * What each synthesis step may use. A step only narrows `SYNTHESIS_PERMISSIONS`. No step may send a message
+ * (`people.notify`) or change routines, and none can ask a person for input: only the run of the whole routine
+ * reports `needs_input`.
+ */
+export const CAPTURE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = SYNTHESIS_READ_PERMISSIONS;
+export const RECONCILE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [...SYNTHESIS_READ_PERMISSIONS, { tool: "context.write" }];
+export const ORGANIZE_PERMISSIONS: ReadonlyArray<AnyDraftToolPermission> = [...SYNTHESIS_READ_PERMISSIONS, { tool: "context.write" }, ...SYNTHESIS_PEOPLE_PERMISSIONS];
 
 /** Where a call came in. `app` is an older app with an unknown surface; only CLI/MCP count as external agent queries. */
 export type UserCallSurface = "mcp" | "cli" | "web_app" | "desktop_app" | "app";

@@ -139,3 +139,23 @@ test("created recurring routines open the editor; created one-shots open their l
   await waitFor(() => expect(onOpenRun).toHaveBeenCalledWith("child-session"));
   expect(getRoutineRuns).toHaveBeenCalledWith("child");
 });
+
+test("a run with steps offers View steps, opens them, and Back returns focus to that button", async () => {
+  const withSteps = { ...run(0), kind: "synthesis" as const, sessionId: null, routineTitle: null, stepCount: 3, triggerType: "schedule" };
+  const getRunDetail = mock(async () => ({
+    id: "run-0", kind: "synthesis", status: "succeeded", outcome: "no_change" as const, summary: null, routineId: null, routineTitle: null, startedAt: null, completedAt: null,
+    failureCode: null, failedStep: null, usage: null, documentsChanged: [], steps: [{ key: "capture", status: "done" as const, runs: [] }],
+  }));
+  renderPanel(async () => ({ runs: [withSteps, run(1)], nextCursor: null }), { getRunDetail });
+  // Only the run that has steps offers them.
+  const buttons = await screen.findAllByRole("button", { name: /View steps/ });
+  expect(buttons).toHaveLength(1);
+  buttons[0]!.focus();
+  fireEvent.click(buttons[0]!);
+  await screen.findByRole("heading", { name: "Context update" });
+  expect(getRunDetail).toHaveBeenCalledWith("run-0");
+  expect(screen.queryByRole("heading", { name: "Runs" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Back to Activity" }));
+  const back = await screen.findByRole("button", { name: /View steps/ });
+  await waitFor(() => expect(document.activeElement).toBe(back));
+});

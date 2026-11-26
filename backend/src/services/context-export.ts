@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from "fflate";
-import { assertSafeDocumentPath } from "../synthesis/context-version-files";
+import { assertSafeDocumentPath } from "../metaharness/context/context-version-files";
 import type { WorkspaceContextSnapshot } from "./workspace-context";
 
 export const EXPORT_FOLDER = "draft-context";

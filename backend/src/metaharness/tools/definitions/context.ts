@@ -3,10 +3,12 @@ import { z } from "zod";
 import { ANY_RUN } from "draft-core/tools";
 import { createContextExportLink, exportInstructions } from "../../../context-export/link";
 import { getWorkspaceContext } from "../../../services/workspace-context";
+import { documentHistory } from "../../../services/context-history";
 import { writeContext, type ContextConflict } from "../../context/context-store";
 import { canSeeContextPath, visibleContext } from "../../context/visible-context";
 import { defineTool, refuse, type ToolHandlerResult } from "../tool-registry";
 import { callerWorkspaceId, requireRun, requireUser } from "./shared";
+import { isSynthesisRun } from "draft-core/run-spec";
 
 /** After this many conflicted writes in one run, the gateway stops taking more and tells the agent to report instead. */
 export const MAX_CONFLICTED_WRITES = 5;
@@ -16,6 +18,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const CONTEXT_MESSAGES: Record<string, string> = {
   no_context_yet: "This workspace has no context yet.",
   period_not_found: "No memory document exists for that period.",
+  version_not_found: "No context version with that id exists in this workspace.",
 };
 
 /** A context lookup that failed: a missing thing or a bad period is a refusal, a database failure is not. */
@@ -62,12 +65,15 @@ export function createContextTools(client: SupabaseClient) {
         .optional()
         .describe("Day YYYY-MM-DD, week week-YYYY-MM-DD (the week's Monday), or month YYYY-MM; aliases today|yesterday|this-week|last-week|this-month|last-month also work. Only valid with dimensions: [\"memory\"]."),
       paths: z.array(z.string()).max(50).optional().describe("Exact document paths to read, such as company/about.md."),
+      history: z.number().int().min(1).max(20).optional().describe("With paths: also return the last N versions that changed each document, newest first, with when, why and by which run. Use it to see how old a document's claims are."),
+      versionId: z.string().uuid().optional().describe("Read the context as it was at this version, from a history entry, instead of the latest."),
     }),
     handler: async ({ input, caller }) => {
       if (input.period && input.dimensions?.length !== 1) {
         return refuse("invalid_period", "period requires exactly one dimension, e.g. dimensions: [\"memory\"]");
       }
-      const result = await getWorkspaceContext(callerWorkspaceId(caller), { dimension: input.dimensions?.[0], period: input.period }, client);
+      if (input.history && !input.paths?.length) return refuse("invalid_history", "history requires paths: name the documents whose history you want.");
+      const result = await getWorkspaceContext(callerWorkspaceId(caller), { dimension: input.dimensions?.[0], period: input.period, versionId: input.versionId }, client);
       if (!result.ok) return contextRefusal(result);
       const wanted = input.dimensions?.length ? new Set(input.dimensions) : null;
       const requested = input.paths ? new Set(input.paths) : null;
@@ -81,6 +87,10 @@ export function createContextTools(client: SupabaseClient) {
         })
         .map(([path, document]) => ({ path, ...document }));
       const missing = input.paths?.filter((path) => !(path in visible));
+      // History is of the latest documents' paths. A path the caller cannot see has none to give.
+      const history = input.history
+        ? await Promise.all((input.paths ?? []).filter((path) => path in visible).map(async (path) => ({ path, changes: await documentHistory(client, callerWorkspaceId(caller), path, input.history!) })))
+        : undefined;
       return {
         status: "ok",
         output: {
@@ -91,6 +101,7 @@ export function createContextTools(client: SupabaseClient) {
           createdAt: result.snapshot.createdAt,
           documents,
           ...(missing?.length ? { missing } : {}),
+          ...(history ? { history } : {}),
         },
         summary: `read ${documents.length} documents`,
       };
@@ -164,7 +175,7 @@ export function createContextTools(client: SupabaseClient) {
         baseVersionId: run.inputs.contextVersionId,
         changes: input.changes,
         summary: input.summary,
-        reason: run.kind === "synthesis" ? "synthesis" : "agent_write",
+        reason: isSynthesisRun(run) ? "synthesis" : "agent_write",
       });
 
       if (result.status === "unchanged") return { status: "ok", output: { unchanged: true }, summary: "no change" };

@@ -169,6 +169,16 @@ export interface WorkspaceDocument {
   sha256?: string;
 }
 
+/** One version that changed a document. */
+export interface ContextDocumentChange {
+  versionId: string;
+  versionNumber: number;
+  createdAt: string;
+  creationReason: string;
+  agentRunId: string | null;
+  summary: string;
+}
+
 export interface WorkspaceContextSnapshot {
   versionId: string;
   versionNumber: number;
@@ -176,11 +186,21 @@ export interface WorkspaceContextSnapshot {
   creationReason: string;
   createdAt: string;
   documents: Record<string, WorkspaceDocument>;
+  /** Asked for with `paths` and `history`: each document's recent changes, newest first. */
+  history?: Array<{ path: string; changes: ContextDocumentChange[] }>;
+  /** Paths that were asked for and do not exist. */
+  missing?: string[];
 }
 
 export interface WorkspaceContextFetchFilter {
   dimension?: string;
   period?: string;
+  /** Exact document paths to read. */
+  paths?: string[];
+  /** With paths: how many recent changes to return for each. */
+  history?: number;
+  /** Read the context as it was at this version. */
+  versionId?: string;
 }
 
 export type ContextFetchResult =
@@ -197,7 +217,9 @@ export type ContextFetchResult =
         | "run_token_refused"
         | "context_fetch_failed"
         | "period_not_found"
-        | "invalid_period";
+        | "invalid_period"
+        | "invalid_history"
+        | "version_not_found";
     };
 
 const CONTEXT_PASS_THROUGH: ReadonlyArray<string> = ["not_authenticated", "auth_busy", "session_refresh_transient", "whoami_failed", "no_workspace", "run_credentials_incomplete", "run_token_refused"];
@@ -216,10 +238,13 @@ export async function fetchWorkspaceContext(
   const call = await callToolRaw("context.read", {
     dimensions: filter?.dimension ? [filter.dimension] : undefined,
     period: filter?.period,
+    paths: filter?.paths,
+    history: filter?.history,
+    versionId: filter?.versionId,
   });
   if (!call.ok) {
     if (call.refusal === "no_context_yet") return { ok: true, snapshot: EMPTY_SNAPSHOT };
-    if (call.refusal === "period_not_found" || call.refusal === "invalid_period") return { ok: false, code: call.refusal };
+    if (call.refusal === "period_not_found" || call.refusal === "invalid_period" || call.refusal === "invalid_history" || call.refusal === "version_not_found") return { ok: false, code: call.refusal };
     return { ok: false, code: contextFailure(call.code) };
   }
 
@@ -242,8 +267,28 @@ export async function fetchWorkspaceContext(
       creationReason: typeof body.creationReason === "string" ? body.creationReason : "",
       createdAt: typeof body.createdAt === "string" ? body.createdAt : "",
       documents,
+      ...(Array.isArray(body.history) ? { history: body.history.flatMap(readHistoryEntry) } : {}),
+      ...(Array.isArray(body.missing) ? { missing: body.missing.filter((path): path is string => typeof path === "string") } : {}),
     },
   };
+}
+
+function readHistoryEntry(entry: unknown): Array<{ path: string; changes: ContextDocumentChange[] }> {
+  const record = recordValue(entry);
+  if (!record || typeof record.path !== "string" || !Array.isArray(record.changes)) return [];
+  const changes = record.changes.flatMap((change): ContextDocumentChange[] => {
+    const value = recordValue(change);
+    if (!value || typeof value.versionId !== "string" || typeof value.versionNumber !== "number") return [];
+    return [{
+      versionId: value.versionId,
+      versionNumber: value.versionNumber,
+      createdAt: typeof value.createdAt === "string" ? value.createdAt : "",
+      creationReason: typeof value.creationReason === "string" ? value.creationReason : "",
+      agentRunId: typeof value.agentRunId === "string" ? value.agentRunId : null,
+      summary: typeof value.summary === "string" ? value.summary : "",
+    }];
+  });
+  return [{ path: record.path, changes }];
 }
 
 export type ContextExportFetchResult =

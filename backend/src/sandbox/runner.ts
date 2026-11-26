@@ -163,6 +163,7 @@ async function runMainBody(ctx: RunnerContext): Promise<void> {
     bundleHash,
     transcript: result.transcript,
     authJson: runnerSideFor(manifest.harness).refreshedLogin(),
+    usage: result.usage,
   });
 }
 

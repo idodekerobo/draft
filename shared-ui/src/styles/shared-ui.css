@@ -96,6 +96,7 @@
 .ui-dot--pending { background: var(--color-status-yellow); }
 .ui-dot--error { background: var(--color-status-red); }
 .ui-dot--none { background: transparent; }
+.ui-dot--idle { background: transparent; box-shadow: inset 0 0 0 1.5px var(--color-border-strong); }
 
 .ui-tool-row__main {
   display: grid;
@@ -349,6 +350,57 @@
 .ui-activity-row__detail { grid-column: 1 / -1; display: grid; grid-template-columns: 140px 1fr; margin: 0 0 12px 20px; font-size: var(--font-size-secondary); }
 .ui-activity-row__detail dt { padding: 6px 0; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); }
 .ui-activity-row__detail dd { margin: 0; padding: 6px 0; border-top: 1px solid var(--color-border); color: var(--color-text-primary); }
+
+/* ── Routine steps editor ──────────────────────────────────────────────────── */
+
+.ui-steps { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.ui-steps__item { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-surface); }
+.ui-steps__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ui-steps__num { color: var(--color-text-primary); font-size: var(--font-size-secondary); font-weight: 600; }
+.ui-steps__tools { display: flex; flex-wrap: wrap; gap: 12px; font-size: var(--font-size-secondary); }
+.ui-steps__check { display: flex; align-items: center; gap: 8px; color: var(--color-text-primary); font-size: var(--font-size-secondary); }
+.ui-steps__foot { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+.ui-synthesis-steps { list-style: none; margin: 8px 0 0; padding: 0; }
+.ui-synthesis-steps__item { padding: 8px 0; border-top: 1px solid var(--color-border); }
+.ui-synthesis-steps__item p { margin: 0; }
+.ui-synthesis-steps__name { color: var(--color-text-primary); font-size: var(--font-size-body); font-weight: 500; }
+
+/* ── Run detail: a run's steps ─────────────────────────────────────────────── */
+
+.ui-run { max-width: 720px; }
+.ui-run__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ui-run__title { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3; }
+.ui-run__status { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--color-text-secondary); font-size: var(--font-size-secondary); font-variant-numeric: tabular-nums; }
+.ui-run__notice { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--color-border-strong); border-left: 3px solid var(--color-status-red); border-radius: var(--radius-md); background: var(--color-bg-surface); font-size: var(--font-size-secondary); }
+.ui-run__notice p { margin: 0; }
+.ui-run__notice-title { margin-bottom: 4px !important; color: var(--color-text-primary); font-size: var(--font-size-body); font-weight: 600; }
+.ui-run__steps { list-style: none; margin: 0 0 16px; padding: 0; }
+.ui-run__totals { display: grid; grid-template-columns: 160px minmax(0, 1fr); margin: 0; font-size: var(--font-size-secondary); }
+.ui-run__totals dt { padding: 8px 0; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); }
+.ui-run__totals dd { margin: 0; padding: 8px 0; border-top: 1px solid var(--color-border); color: var(--color-text-primary); overflow-wrap: anywhere; }
+.ui-run-step { padding: 12px 0; border-top: 1px solid var(--color-border); }
+.ui-run-step:last-child { border-bottom: 1px solid var(--color-border); }
+.ui-run-step__head { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; column-gap: 12px; align-items: start; }
+.ui-run-step__num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid var(--color-border-strong); border-radius: 50%; color: var(--color-text-secondary); font-size: var(--font-size-small); font-variant-numeric: tabular-nums; }
+.ui-run-step__text { min-width: 0; }
+.ui-run-step__name { margin: 0; color: var(--color-text-primary); font-size: var(--font-size-body); font-weight: 500; }
+.ui-run-step__purpose { margin: 2px 0 0; color: var(--color-text-secondary); font-size: var(--font-size-secondary); }
+.ui-run-step__status { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-primary); font-size: var(--font-size-secondary); white-space: nowrap; }
+.ui-run-step--failed .ui-run-step__name { color: var(--color-text-primary); }
+.ui-run-step__toggle { margin: 8px 0 0 36px; font-size: var(--font-size-secondary); }
+.ui-run-step__runs { list-style: none; margin: 8px 0 0 36px; padding: 0; font-size: var(--font-size-secondary); }
+.ui-run-step__run { padding: 8px 0; border-top: 1px solid var(--color-border); }
+.ui-run-step__run p { margin: 0 0 2px; }
+.ui-run-step__run-label { color: var(--color-text-primary); font-weight: 500; overflow-wrap: anywhere; }
+.ui-run-step__run-failure { color: var(--color-text-primary); }
+.ui-run__transcript { max-height: 320px; overflow: auto; user-select: text; }
+@media (max-width: 720px) {
+  .ui-run__totals { grid-template-columns: 1fr; }
+  .ui-run__totals dt { padding-bottom: 0; }
+  .ui-run__totals dd { border-top: 0; padding-top: 2px; }
+  .ui-run-step__head { grid-template-columns: 24px minmax(0, 1fr); }
+  .ui-run-step__status { grid-column: 2; }
+}
 
 /* ── App shell (web) ───────────────────────────────────────────────────────── */
 

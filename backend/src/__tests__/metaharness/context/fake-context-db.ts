@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canonicalDocumentsHash, sha256, type ContextDocuments } from "../../../synthesis/context-version-files";
+import { canonicalDocumentsHash, sha256, type ContextDocuments } from "../../../metaharness/context/context-version-files";
 
 export function docs(files: Record<string, string>): ContextDocuments {
   return Object.fromEntries(Object.entries(files).map(([path, content]) => [path, { content, sha256: sha256(content) }]));
@@ -23,6 +23,8 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
   const toolCalls: Array<{ tool_name: string; status: string; agent_run_id: string }> = [];
   const agentRuns = new Map<string, Record<string, unknown>>();
   const hooks: { beforeCommit?: () => void } = {};
+  const historyCalls: Array<Record<string, unknown>> = [];
+  const historyByPath = new Map<string, Array<Record<string, unknown>>>();
 
   const addVersion = (documents: ContextDocuments): string => {
     const id = `00000000-0000-4000-8000-${String(++counter).padStart(12, "0")}`;
@@ -52,6 +54,8 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
               single: async () => ({ data: versions.get(id) ?? null, error: versions.has(id) ? null : new Error("not found") }),
               // The latest version of a workspace, as the context service asks for it.
               order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: pointer ? versions.get(pointer)! : null, error: null }) }) }),
+              // One version of the workspace, by id.
+              ...{ eq: (_idColumn: string, versionId: string) => ({ maybeSingle: async () => ({ data: versions.get(versionId) ?? null, error: null }) }) },
             }),
           }),
         };
@@ -77,6 +81,10 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
       throw new Error(`Unexpected table ${table}`);
     },
     rpc: async (name: string, args: Record<string, unknown>) => {
+      if (name === "context_document_history") {
+        historyCalls.push(args);
+        return { data: (historyByPath.get(args.p_path as string) ?? []).slice(0, args.p_limit as number), error: null };
+      }
       if (name !== "commit_context_write") throw new Error(`Unexpected rpc ${name}`);
       hooks.beforeCommit?.();
       hooks.beforeCommit = undefined;
@@ -96,6 +104,11 @@ export function createFakeContextDb(initial: Record<string, string> | null) {
     hooks,
     agentRuns,
     pointer: () => pointer,
+    /** What the history function answers for a path. Rows are in the function's own column names. */
+    setHistory: (path: string, rows: Array<Record<string, unknown>>) => historyByPath.set(path, rows),
+    historyCalls,
+    /** The id of the version with this number. */
+    versionId: (versionNumber: number) => [...versions.values()].find((version) => version.version_number === versionNumber)?.id ?? null,
     current: () => (pointer ? versions.get(pointer)!.documents_json : {}),
     /** Another writer lands a new version, as a routine would. */
     writeBehindTheScenes: (files: Record<string, string>) => addVersion({ ...(pointer ? versions.get(pointer)!.documents_json : {}), ...docs(files) }),

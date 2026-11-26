@@ -11,3 +11,7 @@ export const queryKeys = {
 
 /** Starts with the workspace key like the rest, so one invalidation still clears a workspace. */
 export const routineRunsKey = (workspaceId: string, routineId: string) => ["ws", workspaceId, "routines", routineId, "runs"] as const;
+
+/** One run with its steps, under the runs key so a run signal refreshes it. */
+export const runDetailKey = (workspaceId: string, runId: string) => ["ws", workspaceId, "runs", "detail", runId] as const;
+export const runTranscriptKey = (workspaceId: string, runId: string) => ["ws", workspaceId, "runs", "transcript", runId] as const;

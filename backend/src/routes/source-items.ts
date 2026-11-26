@@ -4,11 +4,11 @@ import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { upsertConnection, upsertSourceItem } from "../ingestion/upsert-source-item";
 import { loadSandboxDeploymentConfig } from "../metaharness/sandbox";
-import { RunNotAllowedError } from "../synthesis/check-run-allowed";
-import { PILOT_RUN_BUNDLE_LIMITS } from "../synthesis/load-run-bundle";
-import { launchSynthesisRun } from "../synthesis/orchestrate-run";
-import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
-import type { DimensionHint } from "../synthesis/types";
+import { RunNotAllowedError } from "../routines/built-in/synthesis/check-run-allowed";
+import { PILOT_RUN_BUNDLE_LIMITS } from "../routines/built-in/synthesis/load-run-bundle";
+import { launchSynthesisRun } from "../routines/built-in/synthesis/orchestrate-run";
+import { WorkspaceRunAlreadyActiveError } from "../routines/built-in/synthesis/prepare-run";
+import type { DimensionHint } from "../routines/built-in/synthesis/types";
 import { recordRouteError } from "../errors/route-error";
 
 type SourceItemsRequest = Bun.BunRequest<"/workspaces/:id/source-items">;
@@ -166,7 +166,6 @@ export const POST = withAuth<SourceItemsRequest>(async (req, caller) => {
       inserted: insertedIds.length,
       skipped,
       runId: result.runId,
-      machineId: result.machineId,
     });
   } catch (err) {
     const synthesisError = err instanceof WorkspaceRunAlreadyActiveError

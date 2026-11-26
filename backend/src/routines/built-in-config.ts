@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { HarnessId } from "draft-core/harnesses";
 import { validateAgentRoutineConfig } from "./config";
+import { guidanceOf } from "./built-in/synthesis/guidance";
 import { DEFAULT_SUMMARIZATION_PROMPT, DEFAULT_SYNTHESIS_PROMPT } from "./built-in-defaults";
 
 export interface BuiltInRoutineConfig {
@@ -24,7 +25,8 @@ export function parseBuiltInConfig(taskType: string, value: unknown): BuiltInRou
   const checked = validateAgentRoutineConfig({ ...defaultBuiltInConfig(taskType), ...stored, title: "Built-in routine" });
   if (!checked.ok) throw new Error(`Invalid ${taskType} setting: ${checked.field}`);
   const { prompt, harness, model, reasoningEffort } = checked.config;
-  return { prompt, harness, model, ...(reasoningEffort ? { reasoningEffort } : {}) };
+  // A workspace that still has the old one-agent prompt gets the new guidance. That prompt told the agent to keep everything.
+  return { prompt: taskType === "synthesize_workspace" ? guidanceOf(prompt) : prompt, harness, model, ...(reasoningEffort ? { reasoningEffort } : {}) };
 }
 
 export async function loadBuiltInConfig(client: SupabaseClient, workspaceId: string, taskType: string): Promise<BuiltInRoutineConfig> {

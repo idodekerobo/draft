@@ -4,7 +4,7 @@ import type { AuthorizationDenial, ToolCallRecord } from "../../metaharness/tool
 import { createDraftToolRegistry } from "../../metaharness/tools/definitions";
 import { registerGatewayTools, type McpGateway } from "../../mcp/gateway-tools";
 import { createFakeContextDb } from "../metaharness/context/fake-context-db";
-import { sha256 } from "../../synthesis/context-version-files";
+import { sha256 } from "../../metaharness/context/context-version-files";
 
 const schedules = await import("../../routines/service");
 const agentStatus = await import("../../routines/agent-status");

@@ -8,6 +8,8 @@ import { rpc } from "./rpc";
 const api: DraftApi = {
   getRuns: (before) => rpc.request.getWorkspaceRuns(before ? { before } : undefined),
   getRoutines: () => rpc.request.listRoutines(),
+  getRunDetail: (runId) => rpc.request.getRunDetail({ runId }),
+  getRunTranscript: (runId) => rpc.request.getRunTranscript({ runId }),
   updateRoutine: async (id, patch) => {
     const result = await rpc.request.updateRoutine({ id, patch });
     if (!result.ok) throw toRoutineError(result.code, result.field);

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkspaceContextVersionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
-import { resolveMemoryPeriod, type ResolvedMemoryPeriod } from "../synthesis/memory-period";
+import { resolveMemoryPeriod, type ResolvedMemoryPeriod } from "../metaharness/context/memory-period";
 
 export interface WorkspaceContextSnapshot {
   versionId: string;
@@ -19,6 +19,8 @@ export interface WorkspaceContextSnapshot {
 export interface WorkspaceContextFilter {
   dimension?: string;
   period?: string;
+  /** Read the context as it was at this version, not the latest. */
+  versionId?: string;
 }
 
 export type GetWorkspaceContextResult =
@@ -44,13 +46,11 @@ export async function getWorkspaceContext(
   // The version and (when a period is requested) timezone lookups are
   // independent of each other -- fire both at once instead of paying two
   // sequential round trips.
-  const versionQuery = client
-    .from("workspace_context_versions")
-    .select("*")
-    .eq("workspace_id", workspaceId)
-    .order("version_number", { ascending: false })
-    .limit(1)
-    .maybeSingle<WorkspaceContextVersionRow>();
+  const versions = client.from("workspace_context_versions").select("*").eq("workspace_id", workspaceId);
+  const versionQuery = (filter?.versionId
+    ? versions.eq("id", filter.versionId)
+    : versions.order("version_number", { ascending: false }).limit(1)
+  ).maybeSingle<WorkspaceContextVersionRow>();
   const timezoneQuery = filter?.period
     ? client.from("workspaces").select("timezone").eq("id", workspaceId).single<{ timezone: string }>()
     : null;
@@ -61,7 +61,7 @@ export async function getWorkspaceContext(
     recordRouteError({ workspaceId, operation: "read", errorCode: "workspace_context_read_failed", error });
     return { ok: false, status: 500, error: error.message };
   }
-  if (!version) return { ok: false, status: 404, error: "no_context_yet" };
+  if (!version) return { ok: false, status: 404, error: filter?.versionId ? "version_not_found" : "no_context_yet" };
 
   let documents = version.documents_json;
 

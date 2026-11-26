@@ -1,5 +1,6 @@
 import { RoutineInput, defaultRoutineBuiltInTools, type RoutineEventName, type RoutineWhen } from "draft-core/routines";
 import { validateAgentRoutineConfig, type AgentRoutineConfig } from "./config";
+import { stepPermissionsFit } from "./check-step-permissions";
 
 export type CreateValidation =
   | { ok: true; config: AgentRoutineConfig; when: RoutineWhen; enabled?: boolean }
@@ -23,6 +24,7 @@ export function validateCreate(body: unknown): CreateValidation {
   const builtInTools = routine.builtInTools ?? defaultRoutineBuiltInTools(harness);
   const checked = validateAgentRoutineConfig({ ...routine, builtInTools, harness, ...triggerFields(when) });
   if (!checked.ok) return { ok: false, field: checked.field };
+  if (!stepPermissionsFit(checked.config)) return { ok: false, field: "steps" };
   return { ok: true, config: checked.config, when, ...(enabled !== undefined ? { enabled } : {}) };
 }
 

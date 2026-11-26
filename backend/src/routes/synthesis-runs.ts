@@ -2,11 +2,11 @@ import { withAuth } from "../auth/withAuth";
 import { assertWorkspaceAccess } from "../auth/workspace-access";
 import { serviceClient } from "../db/client";
 import { loadSandboxDeploymentConfig } from "../metaharness/sandbox";
-import { getPendingSynthesisSourceItemIds } from "../synthesis/get-pending-source-items";
-import { launchSynthesisRun } from "../synthesis/orchestrate-run";
-import { RunNotAllowedError } from "../synthesis/check-run-allowed";
-import { WorkspaceRunAlreadyActiveError } from "../synthesis/prepare-run";
-import type { DimensionHint } from "../synthesis/types";
+import { getPendingSynthesisSourceItemIds } from "../routines/built-in/synthesis/get-pending-source-items";
+import { launchSynthesisRun } from "../routines/built-in/synthesis/orchestrate-run";
+import { RunNotAllowedError } from "../routines/built-in/synthesis/check-run-allowed";
+import { WorkspaceRunAlreadyActiveError } from "../routines/built-in/synthesis/prepare-run";
+import type { DimensionHint } from "../routines/built-in/synthesis/types";
 import { recordRouteError } from "../errors/route-error";
 import { listActivity, parseCursor } from "../activity/service";
 
@@ -87,7 +87,7 @@ export const POST = withAuth<SynthesisRunsRequest>(async (req, caller) => {
       config: loadSandboxDeploymentConfig(),
       dimensions: body.dimensions,
     });
-    return Response.json({ ok: true, runId: result.runId, machineId: result.machineId });
+    return Response.json({ ok: true, runId: result.runId });
   } catch (err) {
     if (err instanceof WorkspaceRunAlreadyActiveError) {
       return errorResponse("run_already_active", 409, err);

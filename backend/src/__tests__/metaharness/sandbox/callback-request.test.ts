@@ -187,6 +187,30 @@ describe("sandbox callback request authentication", () => {
     });
   });
 
+  it("accepts an optional usage object and returns it", async () => {
+    const usage = { inputTokens: 100, outputTokens: 20, cacheReadTokens: 5, cacheWriteTokens: 1, costUsd: 0.02 };
+    const body = JSON.stringify({ run_id: runId, bundle_hash: bundleHash, result: { ok: true }, usage });
+    await expect(authenticateSandboxCallbackRequest(callbackRequest({ body }), secret, { now })).resolves.toEqual({
+      runId,
+      bundleHash,
+      result: { ok: true },
+      usage,
+      claims,
+    });
+  });
+
+  it("drops a usage value that is not valid and still accepts the result", async () => {
+    for (const usage of ["lots", [], { inputTokens: -1 }, { inputTokens: 1, outputTokens: 1, cacheReadTokens: 1, cacheWriteTokens: 1, costUsd: "free" }]) {
+      const body = JSON.stringify({ run_id: runId, bundle_hash: bundleHash, result: { ok: true }, usage });
+      await expect(authenticateSandboxCallbackRequest(callbackRequest({ body }), secret, { now })).resolves.toEqual({
+        runId,
+        bundleHash,
+        result: { ok: true },
+        claims,
+      });
+    }
+  });
+
   it("never leaks token, secret, or result content in errors", async () => {
     const resultMarker = "private-result-marker";
     const token = createSandboxCallbackToken(claims, secret);

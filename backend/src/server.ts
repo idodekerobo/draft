@@ -1,10 +1,12 @@
 import { loadConfig } from "./config";
 import { startSlackListeners } from "./ingestion/slack/bootstrap";
 import { startScheduler } from "./scheduling/bootstrap";
+import { registerWorkflows } from "./routines/register-workflows";
 import { routes } from "./routes";
 import { recordError } from "./errors/record-error";
 
 const config = loadConfig();
+registerWorkflows();
 
 Bun.serve({
   port: config.port,

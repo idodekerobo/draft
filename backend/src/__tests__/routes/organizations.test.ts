@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 type RpcResult = { data: unknown; error: { code?: string; message: string } | null };
 
@@ -21,7 +21,11 @@ mock.module("../../db/client", () => ({
     },
   },
 }));
-mock.module("../../synthesis/register-workspace-synthesis", () => ({
+// Bun replaces a module for every test file in the run, so the real one is put back when this file ends.
+const REGISTER_SYNTHESIS = "../../routines/built-in/synthesis/register-workspace-synthesis";
+const realRegisterSynthesis = { ...(await import(REGISTER_SYNTHESIS)) };
+afterAll(() => { mock.module(REGISTER_SYNTHESIS, () => realRegisterSynthesis); });
+mock.module(REGISTER_SYNTHESIS, () => ({
   createInitialWorkspaceSynthesis: async (workspace: { id: string }) => {
     synthesisCalls.push(workspace);
     if (synthesisError) throw synthesisError;

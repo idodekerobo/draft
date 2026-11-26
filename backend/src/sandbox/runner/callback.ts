@@ -1,6 +1,7 @@
 import { chmodSync, chownSync, closeSync, fsyncSync, mkdirSync, openSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RunnerFailureCode } from "draft-core/harnesses/types";
+import type { RunUsage } from "draft-core/run-usage";
 import { runnerLog, sanitizeReason } from "./log";
 
 const OUTPUT_PATH = "/run/output/result.json";
@@ -38,6 +39,7 @@ export async function callback(
   transcript: unknown[] | undefined,
   delays: number[] = [0, 1_000, 3_000, 7_000],
   authJson?: string,
+  usage?: RunUsage | null,
 ): Promise<void> {
   let lastError = "callback failed";
   for (let attempt = 0; attempt < delays.length; attempt += 1) {
@@ -59,6 +61,7 @@ export async function callback(
           result: body,
           ...(transcript !== undefined ? { transcript } : {}),
           ...(authJson ? { auth_json: authJson } : {}),
+          ...(usage ? { usage } : {}),
         }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -140,6 +143,7 @@ export async function reportAndExit(input: {
   bundleHash: string;
   transcript?: unknown[];
   authJson?: string;
+  usage?: RunUsage | null;
 }): Promise<void> {
   try {
     mkdirSync("/run/output", { recursive: true });
@@ -162,6 +166,7 @@ export async function reportAndExit(input: {
     input.transcript,
     undefined,
     input.authJson,
+    input.usage,
   );
 
   runnerLog("final", {

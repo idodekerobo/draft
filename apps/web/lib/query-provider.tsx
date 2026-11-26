@@ -11,6 +11,8 @@ import {
   type RoutineRunOutcome,
   type RoutinesResponse,
   type SynthesisRunsPage,
+  type RunDetail,
+  type StepRunTranscript,
 } from "draft-shared-ui";
 import type { ReactNode } from "react";
 import { useAnalytics } from "./analytics/AnalyticsProvider";
@@ -57,6 +59,8 @@ export function WebQueryProvider({ workspaceId, children }: { workspaceId: strin
       return slackChannelsFromConnections(await apiFetch<ConnectionsListAnswer>(`/workspaces/${workspaceId}/tools/connections.list`, { method: "POST", body: JSON.stringify({ provider: "slack" }) }));
     },
     getRoutineGithubRepos: async () => (await apiFetch<{ repos: string[] }>(`/workspaces/${workspaceId}/routine-repositories`)).repos,
+    getRunDetail: (runId) => apiFetch<RunDetail>(`/workspaces/${workspaceId}/runs/${runId}`),
+    getRunTranscript: (runId) => apiFetch<StepRunTranscript>(`/workspaces/${workspaceId}/runs/${runId}/transcript`),
     getRoutineRuns: async (id, before) => (await apiFetch<{ runs: RoutineRun[] }>(`/workspaces/${workspaceId}/schedules/${id}/runs${before ? `?before=${encodeURIComponent(before)}` : ""}`)).runs,
   };
   return <DraftQueryProvider api={api} track={track}>{children}</DraftQueryProvider>;

@@ -71,7 +71,27 @@ Signals can be lost, so each client fetches again when a channel joins or rejoin
 
 The scheduler claims ready work and prepares a bounded run bundle from source evidence and the current context version. It starts a disposable Fly Machine using the Claude Code sandbox image. The runner receives a callback URL and token, executes the bounded task as an unprivileged user, and returns the result. The backend validates the result before committing a new workspace context version.
 
+A synthesis run is a routine made of three steps. The run itself starts no agent. It starts step runs, and each step run gets its own sandbox and its own bundle.
+
+1. **Capture** reads new sources in batches and returns memory entries, each naming the stable documents it bears on. It writes nothing. A batch that fails twice leaves its sources pending for the next run.
+2. **Reconcile** runs once for each stable document with new evidence. It checks the document against the evidence, rewrites what is out of date, and returns the claims the evidence cannot settle.
+3. **Organize** writes the entries into memory, records the open conflicts, and returns the run's outcome and its questions for people.
+
+Step runs are `agent_runs` rows with `kind = 'step'` and a `parent_run_id`. The backend advances the run each time a step run reports back, and the scheduler tick and a sweep advance runs that stall. A step run that fails retries once. A rate-limited one retries up to three times with a wait. Claude runs up to four step runs at a time. Codex runs one at a time because a Codex login allows one run. If a step fails after its retries, the run fails, and documents already updated stay updated. Each step run saves its token usage in `usage_json`.
+
 The long-running API does not run model work in-process. The sandbox is the isolation boundary for synthesis execution.
+
+### Where the code lives
+
+"Update company context" is a built-in routine, so its code sits under `backend/src/routines/`:
+
+- `routines/workflow/` is the step engine. It plans, starts, retries and advances step runs for any routine that has steps. It imports nothing from the rest of `routines/`.
+- `routines/built-in/synthesis/` is synthesis: its steps, prompts, source batching, finishing and retries. It uses the engine.
+- `routines/built-in/summarization/` is session summarization: it claims captured coding sessions, runs one agent over a batch, and stores the summaries. It starts when a team connects Claude coding sessions as a source.
+- The other files in `routines/` are custom routines and the shared routine settings. They use the engine too.
+- `routines/register-workflows.ts` is the one place that tells the engine how each kind of routine carries out its steps.
+
+Context helpers that synthesis and other code share live in `metaharness/context/`.
 
 ## Self-hosting stack
 

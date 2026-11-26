@@ -15,7 +15,11 @@ import { parseAgentRoutineConfig, routineHostId, type AgentRoutineConfig } from 
 import { failRoutineSession, type RoutineSessionRef } from "./fail-routine-session";
 import { CredentialError } from "../credentials/crypto";
 import { describeTaskSchedule } from "../scheduling/describe-task-schedule";
-import { RoutineLeaseBusyError, launchRoutineRun, type LaunchRoutineRun } from "./launch-routine-run";
+import { RoutineLeaseBusyError, launchRoutineRun, toPromptEvent, type LaunchRoutineRun } from "./launch-routine-run";
+import { hasSteps } from "draft-core/routine-steps";
+import { startWorkflow } from "./workflow/start";
+import type { EngineDeps } from "./workflow/types";
+import { routineWorkflow, type RoutineRunExtras } from "./step-workflow";
 import { buildRoutineRunSpec } from "./run-spec";
 import { personalConnectionProvidersOrNone } from "../ingestion/gmail/access";
 import type { RoutineEventPayload } from "./event";
@@ -43,6 +47,8 @@ export interface DispatchAgentRoutineOptions {
   manual?: { requestedBy: string };
   /** Records the occurrence as skipped instead of running it. The note says why, to anyone who can see the routine. */
   skip?: { code: string; note: string };
+  /** Starts a step run of a routine that has steps. Replaced in tests. */
+  launchStep?: EngineDeps["launch"];
 }
 
 export type RoutineDispatchOutcome =
@@ -153,6 +159,21 @@ export async function dispatchAgentRoutine(options: DispatchAgentRoutineOptions)
     });
     await assertOnBehalfOfActive(client, run);
     await createAgentRun(client, { spec: run, idempotencyKey, status: "preparing", sessionId, scheduledTaskId: task.id });
+
+    // A routine with steps starts no agent here. The engine starts its step runs, and this run ends when the last reports.
+    if (hasSteps(routine)) {
+      const extras: RoutineRunExtras = {
+        routine: { title: routine.title, setup: describeRoutineSetup(task, routine), timezone: task.timezone },
+        startedAt: new Date().toISOString(),
+        startedBy: events?.length ? { type: "event", events: events.map(toPromptEvent) } : { type: manual ? "manual" : "schedule" },
+      };
+      await startWorkflow({ client, config, workflow: routineWorkflow, launch: options.launchStep }, {
+        parentRunId: run.id,
+        steps: routine.steps!,
+        extras: extras as unknown as Record<string, unknown>,
+      });
+      return { status: "started", sessionId, runId: run.id };
+    }
 
     const launched = await (options.launch ?? launchRoutineRun)({
       sessionId,

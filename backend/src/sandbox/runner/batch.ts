@@ -2,6 +2,7 @@ import { runnerSideFor } from "./sides";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { RunnerManifest } from "draft-core/run-manifest";
+import { sumRunUsage, type RunUsage } from "draft-core/run-usage";
 import { assertWithinInputRoot } from "./bundle";
 import { reportAndExit } from "./callback";
 import { runnerLog, sanitizeReason } from "./log";
@@ -76,6 +77,7 @@ export async function runBatch(
   const entries = parseBatchManifest(readFileSync(input.manifestPath, "utf8"));
 
   const items: BatchResultItem[] = [];
+  const usages: RunUsage[] = [];
   const batchStartedAt = Date.now();
   for (const [index, entry] of entries.entries()) {
     if (Date.now() - batchStartedAt >= BATCH_WALL_CLOCK_BUDGET_MS) {
@@ -102,6 +104,7 @@ export async function runBatch(
         input.runId,
         scratchStdoutPath,
       );
+      if (result.usage) usages.push(result.usage);
       items.push(
         result.success
           ? { sessionId: entry.id, ok: true, payload: result.finalResult }
@@ -121,6 +124,7 @@ export async function runBatch(
   await deps.reportAndExit({
     finalResult: { items },
     authJson: runnerSideFor(input.manifest.harness).refreshedLogin(),
+    usage: usages.length > 0 ? sumRunUsage(usages) : null,
     success: true,
     failureCode: "none",
     callbackUrl: input.callbackUrl,

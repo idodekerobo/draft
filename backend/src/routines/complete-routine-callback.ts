@@ -5,6 +5,8 @@ import { routineAdapterFor } from "draft-core/harnesses";
 import { eventsForAdapter } from "../ingestion/harness-lines";
 import { parseLiveLine } from "draft-core/harnesses/claude/parse-live-line";
 import { saveRefreshedCodexLogin } from "../credentials/codex-credential";
+import { saveRunUsage } from "../metaharness/runs/save-run-usage";
+import { parseRunUsage } from "draft-core/run-usage";
 import { recordError } from "../errors/record-error";
 import type { RoutineLine } from "../sandbox/runner/stream";
 import type { SessionRow } from "../types/tables";
@@ -144,6 +146,8 @@ export async function completeRoutineRunCallback(
       return new Response(null, { status: 204 });
     }
     if (isObject(result) && result.kind === "end") {
+      // A streaming runner reports usage inside its final message, as it does a refreshed login.
+      await saveRunUsage(db, { sessionId: session.id }, authenticated.usage ?? parseRunUsage(result.usage) ?? undefined);
       await finishRun(db, session, result);
       return new Response(null, { status: 204 });
     }

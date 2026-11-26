@@ -1,10 +1,10 @@
-import { launchSummarizationBatch } from "../../../summarization/run-summarization-batch";
+import { launchSummarizationBatch } from "../../../routines/built-in/summarization/run-summarization-batch";
 import { afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { randomBytes } from "node:crypto";
 import { saveCodexCredential, resolveCodexCredential } from "../../../credentials/codex-credential";
 import { completeRunCredentials, launchWithCredentials, RoutineLeaseBusyError } from "../../../metaharness/sandbox/launch-with-credentials";
 import * as launcher from "../../../metaharness/sandbox/launch";
-import { buildSummarizationRunSpec } from "../../../summarization/run-spec";
+import { buildSummarizationRunSpec } from "../../../routines/built-in/summarization/run-spec";
 import { fakeClient, fakeDb } from "../../routines/fake-client";
 
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -65,10 +65,14 @@ describe("the credential-aware sandbox launcher", () => {
 });
 
 
+const ALLOWED_WORKSPACE = { id: WS, runs_enabled: true, max_runs_per_day: null, inference_credential_id: null };
+const schedule = { scheduledTaskId: "task", occurrenceAt: "2026-11-23T03:00:00.000Z" };
+
 describe("summarization's login reservation", () => {
   it("does not claim captured sessions or consume their attempts while the Codex login is busy", async () => {
     const { db, client } = await setup(false);
     db.tables.scheduled_tasks = [{ id: "task", workspace_id: WS, task_type: "summarize_sessions", config_json: { harness: "codex", model: null, prompt: "Summarize." } }];
+    db.tables.workspaces = [ALLOWED_WORKSPACE];
     const result = await launchSummarizationBatch({ workspaceId: WS, client, config: {} as never, schedule: { scheduledTaskId: "task", occurrenceAt: "2026-11-23T03:00:00.000Z" } });
     expect(result).toBeNull();
     expect(db.rpcCalls.some((call) => call.name === "claim_pending_summary_sessions")).toBe(false);
@@ -77,10 +81,26 @@ describe("summarization's login reservation", () => {
   it("releases a reserved login when there is nothing to summarize", async () => {
     const { db, client } = await setup();
     db.tables.scheduled_tasks = [{ id: "task", workspace_id: WS, task_type: "summarize_sessions", config_json: { harness: "codex", model: null, prompt: "Summarize." } }];
+    db.tables.workspaces = [ALLOWED_WORKSPACE];
     db.rpcs.claim_pending_summary_sessions = () => ({ data: [] });
     const result = await launchSummarizationBatch({ workspaceId: WS, client, config: {} as never, schedule: { scheduledTaskId: "task", occurrenceAt: "2026-11-23T03:00:00.000Z" } });
     expect(result).toBeNull();
     expect(db.rpcCalls.at(-1)?.name).toBe("release_credential_lease");
     expect(db.rpcCalls.at(-1)?.args.p_run_id).toBe(db.rpcCalls[0]?.args.p_run_id);
+  });
+
+  it("claims nothing and takes no login when the workspace may not run, and says why", async () => {
+    const { db, client } = await setup();
+    db.tables.scheduled_tasks = [{ id: "task", workspace_id: WS, task_type: "summarize_sessions", config_json: { harness: "codex", model: null, prompt: "Summarize." } }];
+    db.tables.workspaces = [{ ...ALLOWED_WORKSPACE, runs_enabled: false }];
+    db.tables.errors = [];
+    const calls = db.rpcCalls.length;
+    const result = await launchSummarizationBatch({ workspaceId: WS, client, config: {} as never, schedule });
+    expect(result).toBeNull();
+    expect(db.rpcCalls).toHaveLength(calls);
+    expect(db.tables.agent_runs).toHaveLength(1);
+    expect(db.tables.errors).toHaveLength(1);
+    expect(db.tables.errors![0]).toMatchObject({ workspace_id: WS, scheduled_task_id: "task", operation: "scheduling" });
+    expect(JSON.stringify(db.tables.errors![0])).toContain("summarization_admission_denied");
   });
 });

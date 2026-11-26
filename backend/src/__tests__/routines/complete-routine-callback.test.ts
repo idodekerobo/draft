@@ -98,6 +98,27 @@ describe("completeRoutineRunCallback", () => {
     expect(events.map((e) => e.kind)).toEqual(["assistant_text"]);
   });
 
+  it("saves the usage a streaming runner reports in its final message on the routine's agent run", async () => {
+    const db = seed({ status: "live" });
+    db.tables.agent_runs = [{ id: "99999999-9999-4999-8999-999999999999", workspace_id: WORKSPACE_ID, kind: "routine", session_id: SESSION_ID, status: "running" }];
+    const usage = { inputTokens: 5000, outputTokens: 800, cacheReadTokens: 4000, cacheWriteTokens: 200, costUsd: 0.31 };
+    const response = await completeRoutineRunCallback(post({ kind: "end", ok: true, usage }), SECRET, fakeClient(db));
+
+    expect(response.status).toBe(204);
+    expect(db.tables.agent_runs![0]!.usage_json).toEqual(usage);
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "completed" });
+  });
+
+  it("ignores a usage value that is not valid and still ends the session", async () => {
+    const db = seed({ status: "live" });
+    db.tables.agent_runs = [{ id: "99999999-9999-4999-8999-999999999999", workspace_id: WORKSPACE_ID, kind: "routine", session_id: SESSION_ID, status: "running" }];
+    const response = await completeRoutineRunCallback(post({ kind: "end", ok: true, usage: { inputTokens: "many" } }), SECRET, fakeClient(db));
+
+    expect(response.status).toBe(204);
+    expect(db.tables.agent_runs![0]!.usage_json).toBeUndefined();
+    expect(db.tables.sessions![0]).toMatchObject({ status: "ended", end_reason: "completed" });
+  });
+
   it("ends the session as completed when the run worked", async () => {
     const db = seed({ status: "live" });
     const response = await completeRoutineRunCallback(post({ kind: "end", ok: true }), SECRET, fakeClient(db));

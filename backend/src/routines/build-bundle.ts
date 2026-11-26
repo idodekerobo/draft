@@ -1,5 +1,5 @@
 import { computeBundleHash } from "../metaharness/sandbox/bundle-hash";
-import { assertSafeDocumentPath } from "../synthesis/context-version-files";
+import { assertSafeDocumentPath } from "../metaharness/context/context-version-files";
 import type { SandboxRunBundle } from "../metaharness/sandbox";
 import { visibleContext, type ContextAudience } from "../metaharness/context/visible-context";
 import type { EventFact } from "./event-facts";
@@ -113,6 +113,8 @@ export function buildRoutineBundle(input: {
   agentRunId: string;
   audience: ContextAudience;
   documents: Record<string, { content: string }>;
+  /** More files, by path. A step run reads what earlier steps produced from input/steps/. */
+  extraFiles?: Readonly<Record<string, string>>;
 }): SandboxRunBundle {
   const files: Record<string, { content: string }> = {};
   for (const [path, document] of Object.entries(visibleContext(input.audience, input.documents))) {
@@ -123,6 +125,7 @@ export function buildRoutineBundle(input: {
     }
     files[`input/context/${path}`] = { content: document.content };
   }
+  for (const [path, content] of Object.entries(input.extraFiles ?? {})) files[path] = { content };
   if (Object.keys(files).length === 0) files["input/context/README.md"] = { content: "The company brain has no documents yet.\n" };
 
   return {
