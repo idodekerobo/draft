@@ -39,6 +39,20 @@ describe("the routines folder keeps its imports running one way", () => {
     expect(violations).toEqual([]);
   });
 
+  it("keeps each built-in routine independent of the others", () => {
+    const builtIn = join(ROUTINES, "built-in");
+    const names = readdirSync(builtIn, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    expect(names.length).toBeGreaterThan(1);
+    const violations = names.flatMap((name) =>
+      sources(join(builtIn, name), true).flatMap((file) =>
+        importsOf(file)
+          .filter((target) => names.some((other) => other !== name && inside(target, join(builtIn, other))))
+          .map((target) => `${relative(ROUTINES, file)} imports ${relative(ROUTINES, target)}`),
+      ),
+    );
+    expect(violations).toEqual([]);
+  });
+
   it("lets the routine files reach into built-in routines only for the guidance defaults", () => {
     const violations = sources(ROUTINES, false)
       .filter((file) => file !== COMPOSITION_ROOT)
