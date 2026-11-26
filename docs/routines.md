@@ -24,7 +24,9 @@ A routine can be a list of steps. Each step has its own instructions and model, 
 
 **Update company context.** Its text box is called Guidance. Draft adds it to the instructions of every step, so use it to say what matters to your team. The steps, their tools and their default models are fixed: capture uses a small model, and reconcile and organize use a larger one. A model you pick applies to all three. The run view lists the steps (see Activity below).
 
-**Custom routines.** In the routine editor, press **Split into steps** to turn the instructions into a list. Each step has a name, instructions, an optional model, and a choice to run once or once for each context document. A step may use only tools its routine may use. The run's result is the last step's answer, and the session notes show a summary of each step. The CLI and MCP cannot set steps yet; use the editor.
+**Custom routines.** Press **Split into steps** in the new routine dialog or in the routine editor to turn the routine into a list. Each step has a name, instructions, an optional model, and a choice to run once or once for each context document. Once a routine has steps, its first text box is called **What is this routine for?**: it is the goal of the whole routine, and the steps do the work. A step may use only tools its routine may use. The run's result is the last step's answer, and the session notes show a summary of each step.
+
+You can also set steps from the CLI (`--steps`, `--steps-file`) or through the MCP tools (`steps` on `routines.create` and `routines.update`). A step needs only a key and a prompt. An update replaces the whole list, and removing the list makes the routine run as one agent again. See the [CLI reference](./cli.md#routines) and [MCP and agent connections](./mcp.md#routines).
 
 **A failed step.** A step run that fails retries once, or up to three times after a rate limit. If it still fails, the run fails. Work that already landed stays. The run view says where it stopped.
 
@@ -90,4 +92,4 @@ You can create, change, run and read routines from the CLI, or let an agent conn
 | `draft routines run <id>` | `routines.run` |
 | `draft routines runs <id>` | `routines.runs` |
 
-Add `--mine` to a CLI list to show only routines you created. See the [CLI reference](./cli.md#routines) and [MCP and agent connections](./mcp.md#routines) for every option.
+Add `--mine` to a CLI list to show only routines you created. `routines.create`, `routines.update` and `routines.list` carry a routine's steps, so an agent can read, change and clear them. See the [CLI reference](./cli.md#routines) and [MCP and agent connections](./mcp.md#routines) for every option.

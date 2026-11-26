@@ -162,7 +162,7 @@ draft routines list --once                 # one-time routines, including ones t
 draft routines list --upcoming --mine      # your one-time routines that have not fired
 draft routines list --fired                # one-time routines that already fired
 draft routines create --title <t> (--prompt <text> | --prompt-file <path>) --harness <claude|codex> (--in <duration> | --at <iso-time> | --preset <preset> | --on <event>) [options]
-draft routines update <id> [options]       # change only the fields you pass
+draft routines update <id> [options]       # change only the fields you pass; --steps / --steps-file replace the steps, --clear-steps removes them
 draft routines delete <id>                 # cancel a pending one-time routine, or delete a repeating/event routine
 draft routines run <id> [--wait]           # run now; --wait follows a started run and prints its result
 draft routines runs <id> [--cursor <c>]     # 50 at a time; --cursor shows older runs
@@ -204,6 +204,8 @@ Instructions must be a self-contained brief: what to do, why, and what done mean
 | `--github owner/repo[,owner/repo]` | GitHub repos the agent can use. `--github-access read` is the default; `write` lets it open pull requests. `--no-github` removes access on update. |
 | `--schedule` / `--no-schedule` | On update, turn the repeating schedule on or off. Event triggers remain active when the schedule is off. |
 | `--no-triggers` | On update, remove every event trigger. |
+| `--steps <json>`, `--steps-file <path>` | Split the routine into ordered steps. A JSON list, given inline or in a file. See [Steps](#steps). |
+| `--clear-steps` | On update, remove the steps. The routine runs as one agent again. |
 | `--enable` / `--disable` | On update, enable or pause automatic runs. A fired one-time routine needs a new time to be scheduled again. |
 
 One-time routines are hidden from `list` by default. `--once` selects them; `--upcoming` and `--fired` imply `--once` and cannot be combined. `--mine` shows routines created by you. Filters apply to the list, so do not combine them with an individual `<id>`.
@@ -213,6 +215,28 @@ One-time rows show their scheduled time or when they fired. Routines an agent ma
 `run <id>` requests an immediate run, including for a paused routine or a one-time routine that already fired. If work for it is in progress, the request is queued until that work ends; the response has `queued: true` and no run ID. In that case `--wait` returns the queued result rather than waiting. Otherwise, use the returned run ID with `runs`, or use `--wait` to follow it immediately. A manual run does not repeat the original one-time delay.
 
 `runs` lists status, what started each run, its result, and why a skipped run was skipped. `--transcript` shows what the agent did, a page at a time. When there are older runs or more transcript, the output ends with the command for the next page.
+
+### Steps
+
+A routine with steps runs them one after another, each in its own agent run. `--prompt` stays required: it is the goal of the whole routine, and the steps do the work. Give the steps as JSON, inline or in a file:
+
+~~~bash
+draft routines create --title "Decision digest" --prompt "Write the weekly decision digest." --harness claude \
+  --preset weekly --weekday fri --time 16:00 --steps-file steps.json
+draft routines update <id> --steps '[{"key":"only","prompt":"Do the whole job."}]'
+draft routines update <id> --clear-steps
+~~~
+
+`steps.json` is a list. A step needs only a `key` and a prompt. For a long prompt, use `promptFile` instead of `prompt`: the text of that file is read, relative to the steps file (or to the current folder for `--steps`).
+
+~~~json
+[
+  {"key": "collect", "prompt": "List every decision made this week in the sources."},
+  {"key": "write_up", "promptFile": "write-up.md", "inputsFrom": ["collect"]}
+]
+~~~
+
+The other step fields are `model` (default: the agent's default), `fanOut` (`{"over":"none"}` runs once; `{"over":"context_documents","filter":"all_stable"}` runs once for each document in the company context), `inputsFrom`, `allowPartial` and `permissions`. `draft routines options` shows the limits. `--steps` and `--steps-file` replace the whole list on update, so read the routine with `draft routines list <id>`, change the list and send all of it. Use only one of `--steps`, `--steps-file` and `--clear-steps`. `list` shows each routine's step names, and `list <id>` shows every step with its prompt. The same fields work through the [MCP tools](./mcp.md#split-a-routine-into-steps).
 
 ## People
 
