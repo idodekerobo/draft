@@ -81,6 +81,17 @@ Step runs are `agent_runs` rows with `kind = 'step'` and a `parent_run_id`. The 
 
 The long-running API does not run model work in-process. The sandbox is the isolation boundary for synthesis execution.
 
+### Where the code lives
+
+"Update company context" is a built-in routine, so its code sits under `backend/src/routines/`:
+
+- `routines/workflow/` is the step engine. It plans, starts, retries and advances step runs for any routine that has steps. It imports nothing from the rest of `routines/`.
+- `routines/built-in/synthesis/` is synthesis: its steps, prompts, source batching, finishing and retries. It uses the engine.
+- The other files in `routines/` are custom routines and the shared routine settings. They use the engine too.
+- `routines/register-workflows.ts` is the one place that tells the engine how each kind of routine carries out its steps.
+
+Context helpers that synthesis and other code share live in `metaharness/context/`.
+
 ## Self-hosting stack
 
 The supported reference stack is:

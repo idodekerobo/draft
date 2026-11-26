@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createInitialWorkspaceSynthesis } from "../../synthesis/register-workspace-synthesis";
+import { createInitialWorkspaceSynthesis } from "../../routines/built-in/synthesis/register-workspace-synthesis";
 import { registerSessionSummaryTask } from "../../summarization/register-session-summaries";
 import { describe, expect, it } from "bun:test";
 import { defaultBuiltInConfig, loadBuiltInConfig, parseBuiltInConfig } from "../../routines/built-in-config";
 import { validatePatch } from "../../routines/validate-patch";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
-import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
+import { buildSynthesisRunSpec } from "../../routines/built-in/synthesis/run-spec";
 import { buildSummarizationPrompt } from "../../summarization/render-prompt";
 import { fakeClient, fakeDb } from "./fake-client";
 

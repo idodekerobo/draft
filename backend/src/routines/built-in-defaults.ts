@@ -1,4 +1,4 @@
-import { DEFAULT_SYNTHESIS_GUIDANCE } from "../synthesis/steps/prompts";
+import { DEFAULT_SYNTHESIS_GUIDANCE } from "./built-in/synthesis/guidance";
 
 /** The synthesis routine's guidance. It is added to the prompt of every step of a context update. */
 export const DEFAULT_SYNTHESIS_PROMPT = DEFAULT_SYNTHESIS_GUIDANCE;

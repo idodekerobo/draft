@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadRunResults } from "../metaharness/runs/result-line";
-import { synthesisTriggerType } from "../synthesis/run-spec";
+import { synthesisTriggerType } from "../routines/built-in/synthesis/run-spec";
 import { recordRouteError } from "../errors/route-error";
 import { loadDisplayNames } from "../routes/session-display-names";
 import { routineKind } from "../routines/kind";

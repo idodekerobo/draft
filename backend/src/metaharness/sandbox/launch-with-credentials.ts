@@ -1,7 +1,7 @@
 import { recordError } from "../../errors/record-error";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CODEX_CREDENTIAL_PROVIDER, acquireCodexLease, releaseCodexLease, resolveCodexCredential, saveRefreshedCodexLogin } from "../../credentials/codex-credential";
-import { resolveInferenceCredential } from "../../synthesis/resolve-credential";
+import { resolveInferenceCredential } from "./resolve-credential";
 import { launchSandboxRun, type LaunchSandboxRunInput } from "./launch";
 
 export class RoutineLeaseBusyError extends Error {

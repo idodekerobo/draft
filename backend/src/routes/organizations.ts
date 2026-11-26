@@ -2,7 +2,7 @@ import { z } from "zod";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
 import { slugify, withRandomSuffix } from "../organizations/slug";
-import { createInitialWorkspaceSynthesis } from "../synthesis/register-workspace-synthesis";
+import { createInitialWorkspaceSynthesis } from "../routines/built-in/synthesis/register-workspace-synthesis";
 
 const BodySchema = z.object({ name: z.string().trim().min(1).max(80) });
 

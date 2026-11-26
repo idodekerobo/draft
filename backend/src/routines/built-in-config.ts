@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { HarnessId } from "draft-core/harnesses";
 import { validateAgentRoutineConfig } from "./config";
-import { guidanceOf } from "../synthesis/steps/prompts";
+import { guidanceOf } from "./built-in/synthesis/guidance";
 import { DEFAULT_SUMMARIZATION_PROMPT, DEFAULT_SYNTHESIS_PROMPT } from "./built-in-defaults";
 
 export interface BuiltInRoutineConfig {

@@ -4,7 +4,7 @@ import { loadRunnerManifest } from "../../sandbox/runner/manifest";
 import { validateRunnerManifest } from "draft-core/run-manifest";
 import { buildRunnerManifest, needsDraftToolServer } from "../../metaharness/sandbox/run-manifest";
 import { buildSummarizationRunSpec } from "../../summarization/run-spec";
-import { buildSynthesisRunSpec } from "../../synthesis/run-spec";
+import { buildSynthesisRunSpec } from "../../routines/built-in/synthesis/run-spec";
 
 const WS = "22222222-2222-4222-8222-222222222222";
 const RUN = "11111111-1111-4111-8111-111111111111";

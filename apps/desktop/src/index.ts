@@ -98,7 +98,7 @@ let githubInstallController: AbortController | null = null;
 // Falls back to empty string for OSS builds (no build-config.json).
 const _phKey          = process.env.DRAFT_PH_KEY           ?? "";
 const _phHost         = process.env.DRAFT_PH_HOST          ?? "https://us.i.posthog.com";
-// Mirrors backend's PILOT_RUN_BUNDLE_LIMITS (backend/src/synthesis/load-run-bundle.ts) —
+// Mirrors backend's PILOT_RUN_BUNDLE_LIMITS (backend/src/routines/built-in/synthesis/load-run-bundle.ts) —
 // client-side filtering is a UX nicety; the server re-validates these limits itself.
 const UPLOAD_MAX_FILE_BYTES = 1_000_000;
 const UPLOAD_MAX_TOTAL_BYTES = 10_000_000;

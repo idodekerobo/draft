@@ -3,7 +3,7 @@ import { sumRunUsage, parseRunUsage, type RunUsage } from "draft-core/run-usage"
 import { ACTIVE_AGENT_RUN_STATUSES } from "draft-core/run-spec";
 import { eventsForAdapter } from "../ingestion/harness-lines";
 import { eventLine } from "../routines/run-detail";
-import { stepsOfParent } from "../routine-steps/step-run-spec";
+import { stepsOfParent } from "../routines/workflow/step-run-spec";
 import type { AgentRunRow } from "../types/tables";
 import { loadRoutineTasks, titleOf, viewerMaySee } from "./service";
 

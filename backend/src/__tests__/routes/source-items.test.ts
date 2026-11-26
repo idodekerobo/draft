@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { RunNotAllowedError } from "../../synthesis/check-run-allowed";
-import { WorkspaceRunAlreadyActiveError } from "../../synthesis/prepare-run";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { RunNotAllowedError } from "../../routines/built-in/synthesis/check-run-allowed";
+import { WorkspaceRunAlreadyActiveError } from "../../routines/built-in/synthesis/prepare-run";
 
 const caller = { userId: "user-1", accessToken: "token-1" };
 const workspaceId = "workspace-1";
@@ -123,7 +123,11 @@ process.env.FLY_SANDBOX_IMAGE = `registry.fly.io/app@sha256:${"0".repeat(64)}`;
 process.env.FLY_REGION = "ewr";
 process.env.SANDBOX_CALLBACK_SECRET = "secret";
 process.env.SUPABASE_URL = "https://project.supabase.co";
-mock.module("../../synthesis/orchestrate-run", () => ({
+// Bun replaces a module for every test file in the run, so the real one is put back when this file ends.
+const ORCHESTRATE_RUN = "../../routines/built-in/synthesis/orchestrate-run";
+const realOrchestrateRun = { ...(await import(ORCHESTRATE_RUN)) };
+afterAll(() => { mock.module(ORCHESTRATE_RUN, () => realOrchestrateRun); });
+mock.module(ORCHESTRATE_RUN, () => ({
   launchSynthesisRun: async (options: { workspaceId: string; sourceItemIds: string[] }) => {
     launchCalls.push({ workspaceId: options.workspaceId, sourceItemIds: options.sourceItemIds });
     if (launchOutcome.ok) return { runId: launchOutcome.runId };

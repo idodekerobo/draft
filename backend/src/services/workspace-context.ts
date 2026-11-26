@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkspaceContextVersionRow } from "../types/tables";
 import { recordRouteError } from "../errors/route-error";
-import { resolveMemoryPeriod, type ResolvedMemoryPeriod } from "../synthesis/memory-period";
+import { resolveMemoryPeriod, type ResolvedMemoryPeriod } from "../metaharness/context/memory-period";
 
 export interface WorkspaceContextSnapshot {
   versionId: string;

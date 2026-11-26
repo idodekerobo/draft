@@ -1,12 +1,12 @@
 import { SandboxCallbackRequestError } from "../metaharness/sandbox/callback-request";
 import { loadSandboxDeploymentConfig } from "../metaharness/sandbox/config";
-import { completeSynthesisRunCallback } from "../synthesis/orchestrate-run";
+import { completeSynthesisRunCallback } from "../routines/built-in/synthesis/orchestrate-run";
 import { completeSummarizationRunCallback } from "../summarization/complete-summarization-callback";
 import { completeRoutineRunCallback } from "../routines/complete-routine-callback";
 import { recordError } from "../errors/record-error";
 import { callbackKind } from "./callback-kind";
-import { completeStepRunCallback } from "../routine-steps/complete-step-callback";
-import "../routine-steps/register-workflows";
+import { completeStepRunCallback } from "../routines/workflow/complete-step-callback";
+import "../routines/workflow/register-workflows";
 
 // One callback URL for every kind of run. The x-draft-run-id header is the agent run's id, and the run's
 // kind picks the handler. The URL and the secret stay the same.

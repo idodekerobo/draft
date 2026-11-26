@@ -4,7 +4,7 @@ import { dispatchAgentRoutine } from "../../routines/dispatch-routine";
 import { failStaleRoutineSessions } from "../../routines/fail-stale-routine-sessions";
 import { ROUTINE_STALE_AFTER_MS } from "../../routines/config";
 import { routineWorkflow } from "../../routines/step-workflow";
-import { advanceWorkflow } from "../../routine-steps/advance";
+import { advanceWorkflow } from "../../routines/workflow/advance";
 import type { ScheduledTaskRow, AgentRunRow } from "../../types/tables";
 import { fakeClient, fakeDb, type FakeDb } from "./fake-client";
 

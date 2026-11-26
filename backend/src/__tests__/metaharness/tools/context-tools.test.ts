@@ -3,7 +3,7 @@ import { parseAgentRunId, parseContextVersionId, parseHostId, parseUserId, parse
 import { runCaller, type AnyDraftToolPermission } from "draft-core/tools";
 import { invokeTool, type ToolCallRecord } from "../../../metaharness/tools/invoke-tool";
 import { MAX_CONFLICTED_WRITES } from "../../../metaharness/tools/definitions/context";
-import { sha256 } from "../../../synthesis/context-version-files";
+import { sha256 } from "../../../metaharness/context/context-version-files";
 import { createFakeContextDb } from "../context/fake-context-db";
 import { createDraftToolRegistry } from "../../../metaharness/tools/definitions";
 
