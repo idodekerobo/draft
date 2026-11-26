@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import type { LocalConfig } from "../../../rpc/schema";
 import { events, rpc } from "../../rpc";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
-import { AppearanceRow, ContextExport, DataBoundary, InviteLinkRow, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
+import { AppearanceRow, ContextExport, DataBoundary, InviteLinkRow, ModelProviderPicker, PrivacyRows, THEME_STORAGE_KEY, Toggle, applyTheme, isThemePreference, useOptimisticMutation, useSuspenseQuery, type ThemePreference } from "draft-shared-ui";
 import { ClaudeAgentRow } from "../connections/ClaudeAgentRow";
 import { CodexAgentRow } from "../connections/CodexAgentRow";
 import { ImportFolderRow } from "./ImportFolderRow";
@@ -239,6 +239,12 @@ export function SettingsView({ onOpenFeedback }: SettingsViewProps) {
         <section className="settings__section">
           <h2 className="settings__section-label">Agents</h2>
           <div className="settings__rows">
+            <div className="settings__row">
+              <div className="settings__row-content">
+                <span className="settings__row-label">Draft&apos;s agent</span>
+                <ModelProviderPicker load={() => rpc.request.getModelProvider()} save={(provider) => rpc.request.setModelProvider({ provider })} />
+              </div>
+            </div>
             <ClaudeAgentRow />
             <CodexAgentRow />
           </div>

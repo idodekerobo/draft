@@ -31,4 +31,13 @@ describe("ModelProviderPicker", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Could not save your choice. Try again.");
     expect((screen.getByLabelText("Anthropic") as HTMLInputElement).checked).toBe(true);
   });
+
+  it("loads once, even when its caller passes a new function on every render", async () => {
+    const load = mock(async () => view());
+    const { rerender } = render(<ModelProviderPicker load={() => load()} save={async () => {}} />);
+    await screen.findByLabelText("OpenAI");
+    rerender(<ModelProviderPicker load={() => load()} save={async () => {}} />);
+    rerender(<ModelProviderPicker load={() => load()} save={async () => {}} />);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
 });

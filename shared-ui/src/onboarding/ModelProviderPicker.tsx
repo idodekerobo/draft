@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LabPicker, type LabOption } from "./LabPicker";
 
 export interface ModelProviderView {
@@ -16,13 +16,16 @@ export function ModelProviderPicker({ load, save }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // It loads once. A caller that passes a new function each render must not make it load again.
+  const loadRef = useRef(load);
+  loadRef.current = load;
   useEffect(() => {
     let cancelled = false;
-    load().then((value) => !cancelled && setView(value)).catch(() => {});
+    loadRef.current().then((value) => !cancelled && setView(value)).catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [load]);
+  }, []);
 
   // Without the answer there is nothing true to show, and the step works without it.
   if (!view) return null;

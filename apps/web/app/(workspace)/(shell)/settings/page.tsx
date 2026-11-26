@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AppearanceRow, ContextExport, InviteLinkRow, type InviteLink, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
+import { AppearanceRow, ContextExport, InviteLinkRow, ModelProviderPicker, type InviteLink, PrivacyRows, SettingsRow, THEME_STORAGE_KEY, applyTheme, isThemePreference, type ThemePreference } from "draft-shared-ui";
 import { useAnalytics } from "@/lib/analytics/AnalyticsProvider";
 import { apiFetch } from "@/lib/api";
+import { loadModelProvider, saveModelProvider } from "@/lib/model-provider";
 import { callTool } from "@/lib/tools";
 import { DOWNLOAD_URL } from "@/lib/config";
 import { createClient } from "@/lib/supabase/client";
@@ -74,6 +75,9 @@ export default function SettingsPage() {
           />
         </li>
       </ul>
+
+      <h2 className="ui-group-label">Draft&apos;s agent</h2>
+      <ModelProviderPicker load={() => loadModelProvider(workspaceId)} save={(provider) => saveModelProvider(workspaceId, provider)} />
 
       <h2 className="ui-group-label">Desktop app</h2>
       <ul className="ui-rows">
