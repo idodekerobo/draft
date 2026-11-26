@@ -11,6 +11,8 @@ create table workspaces (
   timezone                      text not null default 'UTC',
   current_context_version_id  uuid,
   inference_credential_id     uuid,
+  -- The AI lab chosen for Draft's own agent. Allowed values live in core/src/model-provider.ts.
+  default_model_provider      text not null default 'anthropic',
   runs_enabled                 boolean not null default true,
   max_runs_per_day             integer check (max_runs_per_day > 0),
   max_cost_usd_per_day         numeric(10, 2),

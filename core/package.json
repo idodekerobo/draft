@@ -10,6 +10,7 @@
     "./exec":                 "./src/exec.ts",
     "./session-failure": "./src/session-failure.ts",
     "./live-sessions":        "./src/live-sessions.ts",
+    "./model-provider":       "./src/model-provider.ts",
     "./harnesses":            "./src/harnesses/index.ts",
     "./harnesses/*":          "./src/harnesses/*.ts",
     "./host/*":               "./src/host/*.ts",

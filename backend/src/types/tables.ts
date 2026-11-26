@@ -82,6 +82,7 @@ export interface WorkspaceRow {
   timezone: string;
   current_context_version_id: string | null;
   inference_credential_id: string | null;
+  default_model_provider: string;
   runs_enabled: boolean;
   max_runs_per_day: number | null;
   max_cost_usd_per_day: string | null;
