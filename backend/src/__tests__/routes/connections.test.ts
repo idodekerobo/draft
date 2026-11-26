@@ -292,6 +292,23 @@ function createFakeClient() {
       return builder;
     },
     async rpc(functionName: string, params: Record<string, unknown>) {
+      if (functionName === "save_harness_credential") {
+        const existing = state.credentials.find((c) => c.workspace_id === params.p_workspace_id && c.provider === params.p_provider);
+        if (existing) {
+          Object.assign(existing, { encrypted_payload: String(params.p_encrypted_payload), status: "active" });
+          return { data: existing.id, error: null };
+        }
+        const credential: Credential = {
+          id: `credential-${state.credentials.length + 1}`,
+          workspace_id: String(params.p_workspace_id),
+          provider: String(params.p_provider),
+          encrypted_payload: String(params.p_encrypted_payload),
+          encryption_key_version: String(params.p_key_version),
+          status: "active",
+        };
+        state.credentials.push(credential);
+        return { data: credential.id, error: null };
+      }
       if (functionName === "rotate_fireflies_connection_credential") {
         if (firefliesRotationError) return { data: null, error: firefliesRotationError };
         const connection = state.connections.find((candidate) =>

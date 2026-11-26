@@ -7,6 +7,8 @@ import {
   decryptCredentialPayload,
   encryptCredentialPayload,
 } from "../credentials/crypto";
+import { claudeCredentialRules } from "../cloud-sessions/claude-credential";
+import { saveCredential } from "../credentials/harness-credential";
 import { resolveProviderCredential } from "../credentials/resolve-provider-credential";
 import { loadConfig } from "../config";
 import { CLAUDE_SESSION_CONNECTION_KEY } from "../ingestion/captured-sessions/constants";
@@ -504,43 +506,11 @@ export const POST = withAuth<ConnectionsRequest>(async (req, caller) => {
     // Workspace-level credential, not a connections row: no live probe,
     // no scheduled task — a bad token surfaces on the first real run via the
     // existing 401/pause/reconnect handling.
-    const encryptedToken = encryptCredentialPayload(body.token, CURRENT_CREDENTIAL_KEY_VERSION);
-
-    const { data: existingCredential, error: existingCredentialError } = await serviceClient
-      .from("credentials")
-      .select("id")
-      .eq("workspace_id", req.params.id)
-      .eq("provider", "claude_code")
-      .maybeSingle();
-    if (existingCredentialError) return errorResponse("credential_lookup_failed", 500, existingCredentialError, req.params.id);
-
     let claudeCodeCredentialId: string;
-    if (existingCredential) {
-      claudeCodeCredentialId = existingCredential.id;
-      const { error: updateError } = await serviceClient
-        .from("credentials")
-        .update({
-          encrypted_payload: encryptedToken,
-          encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
-          status: "active",
-        })
-        .eq("id", claudeCodeCredentialId)
-        .eq("workspace_id", req.params.id);
-      if (updateError) return errorResponse("credential_update_failed", 500, updateError, req.params.id);
-    } else {
-      const { data: insertedCredential, error: insertError } = await serviceClient
-        .from("credentials")
-        .insert({
-          workspace_id: req.params.id,
-          provider: "claude_code",
-          encrypted_payload: encryptedToken,
-          encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
-          status: "active",
-        })
-        .select("id")
-        .single();
-      if (insertError || !insertedCredential) return errorResponse("credential_insert_failed", 500, insertError, req.params.id);
-      claudeCodeCredentialId = insertedCredential.id;
+    try {
+      claudeCodeCredentialId = await saveCredential(serviceClient, req.params.id, claudeCredentialRules, body.token, caller.userId);
+    } catch (error) {
+      return errorResponse("credential_save_failed", 500, error, req.params.id);
     }
 
     const { error: workspacePointerError } = await serviceClient

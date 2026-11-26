@@ -16,6 +16,7 @@ beforeAll(() => {
   process.env.INFERENCE_CREDENTIAL_KEK_V2 = randomBytes(32).toString("base64");
 });
 
+
 const WORKSPACE = "ws-1";
 const chatgpt = (refresh: string, lastRefresh: string) =>
   JSON.stringify({ auth_mode: "chatgpt", OPENAI_API_KEY: null, last_refresh: lastRefresh, tokens: { access_token: "a", refresh_token: refresh } });
@@ -44,6 +45,17 @@ describe.each([
     expect(await resolveCredential(client, WORKSPACE, rules)).toEqual({ credentialId: id, secret });
     expect(await saveCredential(client, WORKSPACE, rules, `${secret}-2`, "user-2")).toBe(id);
     expect(db.tables.credentials).toHaveLength(1);
+  });
+
+  it("gives a re-saved login to the new saver, reactivates it and clears its lease", async () => {
+    const db = fakeDb();
+    const client = fakeClient(db);
+    await saveCredential(client, WORKSPACE, rules, secret, "user-1");
+    Object.assign(db.tables.credentials![0]!, { status: "revoked", lease_run_id: "run-1", lease_expires_at: "2099-01-01T00:00:00Z" });
+
+    await saveCredential(client, WORKSPACE, rules, `${secret}-2`, "user-2");
+    expect(db.tables.credentials).toHaveLength(1);
+    expect(db.tables.credentials![0]).toMatchObject({ created_by_user_id: "user-2", status: "active", lease_run_id: null, lease_expires_at: null });
   });
 
   it("says why there is no login to use", async () => {

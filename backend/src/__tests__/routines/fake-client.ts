@@ -24,7 +24,24 @@ export interface FakeDb {
 }
 
 export function fakeDb(tables: Record<string, Row[]> = {}, extra: Partial<Pick<FakeDb, "unique" | "rpcs" | "uuidTables" | "defaults">> = {}): FakeDb {
-  return { tables, unique: extra.unique ?? {}, rpcs: extra.rpcs ?? {}, rpcCalls: [], uuidTables: extra.uuidTables ?? [], defaults: extra.defaults ?? {} };
+  const db: FakeDb = { tables, unique: extra.unique ?? {}, rpcs: { save_harness_credential: saveHarnessCredential(tables), ...extra.rpcs }, rpcCalls: [], uuidTables: extra.uuidTables ?? [], defaults: extra.defaults ?? {} };
+  return db;
+}
+
+/** What the `save_harness_credential` SQL function does: one row per workspace and provider, reactivated and re-owned on a re-save. */
+function saveHarnessCredential(tables: Record<string, Row[]>): RpcHandler {
+  return (args) => {
+    const rows = (tables.credentials ??= []);
+    const row = rows.find((r) => r.workspace_id === args.p_workspace_id && r.provider === args.p_provider);
+    const values = { encrypted_payload: args.p_encrypted_payload, encryption_key_version: args.p_key_version, status: "active", lease_run_id: null, lease_expires_at: null, created_by_user_id: args.p_user_id };
+    if (row) {
+      Object.assign(row, values);
+      return { data: row.id };
+    }
+    const id = `credentials-${rows.length + 1}`;
+    rows.push({ id, workspace_id: args.p_workspace_id, provider: args.p_provider, ...values });
+    return { data: id };
+  };
 }
 
 class Query implements PromiseLike<{ data: unknown; error: unknown }> {
@@ -147,7 +164,8 @@ export function fakeClient(db: FakeDb): SupabaseClient {
   return {
     from: (table: string) => new Query(db, table),
     rpc: async (name: string, args: Record<string, unknown>) => {
-      db.rpcCalls.push({ name, args });
+      // The credential save is test setup, so the tests that read the lease calls do not see it.
+      if (name !== "save_harness_credential") db.rpcCalls.push({ name, args });
       const handler = db.rpcs[name];
       if (!handler) return { data: null, error: null };
       const { data = null, error = null } = handler(args);

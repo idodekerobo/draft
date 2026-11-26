@@ -35,26 +35,18 @@ export async function credentialStatus(client: SupabaseClient, workspaceId: stri
   return (await loadRow(client, workspaceId, rules))?.status ?? null;
 }
 
-/** Saves a new login for the workspace, replacing an earlier one. Returns the credential id. */
+/** Saves the login for the workspace in one statement, so two saves at once leave one row. Returns the credential id and makes `userId` its owner. */
 export async function saveCredential(client: SupabaseClient, workspaceId: string, rules: CredentialRules, secret: string, userId: string): Promise<string> {
   const encrypted = encryptCredentialPayload(secret, CURRENT_CREDENTIAL_KEY_VERSION);
-  const existing = await loadRow(client, workspaceId, rules);
-  if (existing) {
-    const { error } = await client
-      .from("credentials")
-      .update({ encrypted_payload: encrypted, encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION, status: "active", lease_run_id: null, lease_expires_at: null })
-      .eq("id", existing.id)
-      .eq("workspace_id", workspaceId);
-    if (error) throw error;
-    return existing.id;
-  }
-  const { data, error } = await client
-    .from("credentials")
-    .insert({ workspace_id: workspaceId, provider: rules.provider, encrypted_payload: encrypted, encryption_key_version: CURRENT_CREDENTIAL_KEY_VERSION, status: "active", created_by_user_id: userId })
-    .select("id")
-    .single();
-  if (error || !data) throw error ?? new Error("credential insert returned no row");
-  return (data as { id: string }).id;
+  const { data, error } = await client.rpc("save_harness_credential", {
+    p_workspace_id: workspaceId,
+    p_provider: rules.provider,
+    p_encrypted_payload: encrypted,
+    p_key_version: CURRENT_CREDENTIAL_KEY_VERSION,
+    p_user_id: userId,
+  });
+  if (error || typeof data !== "string") throw error ?? new Error("credential save returned no id");
+  return data;
 }
 
 /** Reads the workspace's login. Throws a `CredentialError` when it is missing, revoked or expired. */
