@@ -94,6 +94,18 @@ only `memory` supports it today. Aliases (`today`, `this-week`, `this-month`,
 and their `last-`/`yesterday` counterparts) resolve using the workspace's
 configured timezone, not your local machine's.
 
+### Exact documents and their history
+
+~~~bash
+draft context read --paths company/about.md,product/index.md
+draft context read --paths company/about.md --history 5
+draft context read --dimension product --version <version-id>
+~~~
+
+`--paths` reads exact documents (up to 50, comma separated) and cannot be combined with `--dimension`, `--all` or `--period`. Add `--history <n>` (1 to 20) to also list the last `n` versions that changed each document, newest first. Each entry shows the version number, when it changed, why, which run changed it and a short summary. A version id from that list goes into `--version` to read the context as it was then. `--history` needs `--paths`.
+
+Use history to see how old a claim in a document is, and which run wrote it.
+
 ## MCP connection
 
 Draft also exposes the same company brain through an OAuth-protected remote MCP server. Register the hosted endpoint in an MCP-compatible agent:

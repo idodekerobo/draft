@@ -8,7 +8,7 @@ Repeating and event routines appear on the Routines tab in the web and desktop a
 
 | Routine | What it does | What you can change |
 | --- | --- | --- |
-| Update company context | Checks for new source material and updates the company context. If nothing is new, no synthesis run starts. | Prompt, agent, model, reasoning, schedule and on/off |
+| Update company context | Checks for new source material and updates the company context in three steps: capture, reconcile and organize. If nothing is new, no synthesis run starts. | Guidance, agent, model, reasoning, schedule and on/off |
 | Summarize coding sessions | Turns newly captured coding sessions into summaries. Sessions already summarized are skipped. | Prompt, agent, model, reasoning, schedule and on/off |
 | Sync Slack | Imports new messages from the connected Slack channels. Pick the channels in Connections. | On/off only |
 
@@ -16,7 +16,19 @@ The prompt and agent settings for Update company context and Summarize coding se
 
 Defaults live in code and are saved in `scheduled_tasks.config_json` when a built-in routine is registered. Existing tasks without saved settings show the defaults and save them on their first run or edit. Registration never overwrites customized settings. The one-time data migration `20261123182812_backfill_builtin_routine_agent_settings.sql` fills missing settings on existing active tasks without changing schedules, paused states or saved customizations.
 
-Each run snapshots its prompt, harness, model and reasoning in its `AgentRunSpec`. Both built-in routines and custom routines use the shared credential-aware sandbox launcher, which derives tools and the execution environment from that spec. Claude Code and Codex support the built-in routines' structured results, including batches of captured sessions. Synthesis has context read/write and all people tools, including approve, reject and notification to active teammates, without a default people-tool call cap. Summarization has no Draft-tool permissions. Codex uses the team's connected login and the same credential lease as other routines; refreshed logins are saved before the lease is released. Edits affect future runs, including automatic and on-demand context updates, and do not change runs already in progress.
+Each run snapshots its prompt, harness, model and reasoning in its `AgentRunSpec`. Both built-in routines and custom routines use the shared credential-aware sandbox launcher, which derives tools and the execution environment from that spec. Claude Code and Codex support the built-in routines' structured results, including batches of captured sessions. Each synthesis step has its own tools: capture reads only, reconcile reads and writes context, and organize also uses the people tools (find, create, update, approve, reject and notification status) without a default call cap. No synthesis step can notify teammates. Summarization has no Draft-tool permissions. Codex uses the team's connected login and the same credential lease as other routines; refreshed logins are saved before the lease is released. Edits affect future runs, including automatic and on-demand context updates, and do not change runs already in progress.
+
+## Steps
+
+A routine can be a list of steps. Each step has its own instructions and model, and starts one or more step runs. Later steps read the results of earlier ones.
+
+**Update company context.** Its text box is called Guidance. Draft adds it to the instructions of every step, so use it to say what matters to your team. The steps, their tools and their default models are fixed: capture uses a small model, and reconcile and organize use a larger one. A model you pick applies to all three. The run view lists the steps (see Activity below).
+
+**Custom routines.** In the routine editor, press **Split into steps** to turn the instructions into a list. Each step has a name, instructions, an optional model, and a choice to run once or once for each context document. A step may use only tools its routine may use. The run's result is the last step's answer, and the session notes show a summary of each step. The CLI and MCP cannot set steps yet; use the editor.
+
+**A failed step.** A step run that fails retries once, or up to three times after a rate limit. If it still fails, the run fails. Work that already landed stays. The run view says where it stopped.
+
+**Run view.** In Activity, a run with steps shows one row and a **View steps** button. The view shows each step's status, its runs, tokens used and documents changed. **Show what it did** opens a step run's transcript.
 
 ## Run something once
 
