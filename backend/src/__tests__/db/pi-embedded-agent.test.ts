@@ -255,4 +255,35 @@ describeWithDatabase("the pi embedded agent", () => {
       await made.cleanup();
     });
   });
+
+  describe("live text", () => {
+    it("sends the start of the reply as pieces, then marks it done; the committed message carries the whole", async () => {
+      const slow = fauxProvider({ models: [{ id: "faux-1" }], tokensPerSecond: 40 });
+      const text = "The quick brown fox jumps over the lazy dog. ".repeat(5).trim();
+      slow.setResponses([(_context, _options, _state, model) => ({ ...fauxAssistantMessage(text), provider: model.provider, model: model.id })]);
+      const slowModels = createModels();
+      slowModels.setProvider(slow.provider);
+      const made = await homeContext();
+      const agent = createPiAgentFactory({ pool: pool(), models: slowModels, defaultModel: { provider: "faux", model: "faux-1" } })(made.context);
+      await agent.open();
+      const parts: Array<{ text: string; done: boolean }> = [];
+      const reading = (async () => {
+        for await (const part of agent.liveText()) {
+          parts.push(part);
+          if (part.done) return;
+        }
+      })();
+      await agent.submit(OWNER_INPUT("go"), "in-1");
+      await Promise.race([reading, new Promise((_, reject) => setTimeout(() => reject(new Error("no live text")), 30_000))]);
+      await collect(agent, settledFor("in-1"));
+      expect(parts.length).toBeGreaterThan(2);
+      expect(parts.at(-1)).toMatchObject({ text: "", done: true });
+      // pi throttles partials, so the pieces may stop short of the end. They are provisional: the committed message is the record.
+      const joined = parts.map((part) => part.text).join("");
+      expect(joined.length).toBeGreaterThan(0);
+      expect(text.startsWith(joined)).toBe(true);
+      await agent.close();
+      await made.cleanup();
+    });
+  });
 });

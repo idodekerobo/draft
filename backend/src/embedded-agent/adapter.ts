@@ -60,7 +60,7 @@ export interface LiveTextPart {
   requestId: string;
   /** Only the text added since the last part. */
   text: string;
-  /** The reply is finished; no more parts follow for it. */
+  /** The reply is finished; no more parts follow for it. The parts may stop short of its end: the committed message is the whole. */
   done: boolean;
 }
 
