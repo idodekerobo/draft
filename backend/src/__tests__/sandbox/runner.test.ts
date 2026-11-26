@@ -14,6 +14,9 @@ import { parseTimeoutSeconds, loadRunnerManifest } from "../../sandbox/runner/ma
 import { harnessCommand } from "../../sandbox/runner/process";
 import { parseRunnerManifest, validateRunnerManifest, type RunnerManifest } from "draft-core/run-manifest";
 import { routineFailureCode, StreamLineReader } from "../../sandbox/runner/stream";
+import { UsageCollector } from "../../sandbox/runner/usage";
+import { claudeRunner } from "draft-core/harnesses/claude/runner";
+import { codexRunner } from "draft-core/harnesses/codex/runner";
 import { sanitizeReason } from "../../sandbox/runner/log";
 
 const CALLBACK = "https://api.example.com/sandbox/callback";
@@ -480,6 +483,55 @@ describe("callback retries", () => {
   });
 });
 
+describe("usage in the callback", () => {
+  const usage = { inputTokens: 10, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 0, costUsd: 0.01 };
+  const sentBody = async (extra?: RunUsageArg): Promise<Record<string, unknown>> => {
+    let body: Record<string, unknown> = {};
+    await withFetch(
+      (_url, init) => {
+        body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return new Response(null, { status: 204 });
+      },
+      () => callback("https://x.test/cb", "t", "run-1", "b".repeat(64), { ok: true }, undefined, NO_DELAYS, undefined, extra),
+    );
+    return body;
+  };
+  type RunUsageArg = typeof usage | null;
+
+  test("is sent when the run has usage", async () => {
+    expect((await sentBody(usage)).usage).toEqual(usage);
+  });
+
+  test("is left out when the run has none", async () => {
+    expect("usage" in (await sentBody(null))).toBe(false);
+    expect("usage" in (await sentBody(undefined))).toBe(false);
+  });
+});
+
+describe("UsageCollector", () => {
+  const claudeResult = JSON.stringify({ type: "result", total_cost_usd: 0.5, usage: { input_tokens: 4, output_tokens: 6, cache_read_input_tokens: 8, cache_creation_input_tokens: 2 } });
+
+  test("takes usage from the result line of a Claude run's output", () => {
+    const collector = new UsageCollector(claudeRunner);
+    collector.addOutput(`${JSON.stringify({ type: "assistant" })}\nnot json\n${claudeResult}\n`);
+    expect(collector.total()).toEqual({ inputTokens: 4, outputTokens: 6, cacheReadTokens: 8, cacheWriteTokens: 2, costUsd: 0.5 });
+  });
+
+  test("adds up the turns of a Codex run, with no cost", () => {
+    const turn = JSON.stringify({ type: "turn.completed", usage: { input_tokens: 100, cached_input_tokens: 40, output_tokens: 5 } });
+    const collector = new UsageCollector(codexRunner);
+    collector.addLine(turn);
+    collector.addLine(turn);
+    expect(collector.total()).toEqual({ inputTokens: 120, outputTokens: 10, cacheReadTokens: 80, cacheWriteTokens: 0, costUsd: null });
+  });
+
+  test("is null when no line reported usage", () => {
+    const collector = new UsageCollector(codexRunner);
+    collector.addOutput(`${JSON.stringify({ type: "thread.started" })}\n`);
+    expect(collector.total()).toBeNull();
+  });
+});
+
 describe("runBatch", () => {
   test("a session that throws becomes a failed item and the others still report", async () => {
     const bundleRoot = mkdtempSync(join(tmpdir(), "draft-batch-"));
@@ -539,6 +591,44 @@ describe("runBatch", () => {
         { sessionId: "b", ok: true, payload: { who: "ido" } },
       ],
     });
+  });
+
+  test("reports the usage of all its items added up", async () => {
+    const bundleRoot = mkdtempSync(join(tmpdir(), "draft-batch-usage-"));
+    const inputRoot = join(bundleRoot, "input");
+    for (const id of ["a", "b", "c"]) {
+      mkdirSync(join(inputRoot, "sessions", id), { recursive: true });
+      writeFileSync(join(inputRoot, "sessions", id, "prompt.md"), `prompt ${id}`);
+    }
+    const manifestPath = join(inputRoot, "manifest.json");
+    writeFileSync(manifestPath, JSON.stringify(["a", "b", "c"].map((id) => ({ id, promptPath: `input/sessions/${id}/prompt.md` }))));
+
+    const one = { inputTokens: 10, outputTokens: 2, cacheReadTokens: 1, cacheWriteTokens: 0, costUsd: 0.25 };
+    let reported: { usage?: unknown } | undefined;
+    let call = 0;
+    await runBatch(
+      {
+        manifest: manifestOf({ output: structured, prompt: { kind: "items", manifestPath } }),
+        runId: "run-1",
+        bundleHash: "c".repeat(64),
+        manifestPath,
+        serializedSchema: "{}",
+        inputRoot,
+        bundleRoot,
+        timeoutMs: 1_000,
+        callbackUrl: "https://x.test/cb",
+        callbackToken: "tok",
+      },
+      {
+        // The third item reports no usage, as a run that stopped early would.
+        runStructured: (async () => ({ success: true, finalResult: {}, usage: (call += 1) < 3 ? one : null })) as never,
+        reportAndExit: (async (input: { usage?: unknown }) => {
+          reported = input;
+        }) as never,
+      },
+    );
+
+    expect(reported?.usage).toEqual({ inputTokens: 20, outputTokens: 4, cacheReadTokens: 2, cacheWriteTokens: 0, costUsd: 0.5 });
   });
 });
 

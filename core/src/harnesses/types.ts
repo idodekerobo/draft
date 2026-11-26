@@ -1,4 +1,5 @@
 import type { ReasoningEffort, RunnerManifest } from "../run-manifest";
+import type { RunUsage } from "../run-usage";
 import type { AdapterDefinition } from "./adapter-types";
 
 export { REASONING_EFFORTS, type ReasoningEffort } from "../run-manifest";
@@ -128,6 +129,8 @@ export interface RunnerSide {
   failureCodes: { error: RunnerFailureCode; exit: RunnerFailureCode };
   /** The result the harness prints as one output line, or null when the line is not the result. */
   resultOfLine(raw: string): { is_error?: boolean; subtype?: string } | null;
+  /** The usage this output line reports, or null when the line reports none. A run adds up its lines. */
+  usageOfLine(raw: string): RunUsage | null;
   /** The login the harness may have refreshed during the run, or undefined. */
   refreshedLogin(): string | undefined;
   /** Null when the harness cannot give one structured result. */

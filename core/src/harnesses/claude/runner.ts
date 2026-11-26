@@ -1,5 +1,6 @@
 import { classifyFailureChunk } from "../failure";
 import type { RunnerManifest } from "../../run-manifest";
+import { parseRunUsage, type RunUsage } from "../../run-usage";
 import type { FailureCategory, RunnerSide, StructuredResult } from "../types";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -134,6 +135,28 @@ export function parseStreamJsonTranscript(raw: string): unknown[] {
   return messages;
 }
 
+/**
+ * The usage on Claude's final `result` line. Its token counts cover the whole run, and `input_tokens`
+ * leaves out cache reads and writes, which have their own fields.
+ */
+export function claudeUsageOfLine(raw: string): RunUsage | null {
+  if (!raw.includes('"type":"result"')) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isObject(parsed) || parsed.type !== "result" || !isObject(parsed.usage)) return null;
+    const usage = parsed.usage;
+    return parseRunUsage({
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
+      costUsd: typeof parsed.total_cost_usd === "number" ? parsed.total_cost_usd : null,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export const claudeRunner: RunnerSide = {
   command: (manifest, prompt, schemaText, env) => ({
     argv: ["claude", ...claudeArgs(manifest, prompt, schemaText)],
@@ -153,6 +176,7 @@ export const claudeRunner: RunnerSide = {
     } catch { /* a partial line is not the result */ }
     return null;
   },
+  usageOfLine: claudeUsageOfLine,
   refreshedLogin: () => undefined,
   structured: {
     completed: (stdout) => parseCompletedClaudeEnvelope(stdout) as StructuredResult | null,

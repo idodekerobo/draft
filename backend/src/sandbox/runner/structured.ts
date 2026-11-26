@@ -2,10 +2,12 @@ import { createWriteStream } from "node:fs";
 import { classifyFailureChunk } from "draft-core/harnesses/failure";
 import type { FailureCategory, RunnerFailureCode, StructuredResult } from "draft-core/harnesses/types";
 import type { RunnerManifest } from "draft-core/run-manifest";
+import type { RunUsage } from "draft-core/run-usage";
 import { buildFailureDiagnostics, type FinalDiagnosticInput } from "./failure";
 import { runnerLog } from "./log";
 import { runHarness } from "./process";
 import { runnerSideFor } from "./sides";
+import { UsageCollector } from "./usage";
 
 const SCRATCH_STDOUT_PATH = "/run/scratch/claude.stdout.json";
 const MAX_CAPTURE_BYTES = 16 * 1024 * 1024;
@@ -16,6 +18,8 @@ export interface StructuredRunResult {
   failureCode: RunnerFailureCode | "none";
   diagnostics: FinalDiagnosticInput;
   transcript: unknown[];
+  /** What the harness reported for this run, or null when it reported none. */
+  usage: RunUsage | null;
 }
 
 // scratchStdoutPath must be unique per invocation within a run -- it's
@@ -103,11 +107,15 @@ export async function runStructured(
         stderr,
       };
 
+  const usage = new UsageCollector(side);
+  usage.addOutput(stdout);
+
   return {
     success,
     finalResult,
     failureCode: failure?.failureCode ?? "none",
     diagnostics: diagnosticsInput,
     transcript: reader.transcript(stdout),
+    usage: usage.total(),
   };
 }

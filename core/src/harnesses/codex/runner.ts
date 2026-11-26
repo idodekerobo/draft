@@ -1,5 +1,6 @@
 import { chownSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { RunnerManifest } from "../../run-manifest";
+import { parseRunUsage, type RunUsage } from "../../run-usage";
 import type { RunnerSide, StructuredResult } from "../types";
 
 const AGENT_UID = 1000;
@@ -102,6 +103,31 @@ export function parseCodexResultLine(raw: string): { is_error: boolean; subtype:
   return null;
 }
 
+/**
+ * The usage on a `turn.completed` line. Codex counts cached tokens inside `input_tokens`, so they are taken out
+ * to match Claude, where input leaves out the cache. It reports no cost.
+ */
+export function codexUsageOfLine(raw: string): RunUsage | null {
+  if (!raw.includes('"type":"turn.completed"')) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isObject(parsed) || parsed.type !== "turn.completed" || !isObject(parsed.usage)) return null;
+    const usage = parsed.usage;
+    const input = usage.input_tokens;
+    const cachedRead = usage.cached_input_tokens ?? 0;
+    if (typeof input !== "number" || typeof cachedRead !== "number") return null;
+    return parseRunUsage({
+      inputTokens: Math.max(0, input - cachedRead),
+      outputTokens: usage.output_tokens,
+      cacheReadTokens: cachedRead,
+      cacheWriteTokens: usage.cache_write_input_tokens ?? 0,
+      costUsd: null,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export const codexRunner: RunnerSide = {
   command: (manifest, prompt, _schemaText, env) => ({
     argv: ["codex", ...codexArgs(manifest)],
@@ -117,6 +143,7 @@ export const codexRunner: RunnerSide = {
   startedFields: () => ({ sandbox: "workspace-write" }),
   failureCodes: { error: "codex_error", exit: "codex_exit" },
   resultOfLine: parseCodexResultLine,
+  usageOfLine: codexUsageOfLine,
   refreshedLogin: readCodexAuth,
   structured: {
     completed: completedCodexResult,

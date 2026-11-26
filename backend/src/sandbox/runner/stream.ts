@@ -2,9 +2,11 @@ import { StringDecoder } from "node:string_decoder";
 import { classifyFailureChunk } from "draft-core/harnesses/failure";
 import type { FailureCategory, RunnerFailureCode } from "draft-core/harnesses/types";
 import type { RunnerManifest } from "draft-core/run-manifest";
+import type { RunUsage } from "draft-core/run-usage";
 import { runnerLog, sanitizeReason } from "./log";
 import { runHarness } from "./process";
 import { runnerSideFor } from "./sides";
+import { UsageCollector } from "./usage";
 
 // Routine runs stream every stream-json line to the backend as it appears, so
 // the session view fills in while the run is going.
@@ -58,6 +60,8 @@ export interface RoutineEnd {
   diagnostics?: Record<string, unknown>;
   /** A Codex run sends back its login file, which Codex may have refreshed. */
   auth_json?: string;
+  /** What the harness reported for the run. The backend saves it on the run. */
+  usage?: RunUsage;
 }
 
 export type RoutinePost = (result: unknown) => Promise<void>;
@@ -85,6 +89,7 @@ export async function runStream(
   const { StringDecoder } = await import("node:string_decoder");
   const side = runnerSideFor(manifest.harness);
   const reader = new StreamLineReader();
+  const usageCollector = new UsageCollector(side);
   const decoder = new StringDecoder("utf8");
   let queue: RoutineLine[] = [];
   let queuedBytes = 0;
@@ -112,6 +117,7 @@ export async function runStream(
       if ("raw" in line) {
         queuedBytes += Buffer.byteLength(line.raw);
         resultLine = side.resultOfLine(line.raw) ?? resultLine;
+        usageCollector.addLine(line.raw);
         const nativeSessionId = nativeSessionFound ? null : side.sessionFile.nativeSessionIdOfLine(line.raw);
         if (nativeSessionId !== null) {
           nativeSessionFound = true;
@@ -154,7 +160,8 @@ export async function runStream(
     failure_category: failureCategory,
     failure_code: error ?? "none",
   });
-  const refreshed = authJson ? { auth_json: authJson } : {};
+  const reported = usageCollector.total();
+  const refreshed = { ...(authJson ? { auth_json: authJson } : {}), ...(reported ? { usage: reported } : {}) };
   return ok
     ? { kind: "end", ok: true, ...refreshed }
     : {
