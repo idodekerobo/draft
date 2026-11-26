@@ -1,5 +1,7 @@
 -- Marks sessions whose host has not sent a heartbeat for p_stale_after as host_offline.
 -- Routine sessions are skipped: they send no heartbeat, and the tick fails them on a timeout.
+-- An embedded agent's session (execution target backend, such as Home) is skipped: no host sends a heartbeat for it, and its
+-- liveness is its owner claim. It is picked out by its target, never by a list of run kinds to leave out.
 -- The scheduler tick calls it. The same host's next heartbeat or append sets the session back to live.
 create or replace function sweep_stale_sessions(p_stale_after interval default interval '60 seconds')
 returns integer
@@ -14,6 +16,7 @@ begin
   set status = 'host_offline'
   where status in ('starting', 'live')
     and session_type = 'interactive'
+    and execution_target is distinct from 'backend'
     and last_seen < now() - p_stale_after;
 
   get diagnostics v_count = row_count;

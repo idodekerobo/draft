@@ -33,11 +33,12 @@ describe("adapter registry", () => {
     expect(adapterSupportsTarget(requireAdapter("claude-terminal"), "backend")).toBe(false);
   });
 
-  it("registers the Home adapter for the backend target, without a launcher", () => {
+  it("registers the Home adapter for the backend target only, with approvals and steering", () => {
     const pi = requireAdapter("pi-durable-sdk");
     expect(pi.targets).toEqual(["backend"]);
     expect(pi.eventPath).toBe("events");
-    expect(pi.launchable).toBe(false);
+    expect(pi.launchable).toBe(true);
+    expect(pi.capabilities).toMatchObject({ approvals: true, steer: true, terminal: false });
     expect(ADAPTERS.filter((adapter) => adapter.id !== "pi-durable-sdk").every((adapter) => adapter.launchable && adapter.eventPath === "lines")).toBe(true);
   });
 

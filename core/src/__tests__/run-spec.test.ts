@@ -131,9 +131,9 @@ describe("execution combinations", () => {
     expect(pi({ type: "sandbox" }, sandboxPolicy)).toContain("cannot run on a sandbox target");
   });
 
-  it("names the adapter that cannot be launched yet, and nothing for one that can", () => {
+  it("names the adapter that cannot be launched, and nothing for one that can", () => {
     const backend = { type: "backend", packageVersion: "1.0.0" } as const;
-    expect(launchProblem({ harness: "pi" as never, execution: { target: backend, adapterId: "pi-durable-sdk" }, computer: sandboxPolicy })).toBe("Adapter pi-durable-sdk cannot be launched yet");
+    expect(launchProblem({ harness: "pi" as never, execution: { target: backend, adapterId: "pi-durable-sdk" }, computer: sandboxPolicy })).toBeNull();
     expect(launchProblem({ harness: "claude", execution: sandboxExecution("claude-print"), computer: sandboxPolicy })).toBeNull();
     expect(launchProblem({ harness: "claude", execution: sandboxExecution("codex-exec"), computer: sandboxPolicy })).toContain("does not run harness claude");
   });

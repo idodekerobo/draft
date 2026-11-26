@@ -154,7 +154,8 @@ export async function saveAgentRunSpec(client: SupabaseClient, spec: AgentRunSpe
 /** Turns a saved row back into the spec. Throws if the row holds something the spec does not allow. */
 export function specFromRow(row: AgentRunRow): AgentRunSpec {
   if (!(AGENT_RUN_KINDS as ReadonlyArray<string>).includes(row.kind)) throw new Error(`Unknown run kind: ${row.kind}`);
-  if (!isHarnessId(row.harness)) throw new Error(`Unknown harness: ${row.harness}`);
+  // pi runs Home in Draft's backend and is not a harness a person can pick, so it has no HarnessId.
+  if (!isHarnessId(row.harness) && row.harness !== "pi") throw new Error(`Unknown harness: ${row.harness}`);
   const continuation = row.continuation == null ? undefined : continuationSchema.parse(row.continuation);
   return {
     id: parseAgentRunId(row.id),
@@ -166,7 +167,7 @@ export function specFromRow(row: AgentRunRow): AgentRunSpec {
     toolset: toolsetSchema.parse(row.toolset),
     computer: computerSchema.parse(row.computer),
     ...(continuation ? { continuation } : {}),
-    harness: row.harness,
+    harness: row.harness as HarnessId,
     model: row.model,
     reasoningEffort: row.reasoning_effort ?? null,
     instructions: row.instructions,

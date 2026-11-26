@@ -38,6 +38,7 @@ import * as sourceItems from "./source-items";
 import * as synthesisRuns from "./synthesis-runs";
 import * as runDetail from "./run-detail";
 import * as whoami from "./whoami";
+import * as homeSession from "./home-session";
 import * as workspaceModelProvider from "./workspace-model-provider";
 import * as waitlist from "./waitlist";
 import * as workspaceContextExport from "./workspace-context-export";
@@ -61,6 +62,7 @@ export const routes = {
   "/workspaces/:id/tools/:name": { POST: withCors(userTools.toolPOST), OPTIONS },
   "/context-exports/:token": { GET: workspaceContextExport.redeemGET },
   "/workspaces/:id/connections": { GET: withCors(connections.GET), POST: withCors(connections.POST), OPTIONS },
+  "/workspaces/:id/home/session": { GET: withCors(homeSession.GET), OPTIONS },
   "/workspaces/:id/model-provider": { GET: withCors(workspaceModelProvider.GET), PUT: withCors(workspaceModelProvider.PUT), OPTIONS },
   "/workspaces/:id/codex-credential": { GET: withCors(codexCredential.GET), PUT: withCors(codexCredential.PUT), OPTIONS },
   "/workspaces/:id/connections/:provider": { PATCH: withCors(connections.PATCH), DELETE: withCors(connections.DELETE), OPTIONS },

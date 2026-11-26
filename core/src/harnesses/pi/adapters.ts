@@ -1,15 +1,15 @@
 import type { AdapterDefinition } from "../adapter-types";
 
-/** Registered so a spec can name it. There is no launcher: Home's runtime adds one. */
+/** Home's adapter. Draft's backend launches it in process (`backend/src/home/runtime/host.ts`); no other launcher takes a backend target. */
 export const piAdapters = [
   {
     id: "pi-durable-sdk",
     harness: "pi",
     kind: "interactive",
     targets: ["backend"],
-    capabilities: { terminal: false, approvals: false, steer: false, rawUpload: false },
+    capabilities: { terminal: false, approvals: true, steer: true, rawUpload: false },
     eventPath: "events",
-    launchable: false,
+    launchable: true,
     nativeTools: [],
     cloudNativeTools: [],
   },
