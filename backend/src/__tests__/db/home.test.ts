@@ -1,3 +1,4 @@
+import { readdir } from "node:fs/promises";
 import { afterEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { setupDbIntegrationTest } from "./support";
@@ -186,7 +187,9 @@ describeWithDatabase("workspace event backfill", () => {
     await db()`select append_workspace_event(${workspaceId}, 'source_items_added', 'Team lunch', null, ${connection.id})`;
 
     // The backfill is the update statement of the migration, run again over the rows above.
-    const migration = await Bun.file(new URL("../../../../supabase/migrations/20261125001116_workspace_event_visibility.sql", import.meta.url)).text();
+    const migrations = new URL("../../../../supabase/migrations/", import.meta.url);
+    const file = (await readdir(migrations)).find((name) => name.endsWith("_workspace_event_visibility.sql"));
+    const migration = await Bun.file(new URL(file!, migrations)).text();
     const backfill = migration.slice(migration.indexOf("update workspace_events e")).trim();
     await db().unsafe(backfill);
 
