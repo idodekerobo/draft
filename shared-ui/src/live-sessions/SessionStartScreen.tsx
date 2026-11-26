@@ -2,7 +2,7 @@
 
 import { DEFAULT_HARNESS_ID, HARNESSES, getHarness, harnessModes, type HarnessId } from "draft-core/harnesses";
 import { ModeMenu } from "./ModeMenu";
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type SetStateAction, type Dispatch } from "react";
 import { SectionedPicker } from "../controls/SectionedPicker";
 import { clearDraft, NEW_SESSION_DRAFT_KEY, useDraft } from "./drafts";
 import { agentPickerSections, agentSummary } from "../controls/agent-picker";
@@ -97,6 +97,20 @@ const SOURCES = [
 
 type Source = (typeof SOURCES)[number]["value"];
 
+const startValues = new Map<string, unknown>();
+
+function useStartValue<T>(key: string, initial: T): [T, Dispatch<SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => startValues.has(key) ? startValues.get(key) as T : initial);
+  const update: Dispatch<SetStateAction<T>> = (next) => {
+    setValue((previous) => {
+      const value = typeof next === "function" ? (next as (previous: T) => T)(previous) : next;
+      startValues.set(key, value);
+      return value;
+    });
+  };
+  return [value, update];
+}
+
 /** A start that failed, and the part of the screen it belongs to. */
 type Failure = { field: CloudStartField; message: string };
 
@@ -188,22 +202,22 @@ export function SessionStartScreen({
   /** `progress` names the step a slow start is on, such as copying a folder. */
   onStart: (request: StartRequest, progress?: (step: string) => void) => Promise<StartResult>;
 }) {
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [chosen, setChosen] = useStartValue<string | null>("chosen", null);
   const [text, setText] = useDraft(NEW_SESSION_DRAFT_KEY);
-  const [harness, setHarness] = useState<HarnessId>(DEFAULT_HARNESS_ID);
-  const [model, setModel] = useState<string | null>(null);
-  const [effort, setEffort] = useState<string | null>(null);
-  const [modeChoices, setModeChoices] = useState<Record<string, { permissionMode?: string; approvalMode?: string }>>({});
-  const [runtime, setRuntime] = useState<Runtime>("local");
-  const [source, setSource] = useState<Source>("repo");
-  const [repo, setRepo] = useState("");
-  const [branch, setBranch] = useState("main");
-  const [openNetwork, setOpenNetwork] = useState(false);
+  const [harness, setHarness] = useStartValue<HarnessId>("harness", DEFAULT_HARNESS_ID);
+  const [model, setModel] = useStartValue<string | null>("model", null);
+  const [effort, setEffort] = useStartValue<string | null>("effort", null);
+  const [modeChoices, setModeChoices] = useStartValue<Record<string, { permissionMode?: string; approvalMode?: string }>>("modeChoices", {});
+  const [runtime, setRuntime] = useStartValue<Runtime>("runtime", "local");
+  const [source, setSource] = useStartValue<Source>("source", "repo");
+  const [repo, setRepo] = useStartValue("repo", "");
+  const [branch, setBranch] = useStartValue("branch", "main");
+  const [openNetwork, setOpenNetwork] = useStartValue("openNetwork", false);
   const [envFiles, setEnvFiles] = useState<string[] | null>(null);
   const [envError, setEnvError] = useState<string | null>(null);
-  const [includeEnv, setIncludeEnv] = useState<string[]>([]);
+  const [includeEnv, setIncludeEnv] = useStartValue<string[]>("includeEnv", []);
   const [size, setSize] = useState<{ bytes: number; fileCount: number } | null>(null);
-  const repoEdited = useRef(false);
+  const repoEdited = useRef(startValues.get("repoEdited") === true);
   const [starting, setStarting] = useState(false);
   const [step, setStep] = useState<string | null>(null);
   const [copyStartedAt, setCopyStartedAt] = useState<string | null>(null);
@@ -211,7 +225,7 @@ export function SessionStartScreen({
   const [recentRepos, setRecentRepos] = useState<string[]>(() => loadRecentRepos());
   const [suggested, setSuggested] = useState<string | null>(null);
   const [branchOptions, setBranchOptions] = useState<string[]>([]);
-  const branchEdited = useRef(false);
+  const branchEdited = useRef(startValues.get("branchEdited") === true);
   const [failure, setFailure] = useState<Failure | null>(null);
   const { open, setOpen, rootRef, triggerRef } = usePopover();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -306,7 +320,10 @@ export function SessionStartScreen({
   useEffect(() => {
     setEnvFiles(null);
     setEnvError(null);
-    setIncludeEnv([]);
+    if (startValues.get("envFolder") !== folder) {
+      startValues.set("envFolder", folder);
+      setIncludeEnv([]);
+    }
     if (!snapshotOn || !folder || !envFilesOf) return;
     let current = true;
     envFilesOf(folder)
@@ -498,7 +515,7 @@ export function SessionStartScreen({
                       list={ids.repoList}
                       aria-invalid={repoShown ? true : undefined}
                       aria-describedby={repoShown ? ids.repoError : repoHint ? ids.repoHint : undefined}
-                      onChange={(event) => { repoEdited.current = true; setFailure(null); setRepo(event.target.value); }}
+                      onChange={(event) => { repoEdited.current = true; startValues.set("repoEdited", true); setFailure(null); setRepo(event.target.value); }}
                     />
                     <span aria-hidden="true">▾</span>
                   </span>
@@ -518,7 +535,7 @@ export function SessionStartScreen({
                       aria-invalid={branchShown ? true : undefined}
                       aria-describedby={branchShown ? ids.branchError : undefined}
                       list={branchOptions.length > 0 ? ids.branchList : undefined}
-                      onChange={(event) => { branchEdited.current = true; setFailure(null); setBranch(event.target.value); }}
+                      onChange={(event) => { branchEdited.current = true; startValues.set("branchEdited", true); setFailure(null); setBranch(event.target.value); }}
                     />
                     <span aria-hidden="true">▾</span>
                   </span>
