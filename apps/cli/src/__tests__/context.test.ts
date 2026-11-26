@@ -267,3 +267,76 @@ describe("draft context read --period", () => {
     expect(JSON.parse(result.stdout)).toMatchObject({ status: "error", code: "invalid_period" });
   });
 });
+
+describe("draft context read --paths", () => {
+  const change = (versionNumber: number, summary: string) => ({
+    versionId: `00000000-0000-4000-8000-${String(versionNumber).padStart(12, "0")}`,
+    versionNumber,
+    createdAt: "2026-11-01T00:00:00.000Z",
+    creationReason: "agent_write",
+    agentRunId: versionNumber === 3 ? "11111111-1111-4111-8111-111111111111" : null,
+    summary,
+  });
+  const answer = (sent: unknown[]) => (input: unknown) => {
+    sent.push(input);
+    return {
+      versionId: "v3", versionNumber: 3, contentHash: "h", creationReason: "agent_write", createdAt: "2026-11-02T00:00:00.000Z",
+      documents: [{ path: "company/about.md", content: "About us", sha256: "s".repeat(64) }],
+      history: [{ path: "company/about.md", changes: [change(3, "reconcile about"), change(1, "seed")] }],
+      missing: ["nope.md"],
+    };
+  };
+
+  test("sends the paths, the history count and the version to the tool", async () => {
+    const sent: unknown[] = [];
+    backend.state.toolOutputs["context.read"] = answer(sent);
+    const result = await runCli(["context", "read", "--paths", "company/about.md,nope.md", "--history", "2", "--version", "00000000-0000-4000-8000-000000000003", "--json"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(sent).toEqual([expect.objectContaining({ paths: ["company/about.md", "nope.md"], history: 2, versionId: "00000000-0000-4000-8000-000000000003" })]);
+  });
+
+  test("JSON mode gives the documents, the history and what is missing", async () => {
+    backend.state.toolOutputs["context.read"] = answer([]);
+    const result = await runCli(["context", "read", "--paths", "company/about.md", "--history", "2", "--json"], { home, apiUrl: backend.url });
+    const body = JSON.parse(result.stdout);
+    expect(body.documents).toEqual([{ path: "company/about.md", content: "About us", sha256: "s".repeat(64) }]);
+    expect(body.history[0].changes.map((entry: { versionNumber: number }) => entry.versionNumber)).toEqual([3, 1]);
+    expect(body.missing).toEqual(["nope.md"]);
+  });
+
+  test("human mode prints the document, then each history entry with its run", async () => {
+    backend.state.toolOutputs["context.read"] = answer([]);
+    const result = await runCli(["context", "read", "--paths", "company/about.md", "--history", "2"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("About us");
+    expect(result.stdout).toContain("History of company/about.md:");
+    expect(result.stdout).toContain("v3 2026-11-01T00:00:00.000Z agent_write by run 11111111-1111-4111-8111-111111111111");
+    expect(result.stdout).toContain("v1 2026-11-01T00:00:00.000Z agent_write");
+  });
+
+  test("--history without --paths is invalid usage", async () => {
+    const result = await runCli(["context", "read", "--dimension", "product", "--history", "3"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("--history requires --paths");
+  });
+
+  test("--paths cannot be mixed with a dimension, and the numbers and ids are checked", async () => {
+    for (const bad of [
+      ["--paths", "a.md", "--dimension", "product"],
+      ["--paths", "a.md", "--history", "0"],
+      ["--paths", "a.md", "--history", "21"],
+      ["--paths", "a.md", "--version", "not-an-id"],
+      ["--paths"],
+    ]) {
+      const result = await runCli(["context", "read", ...bad], { home, apiUrl: backend.url });
+      expect(result.exitCode).toBe(2);
+    }
+  });
+
+  test("a refused version is reported", async () => {
+    backend.state.toolOutputs["context.read"] = () => ({ __refusal: { code: "version_not_found", message: "No such version" } });
+    const result = await runCli(["context", "read", "--paths", "a.md", "--version", "00000000-0000-4000-8000-000000000009"], { home, apiUrl: backend.url });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("No context version with that id");
+  });
+});

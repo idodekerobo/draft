@@ -30,6 +30,7 @@ export function printHelp(): void {
     ["context read --dimension <name>", "Print one or more context dimensions"],
     ["context read --all",         "Print every context dimension"],
     ["context read --dimension memory --period <today|this-week|...>", "Print one memory period (day/week/month)"],
+    ["context read --paths <a.md,b.md> [--history <n>] [--version <id>]", "Print exact documents, and the last n versions that changed each"],
     ["context export [--out <dir>|--zip <file>]", "Export the full context as markdown files (--force to overwrite)"],
     ["people find [name] [--me]",  "Find the people in the workspace"],
     ["people create <name>",       "Add a teammate (an admin approves them)"],

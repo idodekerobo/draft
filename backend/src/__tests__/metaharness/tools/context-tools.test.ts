@@ -68,6 +68,68 @@ describe("context.read", () => {
   });
 });
 
+describe("context.read history and versions", () => {
+  const change = (versionNumber: number, summary: string) => ({
+    version_id: `00000000-0000-4000-8000-${String(versionNumber).padStart(12, "0")}`,
+    version_number: versionNumber,
+    created_at: "2026-11-09T00:00:00.000Z",
+    creation_reason: "agent_write",
+    agent_run_id: null,
+    summary,
+  });
+
+  it("returns the recent changes of each requested document, newest first", async () => {
+    const { call, db } = setup({ "company/about.md": "About" }, [{ tool: "context.read" }]);
+    db.setHistory("company/about.md", [change(3, "reconcile"), change(1, "seed")]);
+    const result = await call("context.read", { paths: ["company/about.md"], history: 5 });
+    const output = (result as { output: { history: Array<{ path: string; changes: Array<{ versionNumber: number; summary: string; agentRunId: string | null }> }> } }).output;
+    expect(output.history).toEqual([{ path: "company/about.md", changes: [expect.objectContaining({ versionNumber: 3, summary: "reconcile", agentRunId: null }), expect.objectContaining({ versionNumber: 1, summary: "seed" })] }]);
+    expect(db.historyCalls).toEqual([expect.objectContaining({ p_path: "company/about.md", p_limit: 5 })]);
+  });
+
+  it("limits the changes to the number asked for", async () => {
+    const { call, db } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
+    db.setHistory("a.md", [change(3, "c"), change(2, "b"), change(1, "a")]);
+    const result = await call("context.read", { paths: ["a.md"], history: 2 });
+    expect((result as { output: { history: Array<{ changes: unknown[] }> } }).output.history[0]!.changes).toHaveLength(2);
+  });
+
+  it("leaves history out when it is not asked for, so the output is unchanged", async () => {
+    const { call, db } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
+    const result = await call("context.read", { paths: ["a.md"] });
+    expect((result as { output: Record<string, unknown> }).output).not.toHaveProperty("history");
+    expect(db.historyCalls).toEqual([]);
+  });
+
+  it("refuses history without paths", async () => {
+    const { call } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
+    expect(await call("context.read", { history: 3 })).toMatchObject({ status: "refused", code: "invalid_history" });
+  });
+
+  it("gives no history for a path that does not exist", async () => {
+    const { call, db } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
+    const result = await call("context.read", { paths: ["nope.md"], history: 3 });
+    expect((result as { output: { history: unknown[]; missing: string[] } }).output).toMatchObject({ history: [], missing: ["nope.md"] });
+    expect(db.historyCalls).toEqual([]);
+  });
+
+  it("reads the context as it was at an earlier version", async () => {
+    const { call, db } = setup({ "a.md": "old text" }, [{ tool: "context.read" }]);
+    const first = db.pointer()!;
+    db.writeBehindTheScenes({ "a.md": "new text" });
+    const latest = await call("context.read", { paths: ["a.md"] });
+    expect((latest as { output: { documents: Array<{ content: string }> } }).output.documents[0]!.content).toBe("new text");
+    const earlier = await call("context.read", { paths: ["a.md"], versionId: first });
+    expect(earlier).toMatchObject({ status: "ok", output: { versionId: first, versionNumber: 1 } });
+    expect((earlier as { output: { documents: Array<{ content: string }> } }).output.documents[0]!.content).toBe("old text");
+  });
+
+  it("refuses a version id that is not in the workspace", async () => {
+    const { call } = setup({ "a.md": "A" }, [{ tool: "context.read" }]);
+    expect(await call("context.read", { versionId: "99999999-9999-4999-8999-999999999999" })).toMatchObject({ status: "refused", code: "version_not_found" });
+  });
+});
+
 describe("context.list", () => {
   it("lists each dimension that has an index document", async () => {
     const { call } = setup({ "product/index.md": "p", "team/index.md": "t", "notes/x.md": "x" }, [{ tool: "context.list" }]);
