@@ -15,7 +15,7 @@ create table embedded_agent_documents (
   version        integer,
   created_at_ms  bigint,
   retired_at     bigint,
-  record         jsonb not null,
+  record         json not null,
 
   primary key (session_id, document_id, row_kind, seq)
 );

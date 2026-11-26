@@ -1,5 +1,6 @@
 -- Crash-resume state of an embedded agent (Home): pi-durable's conversations, entries, tasks and submissions.
 -- One ID space per session, shared with embedded_agent_documents (ids come from the counter in embedded_agent_state).
+-- record is json, not jsonb: pi stores exact JSON text, and jsonb refuses NUL and lone surrogates.
 -- This is never a transcript and the UI never reads it: the transcript is session_events. No secrets are stored here.
 -- Service role only; RLS is on with no policy. Allowed values live in the code (backend/src/embedded-agent/pi).
 -- record_type: conversation, entry, task, submission. status is a task's or a submission's. head is set on an entry that
@@ -18,7 +19,7 @@ create table embedded_agent_records (
   request_id           text,
   head                 bigint,
   commit_seq           bigint,
-  record               jsonb not null,
+  record               json not null,
 
   primary key (session_id, id)
 );

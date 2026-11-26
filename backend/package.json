@@ -23,6 +23,7 @@
     "@better-auth/core": "^1.7.3",
     "@better-auth/mcp": "^1.7.3",
     "@better-auth/oauth-provider": "^1.7.3",
+    "@earendil-works/chord": "1.6.1",
     "@earendil-works/pi-ai": "1.6.1",
     "@earendil-works/pi-durable": "1.6.1",
     "@modelcontextprotocol/client": "2.4.0",
