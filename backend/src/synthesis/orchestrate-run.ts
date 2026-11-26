@@ -10,7 +10,7 @@ import {
   prepareRun,
   RunPreparationFailedError,
 } from "./prepare-run";
-import { synthesisSteps } from "draft-core/synthesis-steps";
+import { synthesisSteps } from "./steps/definitions";
 import { advanceWorkflow } from "../routine-steps/advance";
 import { saveStepsOnParent } from "../routine-steps/step-run-spec";
 import { markAgentRunRunning } from "../metaharness/runs/lifecycle";

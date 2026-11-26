@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { cloudToolsetFor, type HarnessId } from "draft-core/harnesses";
 import { SANDBOX_RUN_DIRECTORY, sandboxComputer } from "draft-core/run-spec";
 import { SYNTHESIS_PERMISSIONS } from "draft-core/tools";
-import type { CaptureEntry, ReconcileConflict } from "draft-core/synthesis-steps";
+import type { CaptureEntry, ReconcileConflict } from "./steps/definitions";
 import { currentDocumentPaths } from "../routine-steps/context-documents";
 import { registerWorkflow } from "../routine-steps/registry";
 import type { PlannedRun, StepOutputs, WorkflowKind } from "../routine-steps/types";

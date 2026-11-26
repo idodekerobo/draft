@@ -1,4 +1,4 @@
-import type { CaptureEntry, ReconcileConflict } from "draft-core/synthesis-steps";
+import type { CaptureEntry, ReconcileConflict } from "./definitions";
 import type { DocumentLastChange } from "../../services/context-history";
 import { lastChangedLine, renderContextListing, type ListedContextFile } from "../context-listing";
 import type { ValidatedRunBundle } from "../context-version-files";

@@ -1,7 +1,7 @@
 "use client";
 
 import { getHarness, type HarnessId } from "draft-core/harnesses";
-import { SYNTHESIS_STEP_DEFINITIONS } from "draft-core/synthesis-steps";
+import { SYNTHESIS_STEP_KEYS, SYNTHESIS_STEP_MODELS } from "draft-core/synthesis-steps";
 
 const PURPOSE = {
   capture: "Reads the new sources and notes what matters. Writes nothing.",
@@ -19,10 +19,10 @@ export function SynthesisSteps({ harness, model }: { harness: HarnessId; model: 
     <section className="ui-routines__agent" aria-label="Steps of a context update">
       <h3 className="ui-routines__subheading">Steps</h3>
       <ol className="ui-synthesis-steps">
-        {SYNTHESIS_STEP_DEFINITIONS.map((definition) => (
-          <li key={definition.key} className="ui-synthesis-steps__item">
-            <p className="ui-synthesis-steps__name">{LABEL[definition.key]} <span className="ui-routines__secondary">uses {modelLabel(model ?? definition.models[harness])}</span></p>
-            <p className="ui-routines__secondary">{PURPOSE[definition.key]}</p>
+        {SYNTHESIS_STEP_KEYS.map((key) => (
+          <li key={key} className="ui-synthesis-steps__item">
+            <p className="ui-synthesis-steps__name">{LABEL[key]} <span className="ui-routines__secondary">uses {modelLabel(model ?? SYNTHESIS_STEP_MODELS[key][harness])}</span></p>
+            <p className="ui-routines__secondary">{PURPOSE[key]}</p>
           </li>
         ))}
       </ol>

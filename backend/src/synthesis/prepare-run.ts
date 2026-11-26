@@ -8,7 +8,7 @@ import { recordError } from "../errors/record-error";
 import { getLatestSynthesisRun } from "./latest-run";
 import { buildSynthesisRunSpec } from "./run-spec";
 import { createAgentRun } from "../metaharness/runs/agent-run-store";
-import { SYNTHESIS_PROMPT_VERSION } from "draft-core/synthesis-steps";
+import { SYNTHESIS_PROMPT_VERSION } from "./steps/definitions";
 import type { LaunchSynthesisRunOptions } from "./types";
 import type {
   SourceItemRow,

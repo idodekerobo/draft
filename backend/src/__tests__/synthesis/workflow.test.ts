@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "bun:test";
-import { synthesisSteps } from "draft-core/synthesis-steps";
+import { synthesisSteps } from "../../synthesis/steps/definitions";
 import type { RoutineStep } from "draft-core/routine-steps";
 import { canonicalDocumentsHash } from "../../synthesis/context-version-files";
 import { stepPrompt } from "../../synthesis/steps/prompts";
