@@ -50,6 +50,8 @@ export interface LaunchSynthesisRunOptions {
   dimensions?: DimensionHint[];
   /** Injectable clock for memory-period provisioning; defaults to `new Date()`. */
   now?: Date;
+  /** Starts a step run. Replaced in tests, so no sandbox is needed. */
+  launchStep?: import("../routine-steps/types").EngineDeps["launch"];
 }
 
 export interface LaunchSynthesisRunResult {

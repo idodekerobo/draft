@@ -104,7 +104,7 @@ export async function launchSynthesisRun(
 
     stage = "start";
     await markAgentRunRunning(client, runId);
-    await advanceWorkflow({ client, config: options.config, workflow: synthesisWorkflow }, runId);
+    await advanceWorkflow({ client, config: options.config, workflow: synthesisWorkflow, launch: options.launchStep }, runId);
 
     return { runId };
   } catch (caught) {
