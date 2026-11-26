@@ -365,3 +365,24 @@ describe("createFlyProvider.status", () => {
     await expect(createFlyProvider(config, api).status(plain)).rejects.toBeInstanceOf(FlyMachinesApiError);
   });
 });
+
+describe("a machine that serves a port", () => {
+  it("is created with a TLS service on 443 that starts it on a request and never stops it, only when asked to expose a port", async () => {
+    const { api, creates } = fakeApi();
+    const provider = createFlyProvider(config, api);
+    await provider.create(spec);
+    await provider.create({ ...spec, expose: { port: 8080 } });
+    expect(creates[0]!.expose).toBeUndefined();
+    expect(creates[1]!.expose).toEqual({ port: 8080 });
+    const { buildCreateFlyMachineRequest } = await import("../../../../../metaharness/sandbox/providers/fly/fly-machines");
+    expect(buildCreateFlyMachineRequest({ image: config.image, files: {} }).config.services).toBeUndefined();
+    expect(buildCreateFlyMachineRequest({ image: config.image, files: {}, expose: { port: 8080 } }).config.services).toEqual([
+      { protocol: "tcp", internal_port: 8080, autostart: true, autostop: "off", ports: [{ port: 443, handlers: ["tls", "http"] }] },
+    ]);
+  });
+
+  it("is reached on the app's address with a header that names this machine", () => {
+    const provider = createFlyProvider(config, fakeApi().api);
+    expect(provider.endpoint!(plain, 8080)).toEqual({ url: "https://draft-sandbox.fly.dev", headers: { "fly-force-instance-id": "machine-1" } });
+  });
+});

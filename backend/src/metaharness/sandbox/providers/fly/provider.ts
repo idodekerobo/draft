@@ -48,6 +48,7 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
       metadata: spec.metadata,
       env: spec.env,
       ...(volumeId === undefined ? {} : { mounts: [{ volume: volumeId, path: VOLUME_PATH }] }),
+      ...(spec.expose === undefined ? {} : { expose: spec.expose }),
     });
   const deleteMachine = (machineId: string): Promise<void> => ignoreNotFound(fly.forceDelete(machineId));
 
@@ -99,6 +100,11 @@ export function createFlyProvider(config: FlyProviderConfig, client?: FlyMachine
 
     async destroyMachine(ref) {
       if (ref.machine) await deleteMachine(ref.machine);
+    },
+
+    // Fly's proxy routes a request with this header to exactly this machine, and starts it when it is stopped.
+    endpoint(ref) {
+      return { url: `https://${config.appName}.fly.dev`, headers: { "fly-force-instance-id": ref.machine } };
     },
 
     async status(ref) {

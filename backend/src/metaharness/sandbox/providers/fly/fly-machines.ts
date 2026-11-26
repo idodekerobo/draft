@@ -79,6 +79,17 @@ export interface CreateFlyMachineInput {
   /** Creates the machine without booting it. Call start to boot it. */
   skipLaunch?: boolean;
   mounts?: readonly FlyMachineMount[];
+  /** A port the machine serves over TLS on 443 through Fly's proxy. The proxy starts a stopped machine that a request reaches. */
+  expose?: { port: number };
+}
+
+/** One TLS service: 443 on Fly's proxy to a port in the machine. It never stops the machine on its own; Draft decides when. */
+export interface FlyMachineService {
+  protocol: "tcp";
+  internal_port: number;
+  autostart: boolean;
+  autostop: "off";
+  ports: Array<{ port: number; handlers: string[] }>;
 }
 
 export interface FlyMachineConfig {
@@ -90,6 +101,7 @@ export interface FlyMachineConfig {
   guest?: FlyMachineGuest;
   metadata?: Record<string, string>;
   mounts?: FlyMachineMount[];
+  services?: FlyMachineService[];
 }
 
 export interface CreateFlyMachineRequest {
@@ -245,6 +257,9 @@ export function buildCreateFlyMachineRequest(
       ...(input.mounts === undefined
         ? {}
         : { mounts: input.mounts.map((mount) => ({ ...mount })) }),
+      ...(input.expose === undefined
+        ? {}
+        : { services: [{ protocol: "tcp" as const, internal_port: input.expose.port, autostart: true, autostop: "off" as const, ports: [{ port: 443, handlers: ["tls", "http"] }] }] }),
     },
   };
 }

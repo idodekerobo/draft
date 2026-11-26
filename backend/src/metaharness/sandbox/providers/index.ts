@@ -24,4 +24,4 @@ export function loadProviderConfig(env: FlyEnv): SandboxProviderConfig {
   return loadFlyConfig(env);
 }
 
-export type { SandboxProvider, SandboxRef, SandboxSpec, VolumeRef } from "./types";
+export type { SandboxEndpoint, SandboxProvider, SandboxRef, SandboxSpec, VolumeRef } from "./types";
