@@ -1,3 +1,4 @@
+import { claudeLoginFailed, reportCloudSessionLoginFailure } from "../cloud-sessions/login-failure";
 import { withHostAuth } from "../auth/with-host-auth";
 import { withAuth } from "../auth/withAuth";
 import { serviceClient } from "../db/client";
@@ -323,6 +324,9 @@ export const LINES = withHostAuth<LinesRequest>(async (req, caller) => {
   const events = incoming
     .flatMap((line) => eventsForAdapter(adapter.id, line))
     .map((event) => ({ source_id: event.sourceId, kind: event.kind, payload: stripNul(event.payload) }));
+
+  // A cloud session runs on the workspace's login. When Claude says it stopped working, the person who saved it is told.
+  if (caller.kind === "cloud_host" && owned.session.harness === "claude" && claudeLoginFailed(incoming)) void reportCloudSessionLoginFailure(serviceClient, workspaceId, sessionId);
 
   const firstPrompt = events.find((e) => e.kind === "user_message" && !(e.payload as { agent_id?: string }).agent_id);
   let lastSeq = owned.session.last_seq;
