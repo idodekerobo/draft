@@ -132,6 +132,15 @@ async function consumeCapturedSources(client: SupabaseClient, parent: AgentRunRo
   if (insertError && (insertError as { code?: string }).code !== UNIQUE_VIOLATION) throw insertError;
 }
 
+/** Reads of sources the run's agents tried through `sources.read`: how many worked and how many did not. */
+async function sourceReadsOf(client: SupabaseClient, runIds: ReadonlyArray<string>): Promise<{ ok: number; rejected: number }> {
+  const { data, error } = await client.from("agent_run_tool_calls").select("status").in("agent_run_id", runIds).eq("tool_name", "sources.read");
+  if (error) throw error;
+  const statuses = ((data ?? []) as Array<{ status: string }>).map((row) => row.status);
+  const ok = statuses.filter((status) => status === "ok").length;
+  return { ok, rejected: statuses.length - ok };
+}
+
 /** How many source batches did not succeed, once every attempt is counted. */
 function failedCaptureBatches(runs: ReadonlyArray<AgentRunRow>): number {
   const latest = new Map<string, AgentRunRow>();
@@ -192,6 +201,13 @@ export const synthesisWorkflow: WorkflowKind = {
         client, runId: parent.id, failureCode: "synthesis_result_invalid", operation: "validation", reason: "Synthesis result failed validation",
         error: new InvalidSynthesisResultError("outcome=changed but no document was written to the context"),
       });
+      return;
+    }
+
+    // An agent that could not read its sources has nothing to base a "no change" on. Failing lets the run retry.
+    const reads = await sourceReadsOf(client, [parent.id, ...runs.map((run) => run.id)]);
+    if (reads.rejected > 0 && reads.ok === 0) {
+      await failSynthesisRun({ client, runId: parent.id, failureCode: "sources_unreadable", operation: "execution", reason: "The agent could not read any of its sources, so nothing was synthesized" });
       return;
     }
 
