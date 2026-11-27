@@ -15,10 +15,14 @@ const CODEX_AUTH_FILE = `${CODEX_HOME}/auth.json`;
 const CODEX_CONFIG_FILE = `${CODEX_HOME}/config.toml`;
 const CODEX_WORK_DIR = "/home/agent/work";
 
-/** Draft's tool server for a Codex run. The bearer token comes from the environment, never from this file. */
+/**
+ * Draft's tool server for a Codex run. The bearer token comes from the environment, never from this file.
+ * Apps are off: the workspace's ChatGPT login would otherwise bring in its own connectors, such as an old
+ * "Draft" app with expired access, whose tools look the same as Draft's own.
+ */
 export function codexConfigToml(options: { mcpUrl: string | null; webSearch: boolean }): string {
   // A top-level key must come before any table.
-  return [...(options.webSearch ? ['web_search = "live"'] : []), ...(options.mcpUrl ? [codexMcpConfigToml(options.mcpUrl)] : [])].join("\n");
+  return [...(options.webSearch ? ['web_search = "live"'] : []), "[features]\napps = false\n", ...(options.mcpUrl ? [codexMcpConfigToml(options.mcpUrl)] : [])].join("\n");
 }
 
 export function codexMcpConfigToml(mcpUrl: string): string {

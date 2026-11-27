@@ -107,10 +107,13 @@ describe("commands the runner builds", () => {
     ]);
   });
 
-  it("the Codex config: web search first, then Draft's server", () => {
+  it("the Codex config: web search first, apps off, then Draft's server", () => {
     expect(codexConfigToml({ mcpUrl: MCP_URL, webSearch: true })).toBe(
       [
         'web_search = "live"',
+        "[features]",
+        "apps = false",
+        "",
         "[mcp_servers.draft]",
         `url = "${MCP_URL}"`,
         'bearer_token_env_var = "DRAFT_RUN_TOKEN"',

@@ -708,8 +708,12 @@ describe("built-in tools of a run", () => {
     const toml = codexConfigToml({ mcpUrl: MCP_URL, webSearch: true });
     expect(toml.indexOf('web_search = "live"')).toBeGreaterThanOrEqual(0);
     expect(toml.indexOf('web_search = "live"')).toBeLessThan(toml.indexOf("[mcp_servers.draft]"));
-    expect(codexConfigToml({ mcpUrl: null, webSearch: true })).toBe('web_search = "live"');
-    expect(codexConfigToml({ mcpUrl: null, webSearch: false })).toBe("");
+    expect(codexConfigToml({ mcpUrl: null, webSearch: true })).toBe('web_search = "live"\n[features]\napps = false\n');
+    expect(codexConfigToml({ mcpUrl: null, webSearch: false })).toBe("[features]\napps = false\n");
+  });
+
+  test("Codex runs without ChatGPT apps, so only Draft's own tool server answers", () => {
+    expect(codexConfigToml({ mcpUrl: MCP_URL, webSearch: false })).toContain("[features]\napps = false");
   });
 });
 
