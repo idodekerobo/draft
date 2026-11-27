@@ -659,3 +659,23 @@ describe("SessionStartScreen while a folder copies", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 });
+
+describe("the harness a new session starts with", () => {
+  const props = { recentFolders: ["/work/marigold"], onBrowse: async () => null, onStart: async () => ({ ok: true } as const) };
+  const agentLabel = () => screen.getByRole("button", { name: "Agent and model" }).textContent ?? "";
+
+  it("follows the workspace's lab, even when the lab arrives after the screen opens", async () => {
+    const view = render(<SessionStartScreen {...props} />);
+    expect(agentLabel()).toContain("Claude");
+    view.rerender(<SessionStartScreen {...props} defaultHarness="codex" />);
+    await waitFor(() => expect(agentLabel()).toContain("Codex"));
+  });
+
+  it("keeps the person's own pick when the lab arrives later", () => {
+    const view = render(<SessionStartScreen {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Agent and model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Codex" }));
+    view.rerender(<SessionStartScreen {...props} defaultHarness="claude" />);
+    expect(agentLabel()).toContain("Codex");
+  });
+});

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isTestedVersion } from "draft-core/harnesses";
+import { harnessForModelProvider } from "draft-core/model-provider";
 import { SessionStartScreen, SessionView, SessionsLayout, type CloudSnapshotStartRequest, type CloudStartRequest, type LiveSession, type SessionMenuItem, readRecentFolders, rememberFolder, useLiveSessions, useQuery, type HarnessProblem, type StartRequest, type StartResult } from "draft-shared-ui";
 import { useAnalytics } from "../../analytics/AnalyticsContext";
 import { CodexSetupPanel } from "../connections/CodexSetupPanel";
@@ -105,6 +106,8 @@ export function SessionsView({ onOpenConnections }: { onOpenConnections?: () => 
   const githubConnected = apps ? apps.integrations.github.connected : null;
   const cloud = useMemo(() => ({ ...cloudStart, githubConnected, onConnectGithub: onOpenConnections }), [githubConnected, onOpenConnections]);
   const workspaceKey = useWorkspaceKey();
+  // The workspace's lab decides which harness a new session starts with. A failed read leaves Claude, the default.
+  const modelProvider = useQuery({ queryKey: ["model-provider", workspaceKey], queryFn: () => rpc.request.getModelProvider(), staleTime: 5 * 60_000 });
   const { track } = useAnalytics();
   const { sessions, refetch, isPending, isError } = useLiveSessions(liveSessionsApi, workspaceKey);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -205,7 +208,7 @@ export function SessionsView({ onOpenConnections }: { onOpenConnections?: () => 
       onDeleted={onDeleted}
       resizable
     >
-      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} menuItems={menuItems} notice={notice} onDeleted={() => onDeleted(selectedId)} /> : <SessionStartScreen devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} cloud={cloud} />}
+      {selectedId ? <SessionDetail key={selectedId} sessionId={selectedId} onOpenSession={setSelectedId} justStarted={selectedId === startedId} menuItems={menuItems} notice={notice} onDeleted={() => onDeleted(selectedId)} /> : <SessionStartScreen defaultHarness={harnessForModelProvider(modelProvider.data?.provider)} devOnly={devOnlyVersionWarnings} agentDefaults={loadAgentDefaults} availability={availability} renderSetup={(harness) => (harness === "codex" ? <CodexSetupPanel onStatusChange={loadAvailability} /> : null)} recentFolders={recentFolders} onBrowse={browse} onStart={start} cloud={cloud} />}
     </SessionsLayout>
   );
 }

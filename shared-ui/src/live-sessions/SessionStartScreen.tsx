@@ -178,7 +178,10 @@ export function SessionStartScreen({
   agentDefaults,
   renderSetup,
   cloud,
+  defaultHarness,
 }: {
+  /** The harness for a person who has not picked one: the one that matches the workspace's lab. */
+  defaultHarness?: HarnessId;
   /** What is wrong with a harness on this computer, by harness id. A harness with no entry is ready. */
   availability?: Partial<Record<string, HarnessProblem>>;
   /** Show untested-version notices in development builds only. */
@@ -209,6 +212,12 @@ export function SessionStartScreen({
   const [chosen, setChosen] = useStartValue<string | null>("chosen", null);
   const [text, setText] = useDraft(NEW_SESSION_DRAFT_KEY);
   const [harness, setHarness] = useStartValue<HarnessId>("harness", DEFAULT_HARNESS_ID);
+  // The lab can arrive after the first render. It only fills in a harness the person has not chosen on this screen yet.
+  const harnessChosen = useRef(startValues.has("harness"));
+  useEffect(() => {
+    if (defaultHarness && !harnessChosen.current && getHarness(defaultHarness)) setHarness(defaultHarness);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultHarness]);
   const [model, setModel] = useStartValue<string | null>("model", null);
   const [effort, setEffort] = useStartValue<string | null>("effort", null);
   const [modeChoices, setModeChoices] = useStartValue<Record<string, { permissionMode?: string; approvalMode?: string }>>("modeChoices", {});
@@ -599,7 +608,7 @@ export function SessionStartScreen({
                 sections={agentPickerSections({
                   value: { harness: activeHarness, model, effort },
                   defaults,
-                  onChange: (next) => { setHarness(next.harness); setModel(next.model); setEffort(next.effort); },
+                  onChange: (next) => { harnessChosen.current = true; setHarness(next.harness); setModel(next.model); setEffort(next.effort); },
                   // Draft Cloud runs Claude Code only for now; the others show as coming soon.
                   harnesses: HARNESSES.map((option) =>
                     cloudOn && option.id !== "claude"
