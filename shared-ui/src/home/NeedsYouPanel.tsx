@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { DataBoundary } from "../query/DataBoundary";
@@ -157,7 +158,16 @@ function Rows({ workspaceId, highlightId, ...navigation }: NeedsYouPanelProps) {
           Needs you{data.count > 0 && <span className="ui-home-panel__count">{data.count}</span>}
         </h2>
         {data.count > 0 && (
-          <button type="button" className="ui-link" aria-expanded={!collapsed} onClick={() => { setCollapsed(!collapsed); writeCollapsed(!collapsed); }}>{collapsed ? "Show" : "Hide"}</button>
+          <button
+            type="button"
+            className="ui-home-panel__toggle"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand Needs you" : "Collapse Needs you"}
+            title={collapsed ? "Expand" : "Collapse"}
+            onClick={() => { setCollapsed(!collapsed); writeCollapsed(!collapsed); }}
+          >
+            {collapsed ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronUp size={16} aria-hidden="true" />}
+          </button>
         )}
       </header>
       <p className="ui-visually-hidden" role="status" aria-live="polite">{data.count === 0 ? "Nothing needs you." : `${data.count} need${data.count === 1 ? "s" : ""} you.`}</p>

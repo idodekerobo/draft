@@ -69,9 +69,11 @@ export function SessionComposer({
   modeControl,
   agentControl,
   placeholder,
+  onStop,
+  stopping = false,
   onCycleMode,
   sleeping = false,
-}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; resuming?: boolean; resumeFailure?: string | null; resumeRetryable?: boolean; preserveDraft?: boolean; hostWait?: HostWait; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; placeholder?: string; onCycleMode?: () => void }) {
+}: SessionInputsState & { sessionId: string; ownerName: string; ended: boolean; resuming?: boolean; resumeFailure?: string | null; resumeRetryable?: boolean; preserveDraft?: boolean; hostWait?: HostWait; sleeping?: boolean; autoFocus?: boolean; onEmptyEscape?: () => void; onResume?: () => Promise<void>; modeControl?: ReactNode; agentControl?: ReactNode; placeholder?: string; onStop?: () => void; stopping?: boolean; onCycleMode?: () => void }) {
   const [text, setText] = useDraft(sessionId);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -149,6 +151,11 @@ export function SessionComposer({
           />
           <div className="ui-composer__footer">
             {agentControl}
+            {onStop && (
+              <button type="button" className="ui-btn" disabled={stopping} title="Stop (Esc in the message box)" onClick={onStop}>
+                {stopping ? "Stopping…" : "Stop"}
+              </button>
+            )}
             <button type="submit" className="ui-btn ui-btn--primary" disabled={!text.trim()}>
               Send
             </button>

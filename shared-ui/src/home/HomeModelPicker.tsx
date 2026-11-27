@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SectionedPicker } from "../controls/SectionedPicker";
 
 export interface HomeModel {
   id: string;
@@ -8,14 +9,14 @@ export interface HomeModel {
 }
 
 /**
- * Picks the model Draft answers with. A change applies from the next request, and a model the account cannot use says why
- * when it is tried, in the thread, in the provider's own words.
+ * Picks the model Draft answers with, with the same picker as a session's model. A change applies from the next request,
+ * and a model the account cannot use says why when it is tried, in the thread, in the provider's own words.
  */
 export function HomeModelPicker({ models, value, onSelect }: { models: readonly HomeModel[]; value: string | null; onSelect: (id: string) => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (models.length === 0) return null;
-  const known = models.some((model) => model.id === value);
+  const current = models.find((model) => model.id === value);
 
   async function choose(id: string) {
     setError(null);
@@ -30,13 +31,17 @@ export function HomeModelPicker({ models, value, onSelect }: { models: readonly 
   }
 
   return (
-    <span className="ui-home-model">
-      <label className="ui-visually-hidden" htmlFor="home-model">Model</label>
-      <select id="home-model" className="ui-home-model__select" value={known ? (value ?? "") : ""} disabled={saving} onChange={(event) => void choose(event.target.value)}>
-        {!known && <option value="" disabled>{value ?? "Choose a model"}</option>}
-        {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-      </select>
+    <>
+      <SectionedPicker
+        label="Model"
+        align="start"
+        direction="up"
+        disabled={saving}
+        sections={[{ id: "model", title: "Model", options: models.map((model) => ({ value: model.id, label: model.name })), value: current?.id ?? "", onChange: (id) => void choose(id) }]}
+      >
+        {current?.name ?? value ?? "Choose a model"}
+      </SectionedPicker>
       {error && <span className="ui-error" role="alert">{error}</span>}
-    </span>
+    </>
   );
 }

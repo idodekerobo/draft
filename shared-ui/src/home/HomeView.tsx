@@ -84,7 +84,7 @@ export function HomeView({ thread, ...props }: HomeViewProps) {
       </div>
       {thread && (
         <div className="ui-home__panel ui-home__panel--chat" id="home-panel-chat" role="tabpanel" aria-labelledby="home-tab-chat">
-          <HomeThread api={thread.api} thread={thread.home} onOpenConnections={props.onOpenConnections} onSession={setHomeId} onSeq={onSeq} />
+          <HomeThread api={thread.api} thread={thread.home} workspaceId={props.workspaceId} onOpenConnections={props.onOpenConnections} onSession={setHomeId} onSeq={onSeq} />
         </div>
       )}
     </div>

@@ -43,30 +43,30 @@ const render = (ui: ReactElement, client = new QueryClient({ defaultOptions: { q
   renderUi(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 
 describe("Draft's thread on Home", () => {
-  it("says Starting Draft while the session loads, then shows the welcome and three prompts to someone who has not spoken", async () => {
-    render(<HomeThread api={liveApi()} thread={threadApi()} onOpenConnections={() => {}} />);
-    expect(screen.getByText("Starting Draft…")).toBeTruthy();
+  it("shows the shape of the thread while the session loads, then the welcome and three prompts to someone who has not spoken", async () => {
+    render(<HomeThread workspaceId="ws-1" api={liveApi()} thread={threadApi()} onOpenConnections={() => {}} />);
+    expect(screen.getByRole("status", { name: "Loading your conversation with Draft" })).toBeTruthy();
     await screen.findByText("Hi, I'm Draft.");
     expect(screen.getAllByRole("button").filter((b) => b.classList.contains("ui-session__suggestion"))).toHaveLength(3);
   });
 
   it("sends a suggested prompt when it is chosen", async () => {
     const api = liveApi();
-    render(<HomeThread api={api} thread={threadApi()} onOpenConnections={() => {}} />);
+    render(<HomeThread workspaceId="ws-1" api={api} thread={threadApi()} onOpenConnections={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "What needs me right now?" }));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith("home-1", "What needs me right now?"));
   });
 
   it("stops offering prompts once the person has said something", async () => {
     const events: LiveSessionEvent[] = [WELCOME, { seq: 2, source_id: "u", kind: "user_message", payload: { text: "hello" }, created_at: "" }];
-    const { container } = render(<HomeThread api={liveApi({ events, last_seq: 2 })} thread={threadApi()} onOpenConnections={() => {}} />);
+    const { container } = render(<HomeThread workspaceId="ws-1" api={liveApi({ events, last_seq: 2 })} thread={threadApi()} onOpenConnections={() => {}} />);
     await screen.findByText("Hi, I'm Draft.");
     expect(container.querySelector(".ui-session__suggestions")).toBeNull();
   });
 
   it("says Draft can't reply right now when the workspace has no usable login, and Reconnect opens Connections", async () => {
     const onOpenConnections = mock(() => {});
-    render(<HomeThread api={liveApi()} thread={threadApi({ loadSession: async () => ({ id: "home-1", model: null, canReply: false }) })} onOpenConnections={onOpenConnections} />);
+    render(<HomeThread workspaceId="ws-1" api={liveApi()} thread={threadApi({ loadSession: async () => ({ id: "home-1", model: null, canReply: false }) })} onOpenConnections={onOpenConnections} />);
     await screen.findByText(/Draft can't reply right now/);
     fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
     expect(onOpenConnections).toHaveBeenCalled();
@@ -78,30 +78,54 @@ describe("Draft's thread on Home", () => {
       if (++attempts === 1) throw new Error("down");
       return { id: "home-1", model: null, canReply: true };
     };
-    render(<HomeThread api={liveApi()} thread={threadApi({ loadSession })} onOpenConnections={() => {}} />);
+    render(<HomeThread workspaceId="ws-1" api={liveApi()} thread={threadApi({ loadSession })} onOpenConnections={() => {}} />);
     await screen.findByText(/Draft can't reply right now/);
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await screen.findByText("Hi, I'm Draft.");
   });
 
-  it("offers every model of the lab, and a change goes to the session as a model change", async () => {
+  it("offers every model of the lab in the session's own picker, and a change goes to the session as a model change", async () => {
     const api = liveApi();
-    render(<HomeThread api={api} thread={threadApi()} onOpenConnections={() => {}} />);
-    const picker = (await screen.findByLabelText("Model")) as HTMLSelectElement;
-    expect(Array.from(picker.options).map((option) => option.text)).toEqual(["Claude Sonnet 5.5", "Claude Fable 5.2"]);
-    expect(picker.value).toBe("claude-sonnet-5-5");
-    fireEvent.change(picker, { target: { value: "claude-fable-5-2" } });
+    render(<HomeThread workspaceId="ws-1" api={api} thread={threadApi()} onOpenConnections={() => {}} />);
+    const trigger = await screen.findByRole("button", { name: "Model" });
+    expect(trigger.textContent).toContain("Claude Sonnet 5.5");
+    fireEvent.click(trigger);
+    expect(screen.getAllByRole("menuitemradio").map((item) => item.textContent)).toEqual(["Claude Sonnet 5.5✓", "Claude Fable 5.2"]);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Claude Fable 5.2/ }));
     await waitFor(() => expect(api.setMode).toHaveBeenCalledWith("home-1", { model: "claude-fable-5-2" }));
-    await waitFor(() => expect(picker.value).toBe("claude-fable-5-2"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Model" }).textContent).toContain("Claude Fable 5.2"));
   });
 
   it("keeps the earlier model and says so when the change cannot be saved", async () => {
     const api = liveApi({ setMode: async () => { throw new Error("no"); } });
-    render(<HomeThread api={api} thread={threadApi()} onOpenConnections={() => {}} />);
-    const picker = (await screen.findByLabelText("Model")) as HTMLSelectElement;
-    fireEvent.change(picker, { target: { value: "claude-fable-5-2" } });
+    render(<HomeThread workspaceId="ws-1" api={api} thread={threadApi()} onOpenConnections={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Model" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Claude Fable 5.2/ }));
     await screen.findByText("Could not change the model. Try again.");
-    expect(picker.value).toBe("claude-sonnet-5-5");
+    expect(screen.getByRole("button", { name: "Model" }).textContent).toContain("Claude Sonnet 5.5");
+  });
+
+  it("shows Stop beside Send only while Draft is working, and not in the header", async () => {
+    const stop = mock(async () => ({ withdrawn: [] }));
+    const { container } = render(<HomeThread workspaceId="ws-1" api={liveApi({ stop })} thread={threadApi()} onOpenConnections={() => {}} />);
+    await screen.findByText("Hi, I'm Draft.");
+    expect(container.querySelector(".ui-session__header--home button")).toBeNull();
+    const button = await screen.findByRole("button", { name: "Stop" });
+    expect(button.closest(".ui-composer__footer")).toBeTruthy();
+    fireEvent.click(button);
+    await waitFor(() => expect(stop).toHaveBeenCalled());
+  });
+
+  it("shows the thread at once when the person comes back, from what was loaded before", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const api = liveApi();
+    const first = render(<HomeThread workspaceId="ws-1" api={api} thread={threadApi()} onOpenConnections={() => {}} />, client);
+    await screen.findByText("Hi, I'm Draft.");
+    first.unmount();
+    const slow = threadApi({ loadSession: () => new Promise(() => {}) });
+    render(<HomeThread workspaceId="ws-1" api={api} thread={slow} onOpenConnections={() => {}} />, client);
+    expect(screen.queryByRole("status", { name: /Loading your conversation/ })).toBeNull();
+    await screen.findByText("Hi, I'm Draft.");
   });
 });
 

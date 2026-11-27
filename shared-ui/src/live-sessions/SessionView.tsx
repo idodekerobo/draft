@@ -648,13 +648,6 @@ function SessionContents({
       {home ? (
         <header className="ui-session__header ui-session__header--home">
           <h2 className="ui-session__title">Draft</h2>
-          <div className="ui-session__actions">
-            {running && (
-              <button type="button" className="ui-btn" disabled={stopping} title="Stop (Esc in the message box)" onClick={() => void stop()}>
-                {stopping ? "Stopping…" : "Stop"}
-              </button>
-            )}
-          </div>
         </header>
       ) : (
       <header className="ui-session__header">
@@ -719,13 +712,6 @@ function SessionContents({
             />
           </DisclosureState.Provider>
           </AgentTranscripts.Provider>
-          {home && welcomeOnly && (
-            <div className="ui-session__suggestions" role="group" aria-label="Things you can ask">
-              {home.suggestions!.map((prompt) => (
-                <button key={prompt} type="button" className="ui-btn ui-session__suggestion" onClick={() => void sendMessage(prompt).catch(() => {})}>{prompt}</button>
-              ))}
-            </div>
-          )}
         </div>
       </div>
       {(!isAtBottom || history?.focused) && (
@@ -735,6 +721,13 @@ function SessionContents({
         <div className="ui-session__column">
           {!home && session.status !== "ended" && <TeamStrip members={team} onShow={showAgent} />}
           {home?.notice && <div className="ui-session__notice ui-session__home-notice" role="status">{home.notice}</div>}
+          {home && welcomeOnly && !readOnly && (
+            <div className="ui-session__suggestions" role="group" aria-label="Things you can ask">
+              {home.suggestions!.map((prompt) => (
+                <button key={prompt} type="button" className="ui-session__suggestion" onClick={() => void sendMessage(prompt).catch(() => {})}>{prompt}</button>
+              ))}
+            </div>
+          )}
           {readOnly ? (
             <p className="ui-muted ui-session__notice">This run follows its routine on its own. It cannot take messages.</p>
           ) : (
@@ -749,7 +742,7 @@ function SessionContents({
                   <ApprovalPanel key={approval.requestId} approval={approval} hostName={hostName} agent={agentName} explainsDenial={hasTerminal} sleeping={sleeping} onDecide={(requestId, response) => api.decideApproval(sessionId, requestId, response)} />
                 ),
               )}
-            <SessionComposer {...inputs} send={sendMessage} modeControl={home ? undefined : modeControl} onCycleMode={!home && modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended" || resuming || Boolean(resumeError)} resuming={resuming} resumeRetryable={session.last_failure?.retryable} resumeFailure={resumeError ?? (session.status === "ended" ? session.last_failure?.message : null)} preserveDraft={resuming || Boolean(resumeError) || Boolean(session.last_failure)} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={home ? home.modelControl : agentControl} placeholder={home?.placeholder} onResume={canResume || resuming || (resumeError && session.mine && !isDraftCloudSession(session)) ? resume : undefined} />
+            <SessionComposer {...inputs} send={sendMessage} modeControl={home ? undefined : modeControl} onCycleMode={!home && modes.permission.length > 0 && !sleeping ? cycleMode : undefined} inputs={needAttention} sessionId={sessionId} ownerName={ownerName} ended={session.status === "ended" || resuming || Boolean(resumeError)} resuming={resuming} resumeRetryable={session.last_failure?.retryable} resumeFailure={resumeError ?? (session.status === "ended" ? session.last_failure?.message : null)} preserveDraft={resuming || Boolean(resumeError) || Boolean(session.last_failure)} hostWait={hostWait} sleeping={sleeping} autoFocus={autoFocusComposer} onEmptyEscape={running && !stopping && approvals.length === 0 && !blockedByPrompt ? () => void stop() : undefined} agentControl={home ? home.modelControl : agentControl} placeholder={home?.placeholder} onStop={home && running && approvals.length === 0 ? () => void stop() : undefined} stopping={stopping} onResume={canResume || resuming || (resumeError && session.mine && !isDraftCloudSession(session)) ? resume : undefined} />
             </>
           )}
         </div>

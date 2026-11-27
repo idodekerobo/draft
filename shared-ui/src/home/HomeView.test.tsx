@@ -79,7 +79,7 @@ test("a failed send has no Retry, and a broken connection links to Connections",
 test("hiding the panel is remembered on this device", async () => {
   renderHome({ count: 1, rows: [todo(1)] });
   await screen.findByText("Task 1");
-  fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+  fireEvent.click(screen.getByRole("button", { name: "Collapse Needs you" }));
   expect(screen.queryByText("Task 1")).toBeNull();
   expect(window.localStorage.getItem("draft.home.needsYouCollapsed")).toBe("1");
 });

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo } from "react";
 import { SessionView } from "../live-sessions/SessionView";
 import type { LiveSessionsApi } from "../live-sessions/types";
 import { HomeModelPicker, type HomeModel } from "./HomeModelPicker";
@@ -14,45 +15,42 @@ export interface HomeThreadApi {
 
 const SUGGESTIONS = ["What needs me right now?", "What happened on my team this week?", "Help me follow up on my latest meeting"] as const;
 
+const HOME_STALE_MS = 5 * 60_000;
+
 type Loaded = { id: string; model: string | null; canReply: boolean };
 
 /**
  * Draft's thread on Home: the person's own agent session, shown by the same view as any session. It starts the session on
  * first use, offers a few prompts to someone who has not spoken, and says plainly when Draft cannot reply.
  */
-export function HomeThread({ api, thread, onOpenConnections, onSession, onSeq }: {
+export function HomeThread({ api, thread, workspaceId, onOpenConnections, onSession, onSeq }: {
   api: LiveSessionsApi;
   thread: HomeThreadApi;
+  workspaceId: string;
   onOpenConnections: () => void;
   /** Tells the page which session is Home, so an approval row can point at the thread. */
   onSession?: (sessionId: string) => void;
   onSeq?: (seq: number) => void;
 }) {
-  const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [models, setModels] = useState<HomeModel[]>([]);
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  // Kept in the query cache, so coming back to Home shows the thread at once and refreshes it in the background.
+  const client = useQueryClient();
+  const sessionKey = useMemo(() => ["home-thread", workspaceId, "session"] as const, [workspaceId]);
+  const session = useQuery({ queryKey: sessionKey, queryFn: () => thread.loadSession(), staleTime: HOME_STALE_MS });
+  const modelsQuery = useQuery({ queryKey: ["home-thread", workspaceId, "models"], queryFn: () => thread.loadModels(), staleTime: HOME_STALE_MS });
+  const loaded: Loaded | null = session.data ?? null;
+  const models = modelsQuery.data ?? [];
+  const failed = session.isError && !loaded;
 
   useEffect(() => {
-    let cancelled = false;
-    setFailed(false);
-    thread.loadSession().then((value) => {
-      if (cancelled) return;
-      setLoaded(value);
-      onSession?.(value.id);
-    }).catch(() => !cancelled && setFailed(true));
-    thread.loadModels().then((value) => !cancelled && setModels(value)).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    if (loaded) onSession?.(loaded.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [thread, attempt]);
+  }, [loaded?.id]);
 
   const select = useCallback(async (model: string) => {
     if (!loaded) return;
     await api.setMode(loaded.id, { model });
-    setLoaded((current) => (current ? { ...current, model } : current));
-  }, [api, loaded]);
+    client.setQueryData<Loaded>(sessionKey, (current) => (current ? { ...current, model } : current));
+  }, [api, loaded, client, sessionKey]);
 
   const home = useMemo(() => {
     if (!loaded) return null;
@@ -73,14 +71,22 @@ export function HomeThread({ api, thread, onOpenConnections, onSession, onSeq }:
   if (failed) {
     return (
       <section className="ui-home-thread" aria-label="Draft">
-        <p className="ui-error" role="alert">Draft can&apos;t reply right now. <button type="button" className="ui-link" onClick={() => setAttempt((n) => n + 1)}>Try again</button></p>
+        <p className="ui-error" role="alert">Draft can&apos;t reply right now. <button type="button" className="ui-link" onClick={() => void session.refetch()}>Try again</button></p>
       </section>
     );
   }
   if (!loaded || !home) {
     return (
       <section className="ui-home-thread" aria-label="Draft" aria-busy="true">
-        <p className="ui-muted" role="status">Starting Draft…</p>
+        <header className="ui-session__header ui-session__header--home">
+          <h2 className="ui-session__title">Draft</h2>
+        </header>
+        <div className="ui-home-thread__skeleton" role="status" aria-label="Loading your conversation with Draft">
+          <span className="ui-skeleton ui-skeleton--line" style={{ width: "58%" }} />
+          <span className="ui-skeleton ui-skeleton--line" style={{ width: "82%" }} />
+          <span className="ui-skeleton ui-skeleton--line" style={{ width: "44%" }} />
+        </div>
+        <div className="ui-home-thread__skeleton-composer" aria-hidden="true" />
       </section>
     );
   }
