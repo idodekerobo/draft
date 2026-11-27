@@ -8,7 +8,7 @@ const SUBJECT = "Your Claude login stopped working";
 const TEXT = "Draft can't use the workspace's Claude login anymore, so Home and cloud sessions can't run. Reconnect it to fix this.";
 
 /** The people to tell: whoever saved the login, or the workspace's admins when nobody did or they left. */
-async function recipientPersonIds(client: SupabaseClient, workspaceId: string, ownerUserId: string | null): Promise<string[]> {
+export async function recipientPersonIds(client: SupabaseClient, workspaceId: string, ownerUserId: string | null): Promise<string[]> {
   const { data: workspace, error } = await client.from("workspaces").select("team_id").eq("id", workspaceId).maybeSingle();
   if (error) throw error;
   const teamId = (workspace as { team_id: string | null } | null)?.team_id;

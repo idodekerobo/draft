@@ -126,6 +126,19 @@ test("a stopped login shows Reconnect, not Done, and opens Connections", async (
   expect(nav.onOpenConnections).toHaveBeenCalled();
 });
 
+test("a failed context update shows View run for the run, with a quiet Done", async () => {
+  const row: NeedsYouRow = {
+    kind: "notification", id: "r1", createdAt: "2026-11-26T10:00:00Z",
+    notification: { id: "r1", kind: "run_result", subject: "A context update failed", text: "Open the run to see why.", link: null, needsAction: true, state: "open", refType: "agent_run", refId: "run-7", createdAt: "2026-11-26T10:00:00Z", actedAt: null },
+  };
+  const nav = renderHome({ count: 1, rows: [row] });
+  await screen.findByText("A context update failed");
+  expect(screen.getByText("Failed run")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "View run" }));
+  expect(nav.onOpenRun).toHaveBeenCalledWith("run-7");
+  expect(screen.getAllByRole("button", { name: /Done/ })).toHaveLength(1);
+});
+
 test("until the first to-do, a Get started checklist shows progress and links to the next step", async () => {
   const nav = renderHome({ count: 0, rows: [], getStarted: { meetingSource: true, routine: false, firstTodo: false } });
   await screen.findByText("Get started");

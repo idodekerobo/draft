@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { eventAudienceForSource, insertEvent } from "./insert-event";
 import { onParentRunFinished, type FinishedParentRun } from "../routines/workflow/parent-finished";
+import { notifyAdminsOfFailedRun } from "../notify/product/run-result";
 
 /**
  * Records that a routine or synthesis run with steps finished, so Home and later agent runs can see it.
@@ -40,5 +41,18 @@ async function audienceOf(client: SupabaseClient, run: FinishedParentRun) {
 
 /** Call once at server start, next to registerWorkflows(). */
 export function registerRunResultEvents(): () => void {
-  return onParentRunFinished(async (run) => recordRunResult((await import("../db/client")).serviceClient, run));
+  return onParentRunFinished(async (run) => {
+    const { serviceClient } = await import("../db/client");
+    // The two are independent: a failed event row must not hide a failed run from the admins, and the other way round.
+    const results = await Promise.allSettled([recordRunResult(serviceClient, run), failedSynthesisNotice(serviceClient, run)]);
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failed) throw failed.reason;
+  });
+}
+
+/** A failed synthesis run tells the admins. A routine's failure is its owner's business and has its own path. */
+export async function failedSynthesisNotice(client: SupabaseClient, run: FinishedParentRun): Promise<void> {
+  if (run.kind !== "synthesis" || run.status !== "failed") return;
+  const { defaultChannels } = await import("../notify/delivery/send");
+  await notifyAdminsOfFailedRun(client, defaultChannels(client), run);
 }

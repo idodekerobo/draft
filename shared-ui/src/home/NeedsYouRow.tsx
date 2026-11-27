@@ -21,7 +21,7 @@ function label(row: Row): { tag: string; text: string; detail?: string } {
     case "failed_delivery": return { tag: "Failed send", text: `${row.channel === "email" ? "Email" : row.channel} to someone failed: ${row.subject}` };
     case "notification": {
       const { notification } = row;
-      const tag = notification.kind === "todo_routed" ? "To-do" : notification.kind === "identity_proposed" ? "Teammate" : notification.kind === "todo_reassign" ? "Reassign" : notification.kind === "connection_attention" ? "Reconnect" : "Action";
+      const tag = notification.kind === "todo_routed" ? "To-do" : notification.kind === "identity_proposed" ? "Teammate" : notification.kind === "todo_reassign" ? "Reassign" : notification.kind === "connection_attention" ? "Reconnect" : notification.kind === "run_result" ? "Failed run" : "Action";
       return { tag, text: notification.subject, detail: notification.text };
     }
   }
@@ -33,6 +33,7 @@ export function NeedsYouRow({ row, handlers, highlighted = false, leaving = fals
   const { busy } = handlers;
   // Fixed by saving the login again, which closes the notice, so it has Reconnect and no Done.
   const isLoginNotice = row.kind === "notification" && row.notification.kind === "connection_attention" && row.notification.refType === "credential";
+  const isRunNotice = row.kind === "notification" && row.notification.kind === "run_result" && row.notification.refType === "agent_run" && Boolean(row.notification.refId);
   const element = useRef<HTMLLIElement>(null);
   useEffect(() => {
     if (highlighted) element.current?.scrollIntoView?.({ block: "nearest" });
@@ -65,8 +66,14 @@ export function NeedsYouRow({ row, handlers, highlighted = false, leaving = fals
             <button type="button" className="ui-link" disabled={busy} aria-label={`Reject: ${row.notification.subject}`} onClick={() => handlers.onDecide(row.notification.refId!, row.notification.id, "reject")}>Reject</button>
           </>
         )}
+        {isRunNotice && row.kind === "notification" && (
+          <>
+            <button type="button" className="ui-btn ui-btn--primary" onClick={() => handlers.onOpenRun(row.notification.refId!)}>View run</button>
+            <button type="button" className="ui-link" disabled={busy} aria-label={`Done: ${row.notification.subject}`} onClick={() => handlers.onDone(row.notification.id)}>Done</button>
+          </>
+        )}
         {isLoginNotice && <button type="button" className="ui-btn ui-btn--primary" onClick={handlers.onOpenConnections}>Reconnect</button>}
-        {row.kind === "notification" && !isLoginNotice && row.notification.kind !== "todo_routed" && !(row.notification.kind === "identity_proposed" && row.notification.refType === "person") && (
+        {row.kind === "notification" && !isLoginNotice && !isRunNotice && row.notification.kind !== "todo_routed" && !(row.notification.kind === "identity_proposed" && row.notification.refType === "person") && (
           <button type="button" className="ui-btn ui-btn--primary" disabled={busy} aria-busy={busy} aria-label={`Done: ${row.notification.subject}`} onClick={() => handlers.onDone(row.notification.id)}>{busy ? "Saving…" : "Done"}</button>
         )}
         {row.kind === "approval" && <button type="button" className="ui-btn ui-btn--primary" onClick={() => handlers.onOpenSession(row.sessionId)}>Review</button>}
