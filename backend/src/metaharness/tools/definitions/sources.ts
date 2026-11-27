@@ -12,6 +12,9 @@ function sourceRefusal(error: { code: string; message: string }): ToolHandlerRes
   return refuse(error.code, error.message);
 }
 
+/** Run input files are named `0000-<id>.md`. Agents sometimes pass that whole stem, so the position is dropped. */
+const withoutPositionPrefix = (value: string) => value.trim().replace(/^\d{4}-(?=[0-9a-f]{8}-)/i, "");
+
 const redactCursor = (cursor: string | undefined) => (cursor ? "[redacted]" : undefined);
 
 /** Run callers receive shared sources only; signed-in callers can also see their own private sources. */
@@ -69,7 +72,7 @@ export function createSourceTools(client: SupabaseClient) {
   });
 
   const readInput = z.object({
-    source_item_id: z.string().uuid(),
+    source_item_id: z.string().transform(withoutPositionPrefix).pipe(z.string().uuid()),
     representation: z.enum(["default", "transcript", "messages", "structured"]).optional(),
     max_bytes: z.number().int().min(1024).max(262144).optional(),
     cursor: z.string().optional(),
