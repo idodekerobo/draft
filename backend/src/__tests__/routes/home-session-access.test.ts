@@ -25,6 +25,7 @@ const fresh = <T,>(path: string): Promise<T> => import(`${path}?home-access`) as
 const inputs = await fresh<typeof import("../../routes/sessions-live-inputs")>("../../routes/sessions-live-inputs");
 const approvals = await fresh<typeof import("../../routes/sessions-live-approvals")>("../../routes/sessions-live-approvals");
 const title = await fresh<typeof import("../../routes/sessions-live-title")>("../../routes/sessions-live-title");
+const live = await fresh<typeof import("../../routes/sessions-live")>("../../routes/sessions-live");
 const sessionsTools = await import("../../metaharness/tools/definitions/sessions");
 
 function request(method: "GET" | "POST", params: Record<string, string>, body?: unknown) {
@@ -59,6 +60,15 @@ describe("another person's Home session", () => {
       expect(db.tables.session_inputs).toEqual([]);
     });
   }
+
+  it("is in nobody's session list, not even its owner's", async () => {
+    db.tables.sessions!.push({ id: "66666666-6666-4666-8666-666666666666", workspace_id: WS, owner_user_id: OWNER, is_home: false, session_type: "interactive", title: "Real", status: "live", harness: "claude", deleted_at: null, started_at: "2026-11-26T00:00:00Z" });
+    for (const userId of [OWNER, MATE]) {
+      caller = { userId, accessToken: "t" };
+      const body = (await (await live.LIST(request("GET", {}))).json()) as { sessions: Array<{ id: string }> };
+      expect(body.sessions.map((row) => row.id)).toEqual(["66666666-6666-4666-8666-666666666666"]);
+    }
+  });
 
   it("is not shared by link, so the public title route says nothing about it", async () => {
     const response = await title.TITLE(Object.assign(new Request("http://localhost/x"), { params: { sessionId: HOME } }) as never);

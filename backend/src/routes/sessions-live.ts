@@ -68,8 +68,8 @@ export const LIST = withAuth<WorkspaceRequest>(async (req, caller) => {
     .eq("workspace_id", req.params.id)
     .eq("session_type", "interactive")
     .is("deleted_at", null)
-    // Other people's Home sessions are dropped here, before the limit, so they cannot push out the caller's own.
-    .or(`is_home.eq.false,owner_user_id.eq.${caller.userId}`)
+    // Home has its own screen. No Home session is listed, and dropping them before the limit keeps them from pushing out real sessions.
+    .eq("is_home", false)
     .order("started_at", { ascending: false })
     .limit(LIST_LIMIT);
   if (error) return errorResponse("sessions_lookup_failed", 500, error, req.params.id);

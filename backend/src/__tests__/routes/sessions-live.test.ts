@@ -590,10 +590,10 @@ describe("live session routes", () => {
     const params = { id: WS, sessionId: "home-1" };
     const get = () => Object.assign(new Request("http://localhost/x"), { params }) as never;
 
-    it("is left out of another person's list, and kept in the owner's", async () => {
+    it("is left out of every list, the owner's included", async () => {
       tables.sessions = [home(), session({ id: "team-1", is_home: false, session_type: "interactive", owner_user_id: "user-2" }), home({ id: "mine", owner_user_id: "user-1" })];
       const ids = ((await (await routes.LIST(post("/x", {}, { id: WS }))).json()) as { sessions: Array<{ id: string }> }).sessions.map((row) => row.id);
-      expect(ids.sort()).toEqual(["mine", "team-1"]);
+      expect(ids).toEqual(["team-1"]);
     });
 
     it("answers not found, not forbidden, on events, delete and reopen for another person's Home", async () => {
