@@ -1319,7 +1319,15 @@
 .ui-activity-upcoming { padding: 12px 0; opacity: 1; transform: translateY(0); transition: opacity 200ms var(--motion-ease), transform 200ms var(--motion-ease); }
 .ui-activity-row--removing { opacity: 0; transform: translateY(-3px); }
 /* Upcoming rows have no status dot; inset their text to the run text column. */
-.ui-activity-upcoming .ui-activity-row__text { padding-left: 20px; }
+.ui-activity-upcoming .ui-activity-row__text, .ui-activity-history .ui-activity-row__text { padding-left: 20px; }
+.ui-activity-history { padding: 12px 0; }
+.ui-activity-section { margin-bottom: 8px; }
+.ui-activity-section-title { margin-top: 32px; }
+.ui-activity-filter { display: inline-flex; gap: 2px; margin-top: 16px; padding: 2px; border-radius: var(--radius-md); background: var(--color-bg-surface); }
+.ui-activity-filter__option { min-height: 28px; padding: 0 14px; border: 0; border-radius: calc(var(--radius-md) - 2px); background: none; color: var(--color-text-secondary); font: var(--font-size-secondary) var(--font-ui); cursor: pointer; }
+.ui-activity-filter__option[aria-pressed="true"] { background: var(--color-bg-elevated); color: var(--color-text-primary); box-shadow: 0 0 0 1px var(--color-border); }
+.ui-activity-filter__option:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+@media (pointer: coarse) { .ui-activity-filter__option { min-height: 40px; } }
 .ui-activity-row .ui-link { touch-action: manipulation; transition: transform 120ms var(--motion-ease); }
 .ui-activity-row .ui-link:active:not(:disabled) { transform: scale(0.98); }
 .ui-activity-row .ui-link:disabled { color: var(--color-text-secondary); cursor: default; }

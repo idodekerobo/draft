@@ -143,7 +143,7 @@ function ActivityRuns({ workspaceId, mine, onFixInConnections, onOpenRun, onOpen
           <h2 id="activity-history-title" className="ui-activity-section-title">Your history</h2>
           <ul className="ui-rows">
             {history.map((entry) => (
-              <li key={entry.id} className="ui-activity-row">
+              <li key={entry.id} className="ui-activity-row ui-activity-history">
                 <div className="ui-activity-row__text">
                   <span className="ui-activity-row__meta"><time dateTime={entry.occurredAt}>{relativeTime(entry.occurredAt)}</time> · {HISTORY_LABEL[entry.type] ?? "Updated"}</span>
                   <span className="ui-activity-row__primary">{entry.summary}</span>
@@ -173,9 +173,9 @@ export function ActivityPanel(props: ActivityProps) {
     <>
       <h1 className="ui-page__title">Activity</h1>
       <p className="ui-page__intro">What your workspace agents have been doing.</p>
-      <div role="group" aria-label="Show">
-        <button type="button" className="ui-link" aria-pressed={!mine} onClick={() => setMine(false)}>All</button>{" · "}
-        <button type="button" className="ui-link" aria-pressed={mine} onClick={() => setMine(true)}>Mine</button>
+      <div className="ui-activity-filter" role="group" aria-label="Show">
+        <button type="button" className="ui-activity-filter__option" aria-pressed={!mine} onClick={() => setMine(false)}>All</button>
+        <button type="button" className="ui-activity-filter__option" aria-pressed={mine} onClick={() => setMine(true)}>Mine</button>
       </div>
       <DataBoundary fallback={<section className="ui-activity-section"><h2 className="ui-activity-section-title">Upcoming</h2><p className="ui-muted" role="status">Loading activity…</p></section>} errorMessage="Could not load activity.">
         <ActivityRuns {...props} mine={mine} />
