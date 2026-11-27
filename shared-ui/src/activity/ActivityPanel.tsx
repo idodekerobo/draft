@@ -34,7 +34,7 @@ function UpcomingRow({ routine, pending, disabled, removing, onCancel, buttonRef
   onCancel: () => void;
   buttonRef: (element: HTMLButtonElement | null) => void;
 }) {
-  const absoluteTime = new Date(routine.runAt).toLocaleString(undefined, { timeZone: routine.timezone, dateStyle: "medium", timeStyle: "short" });
+  const absoluteTime = new Date(routine.runAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   return (
     <li id={`upcoming-${routine.id}`} className={`ui-activity-row ui-activity-upcoming${removing ? " ui-activity-row--removing" : ""}`}>
       <div className="ui-activity-row__text">

@@ -30,9 +30,7 @@ export function timezoneOptions(current: string): string[] {
   return [...new Set(["UTC", current, ...supported])];
 }
 
-export function browserTimezone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-}
+export { browserTimezone } from "./format";
 
 /** Whether a frequency is set at a time of day. */
 export const presetUsesTime = (preset: RoutinePreset): boolean => preset === "daily" || preset === "weekdays" || preset === "weekly";

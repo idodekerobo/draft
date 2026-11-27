@@ -11,8 +11,8 @@ import { agentLabel } from "./agent-label";
 import { AbilityFields, RoutinePreview, capabilitiesValid, defaultCapabilities, type CapabilityValue } from "./CapabilityFields";
 import { Dialog } from "./Dialog";
 import { RoutineError } from "./errors";
-import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
-import { ScheduleFields, browserTimezone, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions, type ScheduleValue } from "./schedule-fields";
+import { browserTimezone, formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
+import { ScheduleFields, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions, type ScheduleValue } from "./schedule-fields";
 import type { CreateRoutineInput, RoutineAgentStatus, RoutineEventName, RoutinesResponse, RoutineStepEdit } from "./types";
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
@@ -64,7 +64,7 @@ export function CreateRoutineDialog({ onClose, onCreate, agents = {}, connectedP
   const nextRun = previewNextRun({ ...schedule, time: schedule.time || "00:00" });
 
   const when = onSchedule
-    ? [`${scheduleSentence(schedule)} (${zoneLabel(schedule.timezone)})`, `Next run ${formatAbsolute(nextRun.toISOString(), schedule.timezone)}`]
+    ? [`${scheduleSentence(schedule)} (${zoneLabel(schedule.timezone)})`, `Next run ${formatAbsolute(nextRun.toISOString(), browserTimezone())}`]
     : events.length ? events.map(triggerPreview) : ["Runs only when someone presses Run now"];
 
   async function create() {

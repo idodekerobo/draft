@@ -11,6 +11,7 @@ import {
   countRoutines,
   filterRoutines,
   formatRelative,
+  browserTimezone,
   formatWhen,
   zoneLabel,
   type RoutineFilter,
@@ -38,7 +39,7 @@ function recentActivity(routine: Routine) {
         {run ? (
           <>
             <RunStatus status={run.status} reason={run.skipReason} />
-            <div className="ui-routines__secondary">{formatWhen(run.startedAt, routine.timezone)}</div>
+            <div className="ui-routines__secondary">{formatWhen(run.startedAt, browserTimezone())}</div>
             {run.status === "skipped" && run.skipReason && <div className="ui-routines__secondary ui-routines__skip-reason">{run.skipReason}</div>}
           </>
         ) : (
@@ -66,7 +67,7 @@ function recentActivity(routine: Routine) {
     return (
       <div className="ui-routines__when" data-label={label}>
         <div className={`ui-routines__status ${failed ? "ui-routines__status--error" : "ui-routines__status--success"}`}>{text}</div>
-        <div className="ui-routines__secondary">Last ran {formatWhen(run.completedAt, routine.timezone)}</div>
+        <div className="ui-routines__secondary">Last ran {formatWhen(run.completedAt, browserTimezone())}</div>
       </div>
     );
   }
@@ -74,7 +75,7 @@ function recentActivity(routine: Routine) {
     <div className="ui-routines__when" data-label={label}>
       {routine.lastCheckedAt ? (
         <>
-          <strong>{formatWhen(routine.lastCheckedAt, routine.timezone)}</strong>
+          <strong>{formatWhen(routine.lastCheckedAt, browserTimezone())}</strong>
           <div className="ui-routines__secondary">Last checked</div>
         </>
       ) : (
@@ -104,7 +105,7 @@ function nextActivity(routine: Routine, onReconnect?: () => void) {
     detail = null;
   } else {
     heading = formatRelative(routine.nextRunAt);
-    detail = formatWhen(routine.nextRunAt, routine.timezone);
+    detail = formatWhen(routine.nextRunAt, browserTimezone());
   }
   return (
     <div className="ui-routines__when" data-label={label}>

@@ -42,8 +42,13 @@ const ZONE_LABELS: Record<string, string> = {
   UTC: "UTC",
 };
 
+/** The viewer's own timezone. Past and upcoming run times show in it, whatever zone the routine is scheduled in. */
+export function browserTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 export function zoneLabel(timeZone: string): string {
-  return ZONE_LABELS[timeZone] ?? timeZone;
+  return ZONE_LABELS[timeZone] ?? (dtf({ timeZone, timeZoneName: "short" }).formatToParts(new Date()).find((part) => part.type === "timeZoneName")?.value ?? timeZone);
 }
 
 /** "In 42 minutes", "In 17 hours", "In 2 days". */

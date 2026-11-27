@@ -4,7 +4,7 @@ import { useSuspenseInfiniteQuery } from "@tanstack/react-query";
 import { DataBoundary } from "../query/DataBoundary";
 import { useDraftApi } from "../query/api";
 import { routineRunsQueryOptions } from "../query/options";
-import { formatDuration, formatWhen } from "./format";
+import { browserTimezone, formatDuration, formatWhen } from "./format";
 import type { OpenRun, Routine, RoutineRun, RoutineRunStatus } from "./types";
 
 const STATUS_LABEL: Record<RoutineRunStatus, string> = { running: "Running", completed: "Completed", failed: "Failed", skipped: "Skipped" };
@@ -22,14 +22,14 @@ function RunsSkeleton() {
   );
 }
 
-function RunRow({ run, timezone, onOpen }: { run: RoutineRun; timezone: string; onOpen?: (run: RoutineRun) => void }) {
+function RunRow({ run, onOpen }: { run: RoutineRun; onOpen?: (run: RoutineRun) => void }) {
   const detail = run.endedAt && run.status !== "skipped" ? formatDuration(run.startedAt, run.endedAt) : null;
   const note = run.status === "skipped" ? run.skipReason : run.result;
   const content = (
     <>
       <RunStatus status={run.status} />
       <span className="ui-routines__run-when">
-        {formatWhen(run.startedAt, timezone)}
+        {formatWhen(run.startedAt, browserTimezone())}
         {note && <span className="ui-routines__run-result">{note}</span>}
       </span>
       <span className="ui-routines__secondary">{detail}</span>
@@ -58,7 +58,7 @@ function RunsList({ workspaceId, routine, onOpenRun }: { workspaceId: string; ro
     <>
       <ul className="ui-routines__runs">
         {runs.map((run) => (
-          <RunRow key={run.id} run={run} timezone={routine.timezone} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id, routine))} />
+          <RunRow key={run.id} run={run} onOpen={onOpenRun && ((opened) => onOpenRun(opened.id, routine))} />
         ))}
       </ul>
       {hasNextPage && (

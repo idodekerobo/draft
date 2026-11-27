@@ -11,9 +11,9 @@ import { AbilityFields, RoutinePreview, capabilitiesOf, capabilitiesValid, capab
 import { Dialog } from "./Dialog";
 import { agentLabel } from "./agent-label";
 import { RoutineError } from "./errors";
-import { formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
+import { browserTimezone, formatAbsolute, isHeavyCadence, previewNextRun, zoneLabel } from "./format";
 import { RoutineRuns } from "./RoutineRuns";
-import { PRESET_LABELS, SELECTABLE, WEEKDAYS, browserTimezone, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions } from "./schedule-fields";
+import { PRESET_LABELS, SELECTABLE, WEEKDAYS, presetUsesTime, scheduleInput, scheduleSentence, timezoneOptions } from "./schedule-fields";
 import type { AgentRoutineEdit, OpenRun, Routine, RoutineAgentStatus, RoutineEventName, RoutinePatch, RoutinePreset, RoutineRule, RoutineStepEdit, RoutinesResponse, RoutineWeekday } from "./types";
 import { WhenFields, triggerPreview, type WhenMode } from "./WhenFields";
 
@@ -250,7 +250,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
       : mode === "schedule"
         ? [
             preset === "custom" ? routine.scheduleDescription : `${scheduleSentence({ preset, time, weekday })} (${zoneLabel(effectiveTimezone)})`,
-            ...(nextRun ? [`Next run ${formatAbsolute(nextRun.toISOString(), effectiveTimezone)}`] : []),
+            ...(nextRun ? [`Next run ${formatAbsolute(nextRun.toISOString(), browserTimezone())}`] : []),
           ]
         : events.length ? events.map(triggerPreview) : ["Runs only when someone presses Run now"];
     body = (
@@ -324,7 +324,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
             <h3 className="ui-routines__subheading">What it will do</h3>
             <ul className="ui-routine-preview__list">
               <li>{routine.enabled ? (preset === "custom" ? routine.scheduleDescription : `${scheduleSentence({ preset, time, weekday })} (${zoneLabel(effectiveTimezone)})`) : "Paused. It won’t run until it’s resumed."}</li>
-              {nextRun && <li>Next run {formatAbsolute(nextRun.toISOString(), effectiveTimezone)}</li>}
+              {nextRun && <li>Next run {formatAbsolute(nextRun.toISOString(), browserTimezone())}</li>}
               <li>Runs on {agentLabel(agent)}</li>
               {isSynthesis && <li>Runs in three steps: capture, reconcile, then organize</li>}
               <li>{routine.routineDescription}</li>
@@ -351,7 +351,7 @@ export function RoutineDetails({ workspaceId, routine, canEdit, onClose, onSave,
         {scheduleNotices}
         <p className="ui-routines__note">
           {routine.enabled
-            ? nextRun && `Next ${noun}: ${formatAbsolute(nextRun.toISOString(), effectiveTimezone)}`
+            ? nextRun && `Next ${noun}: ${formatAbsolute(nextRun.toISOString(), browserTimezone())}`
             : "This routine is paused. Your changes apply when it’s resumed."}
         </p>
         {actions}
