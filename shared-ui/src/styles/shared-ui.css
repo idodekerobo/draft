@@ -1422,6 +1422,9 @@
 .ui-lab-picker__help { margin: 8px 0 0; }
 
 /* Home: Needs you above Draft's thread. On a phone a tab list shows one of them at a time. */
+/* Home is a working surface, so it takes more of a wide window than reading pages do. */
+.ui-page:has(> .ui-home) { max-width: min(1680px, 100%); }
+.ui-session--home .ui-session__column { max-width: min(1120px, 100%); }
 .ui-home { display: flex; flex-direction: column; gap: 16px; min-height: 0; height: max(640px, calc(100dvh - 104px)); }
 .ui-home__tabs { display: none; gap: 4px; border-bottom: 1px solid var(--color-border); }
 .ui-home__tab { position: relative; min-height: 44px; padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--color-text-secondary); font: inherit; font-weight: 500; cursor: pointer; }
